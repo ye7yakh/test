@@ -104,7 +104,7 @@ export function adminView(app) {
       h(
         'header',
         { class: 's-header' },
-        h('div', { class: 'identity' }, h('div', { class: 'app-icon', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: app.ctx.tenant.name }), h('div', { class: 'sub', text: t('login.platform') }))),
+        h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: app.ctx.tenant.name }), h('div', { class: 'sub', text: t('login.platform') }))),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('logout'), title: t('logout'), onclick: () => app.logout() }, icon('logout', 'flip-rtl')),
       ),

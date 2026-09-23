@@ -60,7 +60,7 @@ export function loginView(app) {
       h(
         'div',
         { class: 'login-brand rise' },
-        salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon' }, icon('sparkles')),
+        salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon studio-mark' }, icon('sparkles')),
         h('h1', { text: t('login.welcome') }),
         h('p', { text: salon ? t('login.studio', { name }) : `${name} · ${t('login.platform')}` }),
       ),

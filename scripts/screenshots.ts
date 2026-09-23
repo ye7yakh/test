@@ -202,14 +202,15 @@ async function main() {
     await page.waitForSelector('.member .portrait img');
     await snap(page, 'team', { wait: 1200 });
     await page.click('.member');
-    await page.waitForSelector('.sheet .compare');
+    await page.waitForSelector('.sheet .portrait.finished');
     await settle(page, 500);
     await upload(page, '.sheet .photo-actions .btn-secondary', files.p2);
     await page.waitForSelector('.sheet .processing');
     await sleep(250);
     await snap(page, 'team-studio-touch-processing', { wait: 0 });
-    await page.waitForSelector('.sheet .compare');
-    await snap(page, 'team-studio-touch-reveal', { wait: 1400 });
+    await page.waitForSelector('.sheet .portrait.finished.revealing');
+    await snap(page, 'team-studio-touch-sparkles', { wait: 380 });
+    await snap(page, 'team-studio-touch-done', { wait: 1400 });
     await page.keyboard.press('Escape');
     await settle(page, 400);
 

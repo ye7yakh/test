@@ -2,6 +2,8 @@
 
 // [id, primary, accent]
 export const PALETTES = [
+  ['violet', '#1e1b4b', '#8b5cf6'],
+  ['ocean', '#0b1e3f', '#60a5fa'],
   ['classic', '#1f2a37', '#c8a15a'],
   ['gold', '#131313', '#d4af37'],
   ['copper', '#1d2433', '#e0975c'],

@@ -243,7 +243,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const csp = String(index.headers['content-security-policy']);
   const nonce = /nonce-([^']+)'/.exec(csp)?.[1];
   expect(html.includes('<title>صالون أ</title>') && html.includes('--primary:#0f3d3e') && !!nonce && html.includes(`<style nonce="${nonce}">`) && html.includes(`<script nonce="${nonce}">`), 'index.html carries salon title, colours and a CSP nonce');
-  expect(html.includes('data-theme="public"') && /--studio-brand:#[0-9a-f]{6}/.test(html) && csp.includes(`script-src 'self' 'nonce-${nonce}'`), 'salon host starts on the public theme, with the studio accent ready');
+  expect(html.includes('data-theme="public"') && csp.includes(`script-src 'self' 'nonce-${nonce}'`), 'salon host starts on the public theme; owner screens switch before first paint');
   const platformIndex = await anon.get(PLATFORM, '/');
   const platformCsp = String(platformIndex.headers['content-security-policy']);
   expect(platformIndex.body.toString('utf8').includes('data-theme="studio" data-platform="1"') && platformCsp.includes(`img-src 'self' blob: data: http://*.${DOMAIN}:${PORT}`), 'platform host is the studio and may show salon icons');

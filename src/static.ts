@@ -78,28 +78,10 @@ export function onColor(hex: string): string {
   return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#111111' : '#ffffff';
 }
 
-const STUDIO_SURFACE = '#141418';
-
-/**
- * The accent as the owner's dark studio uses it: lifted towards white until it
- * stands out from the dark surfaces (3:1), so a navy accent still reads.
- * Mirrored in web/assets/js/theme.js.
- */
-export function studioBrand(accent: string): string {
-  const bg = luminance(STUDIO_SURFACE);
-  const n = parseInt(accent.slice(1), 16);
-  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
-  for (let mix = 0; mix <= 0.9; mix += 0.05) {
-    const hex = `#${rgb.map((c) => Math.round(c + (255 - c) * mix).toString(16).padStart(2, '0')).join('')}`;
-    if ((luminance(hex) + 0.05) / (bg + 0.05) >= 3) return hex;
-  }
-  return '#ffffff';
-}
-
 // Owner screens (and the whole platform host) use the dark studio theme; the
 // salon's public page is light. Set before first paint so there is no flash.
 const BOOT_SCRIPT = `(function(){var s=/^#\\/(manage|login)/.test(location.hash)||document.documentElement.dataset.platform==='1';
-if(s){document.documentElement.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content='#09090b';}})();`;
+if(s){document.documentElement.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content='#0a0918';}})();`;
 
 export async function serveIndex(ctx: Ctx): Promise<void> {
   const template = await readCached(path.join(config.webDir, 'index.html'));
@@ -107,7 +89,6 @@ export async function serveIndex(ctx: Ctx): Promise<void> {
   const salon = ctx.host.salon;
   const primary = salon?.color_primary ?? '#1f2a37';
   const accent = salon?.color_accent ?? '#c8a15a';
-  const brand = studioBrand(accent);
   const title = salon ? salon.name_ar : ctx.host.tenant.name;
   const head = salon
     ? `<link rel="manifest" href="/manifest.webmanifest">
@@ -117,12 +98,12 @@ export async function serveIndex(ctx: Ctx): Promise<void> {
 <meta name="apple-mobile-web-app-title" content="${escapeHtml(title)}">`
     : '';
   const nonce = crypto.randomBytes(16).toString('base64');
-  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)};--studio-brand:${brand};--on-studio-brand:${onColor(brand)}}`;
+  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)}}`;
   const html = template.body
     .toString('utf8')
     .replace('data-theme="{{mode}}"', salon ? 'data-theme="public"' : 'data-theme="studio" data-platform="1"')
     .replaceAll('{{title}}', escapeHtml(title))
-    .replaceAll('{{theme}}', salon ? primary : '#09090b')
+    .replaceAll('{{theme}}', salon ? primary : '#0a0918')
     .replace('{{head}}', head)
     .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
     .replace('{{boot}}', `<script nonce="${nonce}">${BOOT_SCRIPT}</script>`);

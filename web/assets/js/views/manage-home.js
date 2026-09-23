@@ -46,7 +46,7 @@ function heroCard(store, app, steps) {
         h(
           'div',
           { class: 'actions' },
-          h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => shareLink(store) }, icon('share'), t('share')),
+          h('button', { class: 'btn btn-primary btn-sm sheen', type: 'button', onclick: () => shareLink(store) }, icon('share'), t('share')),
           h('button', { class: 'btn btn-secondary btn-sm', type: 'button', onclick: () => openPreview(store) }, icon('eye'), t('nav.preview')),
         ),
       )
@@ -56,7 +56,7 @@ function heroCard(store, app, steps) {
         ring(done / steps.length, { size: 84 }),
         h('h2', { text: t('home.progress') }),
         h('p', { text: t('home.left', { n: steps.length - done }) }),
-        h('div', { class: 'actions' }, h('a', { class: 'btn btn-primary btn-sm', href: `#/manage/${next.page}` }, t('home.continue'), icon('arrow', 'flip-ltr'))),
+        h('div', { class: 'actions' }, h('a', { class: 'btn btn-primary btn-sm sheen', href: `#/manage/${next.page}` }, t('home.continue'), icon('arrow', 'flip-ltr'))),
       );
   return h(
     'section',

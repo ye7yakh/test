@@ -23,7 +23,9 @@ export function hoursEditor(initialWeek, { timezone, onChange } = {}) {
   let invalidDay = null;
   const now = timezone ? nowIn(timezone) : null;
   const rows = new Map();
-  const el = h('div', { class: 'week' });
+  // Bars grow in on first show only, not on every edit.
+  const el = h('div', { class: 'week intro' });
+  setTimeout(() => el.classList.remove('intro'), 1800);
 
   el.append(h(
     'div',
@@ -144,6 +146,7 @@ export function hoursEditor(initialWeek, { timezone, onChange } = {}) {
       {
         class: `day-row ${expanded === d ? 'open-editor' : ''} ${invalidDay === d ? 'invalid' : ''}`,
         'data-day': String(d),
+        style: { '--row': String(DAY_ORDER.indexOf(d)) },
       },
       line,
       expanded === d ? dayEditor(d) : null,

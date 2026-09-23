@@ -396,11 +396,24 @@ export function ring(value, { big, small, size = 92 } = {}) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('aria-hidden', 'true');
+  // Violet to blue along the arc.
+  const id = `ring-${Math.random().toString(36).slice(2)}`;
+  const defs = document.createElementNS(SVG_NS, 'defs');
+  const grad = document.createElementNS(SVG_NS, 'linearGradient');
+  grad.setAttribute('id', id);
+  for (const [offset, color] of [['0', '#c084fc'], ['0.5', '#818cf8'], ['1', '#60a5fa']]) {
+    const stop = document.createElementNS(SVG_NS, 'stop');
+    stop.setAttribute('offset', offset);
+    stop.setAttribute('stop-color', color);
+    grad.append(stop);
+  }
+  defs.append(grad);
   const track = circle('track');
   const bar = circle('value');
+  bar.setAttribute('stroke', `url(#${id})`);
   bar.setAttribute('stroke-dasharray', String(c));
   bar.setAttribute('stroke-dashoffset', String(c));
-  svg.append(track, bar);
+  svg.append(defs, track, bar);
   const value100 = Math.round(value * 100);
   const label = h('b');
   if (big === undefined) countUp(label, value100, { duration: 1200, format: (v) => `${v}%` });
@@ -426,6 +439,48 @@ export function savebar({ onSave, onDiscard }) {
     },
     remove: () => el.remove(),
   };
+}
+
+// ---------------------------------------------------------------- small effects
+
+/** A burst of little stars from the centre of `el` (which must be positioned). */
+export function sparkles(el, count = 18) {
+  if (reducedMotion()) return;
+  const burst = h('div', { class: 'sparkle-burst', 'aria-hidden': 'true' });
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+    const dist = 70 + Math.random() * 80;
+    burst.append(h('i', {
+      style: {
+        '--dx': `${Math.cos(angle) * dist}px`,
+        '--dy': `${Math.sin(angle) * dist}px`,
+        '--s': `${6 + Math.random() * 10}px`,
+        '--d': `${Math.random() * 180}ms`,
+      },
+    }));
+  }
+  el.append(burst);
+  setTimeout(() => burst.remove(), 1600);
+}
+
+/** A gentle 3D tilt and moving sheen that follows the mouse (not on touch screens). */
+export function tilt(el, max = 8) {
+  if (reducedMotion() || !matchMedia('(hover: hover) and (pointer: fine)').matches) return el;
+  el.classList.add('tilt');
+  el.addEventListener('pointermove', (e) => {
+    const r = el.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    el.style.setProperty('--rx', `${(0.5 - y) * max}deg`);
+    el.style.setProperty('--ry', `${(x - 0.5) * max}deg`);
+    el.style.setProperty('--mx', `${x * 100}%`);
+    el.style.setProperty('--my', `${y * 100}%`);
+  });
+  el.addEventListener('pointerleave', () => {
+    el.style.setProperty('--rx', '0deg');
+    el.style.setProperty('--ry', '0deg');
+  });
+  return el;
 }
 
 // ---------------------------------------------------------------- celebration

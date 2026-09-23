@@ -15,9 +15,12 @@ Three kinds of users:
 ## The owner studio
 
 The salon owner's workspace (`salon.brand.com/#/manage`) is designed to impress
-on first open. It's a dark studio lit by the salon's own accent colour, with glass
-surfaces, a floating tab bar and springy motion. On desktop it has a sidebar and a
-live preview of the salon's app.
+on first open. It's a deep indigo studio lit in violet and blue, with glass
+surfaces, a floating tab bar and plenty of motion: drifting background light, a
+light circling the main card, a tab highlight that slides between tabs, gradient
+headings and numbers, and buttons with a sheen. On desktop it has a sidebar and a
+live preview of the salon's app. The studio's colours are its own; each salon's
+colours appear in its app (the previews and the icon).
 
 - **Home**: a greeting, a readiness ring that counts up, the four setup steps,
   numbers at a glance, open/closed now, and the app link to copy or share. A
@@ -25,25 +28,26 @@ live preview of the salon's app.
   done, the page celebrates (once) and becomes a share-your-app card.
 - **Brand**: name, logo, colours and team photo style, with a live preview.
   On phones the preview is a swipeable stage with the app and the salon's icon on a
-  phone home screen; on desktop it's the side column. Choosing one of 11 ready
-  palettes (or custom colours) re-tints the whole studio and the preview at once.
-  Changes wait in a "you have unsaved changes" bar until saved.
+  phone home screen; on desktop it's the side column. Choosing one of 13 ready
+  palettes (or custom colours) re-colours the preview as you pick. Changes wait
+  in a "you have unsaved changes" bar until saved.
 - **Services**: an empty salon starts from a ready menu. Pick barbershop, ladies'
   salon or spa, tick the services, type prices, and they're all added at once.
   Each service has an emoji icon, duration chips with a stepper, a large price
   field, "price starts from", bookable on/off, and who offers it (chips with the
   team's photos).
-- **Team**: magazine-style portrait cards. Adding a photo plays the "studio
-  touch" (a scanning animation while the server renders), then reveals a
-  before/after slider to drag across.
+- **Team**: magazine-style portrait cards that tilt towards the mouse on
+  desktop. Adding a photo plays the "studio touch" (a scanning animation while
+  the server renders), then the finished portrait arrives with a halo and a
+  burst of little stars.
 - **Hours**: each day is a 24-hour track with glowing open ranges, including
   ranges past midnight carried into the next morning, and a "now" marker on
   today. There are quick presets (all day, split shift, late nights, Friday after
-  prayer); tap a day to edit it inline.
+  prayer); tap a day to edit it inline. The bars grow in when the page opens.
 - **Settings** (sheet): contact details, time zone and currency, password,
   language, sign out.
-- **Login and platform admin** use the same design: an aurora background in the
-  salon's colours for login, and each salon's real app icon in the admin list.
+- **Login and platform admin** use the same design: a violet and blue aurora
+  behind login, and each salon's real app icon in the admin list.
 
 Arabic first and fully mirrored in English. The typeface is Readex Pro
 (self-hosted, OFL). Motion respects `prefers-reduced-motion`.
@@ -122,7 +126,7 @@ npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400
 `test:api` covers the setup flow and the security edges: tenant isolation, CSRF, upload
 validation, rate limits and session revocation. `screenshots` drives Chrome through a
 brand-new salon's whole journey, from the admin creating it to the owner's ready menu,
-photo upload, brand, hours, the celebration, English and desktop. It writes 27 PNGs to
+photo upload, brand, hours, the celebration, English and desktop. It writes 28 PNGs to
 `screenshots/` and fails on any page error, console error, CSP violation or unexpected
 failed request. It finds Chrome at `CHROME_PATH` or in the usual places.
 
@@ -166,5 +170,5 @@ scripts/               build-web.mjs, test-api.ts, screenshots.ts
    wildcard certificate (DNS challenge), plus the build → migrate → roll deploy script.
 4. **AI photo processing**: a background-removal and relighting model would put every
    barber on the same studio backdrop in the salon's colours. It slots in as one more step
-   before `renderPortrait` in `src/media.ts`. The studio-touch animation and before/after
-   slider already frame it, and the original is kept as it is today.
+   before `renderPortrait` in `src/media.ts`. The studio-touch animation already frames
+   it, and the original is kept as it is today.

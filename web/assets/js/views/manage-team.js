@@ -1,47 +1,9 @@
 // Team: barbers and stylists as portrait cards. Adding a photo plays the studio
-// touch (the server's unified rendering) and reveals a before/after comparison.
+// touch (the server's unified rendering) and reveals the finished portrait.
 import { api, pickImage, prepareImage } from '../api.js';
-import { busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast, toastError } from '../dom.js';
+import { busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, sparkles, stagger, switchRow, tilt, toast, toastError } from '../dom.js';
 import { hoursEditor } from '../hours-editor.js';
 import { pick, t } from '../i18n.js';
-
-/** Drag across the photo to compare the original with the studio version. */
-function compare(beforeUrl, afterUrl, { reveal = false } = {}) {
-  const after = h('img', { src: afterUrl, alt: '', class: reveal ? 'reveal' : '' });
-  const el = h(
-    'div',
-    { class: 'portrait compare hint', style: { '--pos': '50%' }, role: 'slider', tabindex: '0', 'aria-label': t('team.compare_hint'), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '50' },
-    after,
-    h('div', { class: 'before' }, h('img', { src: beforeUrl, alt: '' })),
-    h('div', { class: 'handle' }),
-    h('span', { class: 'tag l', text: t('team.before') }),
-    h('span', { class: 'tag r', text: t('team.after') }),
-  );
-  const set = (pct) => {
-    const v = Math.min(100, Math.max(0, pct));
-    el.style.setProperty('--pos', `${v}%`);
-    el.setAttribute('aria-valuenow', String(Math.round(v)));
-  };
-  let dragging = false;
-  const move = (e) => {
-    const r = el.getBoundingClientRect();
-    set(((e.clientX - r.left) / r.width) * 100);
-  };
-  el.addEventListener('pointerdown', (e) => {
-    dragging = true;
-    el.classList.remove('hint');
-    el.setPointerCapture(e.pointerId);
-    move(e);
-  });
-  el.addEventListener('pointermove', (e) => dragging && move(e));
-  el.addEventListener('pointerup', () => { dragging = false; });
-  el.addEventListener('keydown', (e) => {
-    const cur = parseFloat(el.style.getPropertyValue('--pos'));
-    if (e.key === 'ArrowLeft') set(cur - 5);
-    if (e.key === 'ArrowRight') set(cur + 5);
-  });
-  return el;
-}
 
 function processing() {
   return h('div', { class: 'processing' }, h('div', { class: 'msg' }, icon('sparkles'), h('span', { text: t('team.processing') })));
@@ -59,8 +21,18 @@ function openEditor(store, member, onSaved) {
     let visual;
     if (pending) {
       visual = h('div', { class: 'portrait' }, h('img', { src: URL.createObjectURL(pending), alt: '' }));
-    } else if (m.photo_url && m.original_photo_url) {
-      visual = h('div', { style: { position: 'relative' } }, compare(m.original_photo_url, m.photo_url, { reveal }), h('span', { class: 'studio-badge' }, icon('sparkles'), t('team.studio')));
+    } else if (m.photo_url) {
+      visual = h(
+        'div',
+        { class: 'photo-frame' },
+        h(
+          'div',
+          { class: `portrait finished ${reveal ? 'revealing' : ''}` },
+          h('img', { src: m.photo_url, alt: pick(m, 'name'), class: reveal ? 'reveal' : '' }),
+          h('span', { class: 'studio-badge' }, icon('sparkles'), t('team.studio')),
+        ),
+      );
+      if (reveal) requestAnimationFrame(() => sparkles(visual));
     } else {
       visual = h('button', { class: 'drop', type: 'button', onclick: choose }, h('div', { class: 'tile' }, icon('camera')), h('b', { text: t('team.photo_add') }), h('small', { text: t('team.photo_add_sub') }));
     }
@@ -72,7 +44,7 @@ function openEditor(store, member, onSaved) {
           !isNew && m.photo_url ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: (e) => remove(e.currentTarget) }, t('team.photo_remove')) : null,
         )
       : null;
-    clear(photo, visual, actions, m.photo_url && !pending ? h('p', { class: 'photo-hint', text: t('team.compare_hint') }) : null);
+    clear(photo, visual, actions);
   }
 
   async function choose() {
@@ -201,13 +173,13 @@ export function teamPage(store) {
 
   function render() {
     const staff = store.staff;
-    const cards = staff.map((m) => h(
+    const cards = staff.map((m) => tilt(h(
       'button',
       { class: `member ${m.active ? '' : 'paused'}`, type: 'button', onclick: () => openEditor(store, m, setStaff) },
-      h('div', { class: 'portrait' }, m.photo_url ? h('img', { src: m.photo_url, alt: '' }) : h('div', { class: 'placeholder' }, icon('camera'))),
+      h('div', { class: 'portrait' }, m.photo_url ? h('img', { src: m.photo_url, alt: '' }) : h('div', { class: 'placeholder' }, icon('camera')), h('div', { class: 'shine' })),
       m.active ? null : h('div', { class: 'flag' }, h('span', { class: 'pill', text: t('team.paused') })),
       h('div', { class: 'info' }, h('div', { class: 'name truncate', text: pick(m, 'name') }), h('div', { class: 'role truncate', text: pick(m, 'title') || t('team.services_n', { n: m.service_ids.length }) })),
-    ));
+    )));
     const addTile = h('button', { class: 'add-member', type: 'button', onclick: () => openEditor(store, null, setStaff) }, h('div', { class: 'tile' }, icon('plus')), h('span', { text: t('team.add') }));
     clear(
       el,
