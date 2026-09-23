@@ -1,0 +1,32 @@
+{
+  "name": "salon-booking",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Multi-tenant salon booking platform: each salon gets its own branded app on a subdomain.",
+  "type": "module",
+  "engines": {
+    "node": ">=20.9"
+  },
+  "scripts": {
+    "dev": "tsx watch --clear-screen=false src/server.ts",
+    "start": "node dist/server.js",
+    "build": "tsc -p tsconfig.json && node scripts/build-web.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p scripts/tsconfig.json --noEmit",
+    "migrate": "tsx src/migrate.ts",
+    "seed": "tsx src/seed.ts",
+    "test:api": "tsx scripts/test-api.ts",
+    "screenshots": "tsx scripts/screenshots.ts"
+  },
+  "dependencies": {
+    "pg": "^8.23.0",
+    "sharp": "^0.35.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.43",
+    "@types/pg": "^8.23.1",
+    "puppeteer-core": "^24.43.1",
+    "terser": "^5.51.2",
+    "tsx": "^4.23.15",
+    "typescript": "~5.9.3"
+  }
+}
