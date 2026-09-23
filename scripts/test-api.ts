@@ -240,8 +240,13 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(logo, 200, 'upload logo');
   const index = await anon.get(A, '/');
   const html = index.body.toString('utf8');
-  const nonce = /nonce-([^']+)'/.exec(String(index.headers['content-security-policy']))?.[1];
-  expect(html.includes('<title>صالون أ</title>') && html.includes('--primary:#0f3d3e') && !!nonce && html.includes(`nonce="${nonce}"`), 'index.html carries salon title, colours and a CSP nonce');
+  const csp = String(index.headers['content-security-policy']);
+  const nonce = /nonce-([^']+)'/.exec(csp)?.[1];
+  expect(html.includes('<title>صالون أ</title>') && html.includes('--primary:#0f3d3e') && !!nonce && html.includes(`<style nonce="${nonce}">`) && html.includes(`<script nonce="${nonce}">`), 'index.html carries salon title, colours and a CSP nonce');
+  expect(html.includes('data-theme="public"') && /--studio-brand:#[0-9a-f]{6}/.test(html) && csp.includes(`script-src 'self' 'nonce-${nonce}'`), 'salon host starts on the public theme, with the studio accent ready');
+  const platformIndex = await anon.get(PLATFORM, '/');
+  const platformCsp = String(platformIndex.headers['content-security-policy']);
+  expect(platformIndex.body.toString('utf8').includes('data-theme="studio" data-platform="1"') && platformCsp.includes(`img-src 'self' blob: data: http://*.${DOMAIN}:${PORT}`), 'platform host is the studio and may show salon icons');
   const manifest = await anon.get(A, '/manifest.webmanifest');
   const m = JSON.parse(manifest.body.toString('utf8'));
   expect(m.name === 'صالون أ' && m.theme_color === '#0f3d3e' && m.dir === 'rtl' && m.icons.length === 3, 'per-salon manifest', m);
@@ -299,6 +304,31 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(staffList.json?.staff.find((s: any) => s.id === khalidId)?.service_ids.join() === String(cutId), 'links visible from the team side');
   expectStatus(await ownerA.patch(A, `/api/manage/services/${beardId}`, { active: false }), 200, 'hide a service');
 
+  section('Service icons and ready menus');
+  const withIcon = await ownerA.post(A, '/api/manage/services', { name_ar: 'حلاقة أطفال', duration_min: 20, price: '4', icon: '👦' });
+  expectStatus(withIcon, 201, 'service with an emoji icon');
+  expect(withIcon.json?.services.find((s: any) => s.id === withIcon.json.id)?.icon === '👦', 'icon saved');
+  expectStatus(await ownerA.post(A, '/api/manage/services', { name_ar: 'x', duration_min: 20, price: '4', icon: '💩' }), 400, 'icon outside the set', 'invalid');
+  const salonOptions = (await ownerA.get(A, '/api/manage/salon')).json?.options;
+  expect(Array.isArray(salonOptions?.service_icons) && salonOptions.service_icons.includes('💇‍♀️'), 'the icon set is offered to the owner');
+  const beforeBulk = (await ownerA.get(A, '/api/manage/services')).json.services.length;
+  const bulk = await ownerA.post(A, '/api/manage/services/bulk', {
+    services: [
+      { name_ar: 'استشوار', name_en: 'Blow-dry', duration_min: 45, price: '8', icon: '✨' },
+      { name_ar: 'صبغة', duration_min: 120, price: '30', price_is_from: true, icon: '🎨' },
+      { name_ar: 'مانيكير', duration_min: 45, price: '6.500', icon: '💅' },
+    ],
+  });
+  expectStatus(bulk, 201, 'add a ready menu in one go');
+  const added = bulk.json?.services.slice(-3) ?? [];
+  expect(bulk.json?.services.length === beforeBulk + 3 && added.every((s: any) => s.staff_ids.length === 2) && added[1]?.price_is_from === true, 'menu services added in order, offered by the whole team', added);
+  const badBulk = await ownerA.post(A, '/api/manage/services/bulk', { services: [{ name_ar: 'أ', duration_min: 30, price: '5' }, { name_ar: 'ب', duration_min: 30, price: 'free' }] });
+  expectStatus(badBulk, 400, 'one bad price rejects the whole menu', 'invalid');
+  expect(badBulk.json?.field === 'services.1.price', 'error points at the item and field', badBulk.json);
+  expect((await ownerA.get(A, '/api/manage/services')).json.services.length === beforeBulk + 3, 'nothing half-added');
+  expectStatus(await ownerA.post(A, '/api/manage/services/bulk', { services: [] }), 400, 'empty menu', 'invalid');
+  expectStatus(await ownerB.post(A, '/api/manage/services/bulk', { services: [{ name_ar: 'x', duration_min: 30, price: '5' }] }), 401, "B's session cannot add to A");
+
   section('Photos');
   const upload = await ownerA.upload(A, `/api/manage/staff/${ahmadId}/photo`, await portraitJpeg(1400, 900));
   expectStatus(upload, 200, 'upload a landscape photo');
@@ -335,9 +365,10 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await ownerA.patch(A, `/api/manage/staff/${khalidId}`, { active: false }), 200, 'pause a team member');
   const pub = await anon.get(A, '/api/public/salon');
   expectStatus(pub, 200, 'public salon data needs no login');
-  expect(pub.json?.services.length === 1 && pub.json.services[0].id === cutId, 'hidden services left out', pub.json?.services);
+  expect(!pub.json?.services.some((s: any) => s.id === beardId) && pub.json?.services.some((s: any) => s.id === cutId), 'hidden services left out', pub.json?.services?.map((s: any) => s.id));
+  expect(pub.json?.services.every((s: any) => typeof s.icon === 'string'), 'public services carry their icon');
   expect(pub.json?.staff.length === 1 && pub.json.staff[0].id === ahmadId, 'paused members left out', pub.json?.staff);
-  expect(pub.json?.services[0].staff_ids.join() === String(ahmadId), "paused members left out of a service's team");
+  expect(pub.json?.services.find((s: any) => s.id === cutId)?.staff_ids.join() === String(ahmadId), "paused members left out of a service's team");
   expect(!('tenant_id' in (pub.json?.salon ?? {})), 'no internal fields in public data');
 
   section('Deleting');

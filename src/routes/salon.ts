@@ -6,6 +6,7 @@ import { ok, readJson, type Ctx, type Router } from '../http.js';
 import { deleteMedia, intakeImage, mediaUrl, PHOTO_STYLES, readImageUpload, saveMedia } from '../media.js';
 import { SALON_COLUMNS, type Salon } from '../tenancy.js';
 import { color, currency, CURRENCIES, Input, oneOf, text, timezone } from '../validate.js';
+import { SERVICE_ICONS } from './services.js';
 import { rerenderTeamPhotos } from './staff.js';
 
 async function salonBody(salonId: number) {
@@ -14,7 +15,7 @@ async function salonBody(salonId: number) {
   return {
     salon: { ...rest, logo_url: mediaUrl(logo_media_id) },
     hours: await loadSalonWeek(pool, salonId),
-    options: { currencies: CURRENCIES, photo_styles: PHOTO_STYLES },
+    options: { currencies: CURRENCIES, photo_styles: PHOTO_STYLES, service_icons: SERVICE_ICONS },
   };
 }
 

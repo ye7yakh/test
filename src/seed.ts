@@ -90,19 +90,19 @@ async function seedDemoSalon(tenant: { id: number; default_timezone: string; def
     await query(`insert into salon_members (salon_id, user_id, role) values ($1, $2, 'owner')`, [salonId, owner!.id], db);
     await saveSalonWeek(db, salonId, defaultWeek());
 
-    const services: [string, string, number, string, boolean][] = [
-      ['قص شعر', 'Haircut', 30, '50', false],
-      ['حلاقة ذقن', 'Beard trim', 20, '30', false],
-      ['قص شعر مع ذقن', 'Haircut & beard', 45, '70', false],
-      ['صبغة شعر', 'Hair colour', 60, '120', true],
-      ['تنظيف بشرة', 'Facial', 40, '90', false],
+    const services: [string, string, number, string, boolean, string][] = [
+      ['قص شعر', 'Haircut', 30, '50', false, '✂️'],
+      ['حلاقة ذقن', 'Beard trim', 20, '30', false, '🧔'],
+      ['قص شعر مع ذقن', 'Haircut & beard', 45, '70', false, '💈'],
+      ['صبغة شعر', 'Hair colour', 60, '120', true, '🎨'],
+      ['تنظيف بشرة', 'Facial', 40, '90', false, '🧖'],
     ];
     const serviceIds: number[] = [];
-    for (const [i, [ar, en, min, price, from]] of services.entries()) {
+    for (const [i, [ar, en, min, price, from, icon]] of services.entries()) {
       const row = await one<{ id: number }>(
-        `insert into services (salon_id, name_ar, name_en, duration_min, price, price_is_from, sort_order)
-         values ($1, $2, $3, $4, $5, $6, $7) returning id`,
-        [salonId, ar, en, min, price, from, i + 1],
+        `insert into services (salon_id, name_ar, name_en, duration_min, price, price_is_from, icon, sort_order)
+         values ($1, $2, $3, $4, $5, $6, $7, $8) returning id`,
+        [salonId, ar, en, min, price, from, icon, i + 1],
         db,
       );
       serviceIds.push(row!.id);

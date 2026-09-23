@@ -1,5 +1,6 @@
+// Sign-in for salon owners (on the salon's subdomain) and the platform admin.
 import { api } from '../api.js';
-import { field, h, icon, input, markInvalid } from '../dom.js';
+import { appIcon, field, h, icon, input, markInvalid } from '../dom.js';
 import { errorText, pick, t } from '../i18n.js';
 
 export function loginView(app) {
@@ -7,14 +8,25 @@ export function loginView(app) {
   const salon = ctx.salon;
   const phone = input({ type: 'tel', name: 'phone', autocomplete: 'username', inputmode: 'tel', required: true });
   const password = input({ type: 'password', name: 'password', autocomplete: 'current-password', required: true });
+  const reveal = h('button', { class: 'pw-toggle', type: 'button', 'aria-label': t('login.show'), 'aria-pressed': 'false' }, icon('eye'));
+  reveal.addEventListener('click', () => {
+    const show = password.type === 'password';
+    password.type = show ? 'text' : 'password';
+    reveal.setAttribute('aria-pressed', String(show));
+    reveal.replaceChildren(icon(show ? 'eyeOff' : 'eye'));
+  });
   const error = h('p', { class: 'form-error', role: 'alert', hidden: true });
   const submit = h('button', { class: 'btn btn-primary btn-block', type: 'submit', text: t('login.submit') });
 
+  const pwField = field(t('login.password'), password);
+  pwField.classList.add('has-toggle');
+  pwField.append(reveal);
+
   const form = h(
     'form',
-    { class: 'card stack', novalidate: true },
-    field(t('login.phone'), phone),
-    field(t('login.password'), password),
+    { class: 'card', novalidate: true },
+    h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${ctx.tenant.calling_code}` }), field(t('login.phone'), phone)),
+    h('div', { style: { marginTop: '12px' } }, pwField),
     error,
     submit,
   );
@@ -40,22 +52,23 @@ export function loginView(app) {
   const name = salon ? pick(salon, 'name') : ctx.tenant.name;
   return h(
     'div',
-    { class: 'page login-wrap' },
+    { class: 'login' },
+    h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h(
       'div',
-      { class: 'login-card' },
+      { class: 'login-inner' },
       h(
         'div',
-        { class: 'login-brand' },
-        h('div', { class: 'logo' }, salon?.logo_url ? h('img', { src: salon.logo_url, alt: '' }) : name.charAt(0)),
-        h('h1', { text: name }),
-        h('p', { class: 'muted', text: salon ? t('login.title') : t('login.platform') }),
+        { class: 'login-brand rise' },
+        salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon' }, icon('sparkles')),
+        h('h1', { text: t('login.welcome') }),
+        h('p', { text: salon ? t('login.studio', { name }) : `${name} · ${t('login.platform')}` }),
       ),
-      form,
+      h('div', { class: 'rise', style: { '--i': '1' } }, form),
       h(
         'div',
-        { class: 'row between', style: { marginTop: '12px' } },
-        salon ? h('a', { class: 'link-btn', href: '#/', text: t('login.back') }) : h('span'),
+        { class: 'login-foot rise', style: { '--i': '2' } },
+        salon ? h('a', { class: 'link-btn', href: '#/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
         h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
       ),
     ),

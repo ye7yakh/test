@@ -1,61 +1,95 @@
-// Services tab: the menu, with duration, price and who performs each service.
+// Services: the menu with duration, price and who performs each service. New salons
+// start from a ready menu for their type and only set their prices.
 import { api } from '../api.js';
-import { avatar, busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, switchEl, toast } from '../dom.js';
-import { fmtDuration, fmtPrice, pick, t, westernDigits } from '../i18n.js';
+import { avatar, busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast } from '../dom.js';
+import { currencySymbol, fmtDuration, fmtPrice, pick, t, westernDigits } from '../i18n.js';
+import { SALON_TYPES, SERVICE_TEMPLATES } from '../templates.js';
 
-const QUICK_DURATIONS = [15, 30, 45, 60, 90];
+const DURATIONS = [15, 20, 30, 45, 60, 90, 120];
+const PRICE = /^\d{1,7}(\.\d{1,3})?$/;
+
+/** Links changed, so each member's own list of services did too. */
+function withServices(store, services) {
+  return {
+    services,
+    staff: store.staff.map((m) => ({ ...m, service_ids: services.filter((s) => s.staff_ids.includes(m.id)).map((s) => s.id) })),
+  };
+}
+
+function priceInput(value, attrs = {}) {
+  const el = h('input', { name: 'price', inputmode: 'decimal', autocomplete: 'off', value, placeholder: '0', ...attrs });
+  el.addEventListener('input', () => {
+    el.value = westernDigits(el.value).replace(/[^\d.]/g, '');
+  });
+  return el;
+}
 
 function openEditor(store, service, onSaved) {
   const isNew = !service;
-  const s = service ?? { name_ar: '', name_en: '', description_ar: '', duration_min: 30, price: '', price_is_from: false, active: true, staff_ids: store.staff.map((m) => m.id) };
-  const f = {
-    name_ar: input({ name: 'name_ar', value: s.name_ar, maxlength: 80, required: true }),
-    name_en: input({ name: 'name_en', value: s.name_en, maxlength: 80, dir: 'ltr' }),
-    description_ar: input({ name: 'description_ar', value: s.description_ar, maxlength: 300 }),
-    duration_min: input({ name: 'duration_min', class: 'input num', value: String(s.duration_min), inputmode: 'numeric' }),
-    price: input({ name: 'price', class: 'input num', value: s.price ? String(Number(s.price)) : '', inputmode: 'decimal', placeholder: '0' }),
-  };
-  // Show Western digits as people type, whatever their keyboard sends.
-  for (const el of [f.duration_min, f.price]) el.addEventListener('input', () => { el.value = westernDigits(el.value); });
-  const quick = h('div', { class: 'chips', style: { marginTop: '8px' } }, QUICK_DURATIONS.map((m) => h('button', {
-    class: 'btn btn-ghost btn-sm', type: 'button', text: String(m), onclick: () => { f.duration_min.value = String(m); },
+  const icons = store.options.service_icons;
+  const s = service ?? { name_ar: '', name_en: '', description_ar: '', duration_min: 30, price: '', price_is_from: false, active: true, icon: icons[0], staff_ids: store.staff.map((m) => m.id) };
+  let chosenIcon = s.icon;
+  let duration = s.duration_min;
+
+  const iconPicker = h('div', { class: 'scroller emoji-picker', role: 'radiogroup', 'aria-label': t('services.icon') });
+  const renderIcons = () => clear(iconPicker, icons.map((e) => h('button', {
+    class: `emoji-opt ${e === chosenIcon ? 'on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(e === chosenIcon), text: e,
+    onclick: () => { chosenIcon = e; renderIcons(); },
   })));
-  const from = switchEl(s.price_is_from);
-  const active = switchEl(s.active);
-  const staffPick = chips(store.staff.map((m) => ({ id: m.id, label: pick(m, 'name') })), s.staff_ids);
+  renderIcons();
+
+  const nameAr = input({ name: 'name_ar', value: s.name_ar, maxlength: 80 });
+  const nameEn = input({ name: 'name_en', value: s.name_en, maxlength: 80, dir: 'ltr' });
+  const desc = input({ name: 'description_ar', value: s.description_ar, maxlength: 300 });
+
+  const durationValue = h('span', { class: 'v num' });
+  const durationChips = h('div', { class: 'scroller' });
+  const renderDuration = () => {
+    durationValue.textContent = fmtDuration(duration);
+    clear(durationChips, DURATIONS.map((m) => h('button', { class: `chip-btn num ${m === duration ? 'on' : ''}`, type: 'button', text: t('unit.min_short', { n: m }), onclick: () => { duration = m; renderDuration(); } })));
+  };
+  const step = (d) => () => {
+    duration = Math.min(600, Math.max(5, duration + d));
+    renderDuration();
+  };
+  renderDuration();
+
+  const price = priceInput(s.price ? String(Number(s.price)) : '');
+  const from = switchRow(t('services.from'), t('services.from_sub'), s.price_is_from);
+  const active = switchRow(t('services.bookable'), t('services.bookable_sub'), s.active);
+  const who = chips(store.staff.map((m) => ({ id: m.id, label: pick(m, 'name'), img: m.photo_url })), s.staff_ids);
 
   const form = h(
     'form',
     { novalidate: true },
-    field(t('services.name_ar'), f.name_ar),
-    field(t('services.name_en'), f.name_en, { optional: true }),
-    field(t('services.description_ar'), f.description_ar, { optional: true }),
-    h('div', { class: 'field-row', style: { marginTop: '14px' } }, field(t('services.duration'), f.duration_min), field(`${t('services.price')} (${store.salon.currency})`, f.price)),
-    quick,
-    h('div', { class: 'switch-row', style: { marginTop: '10px' } }, h('span', { class: 'small', text: t('services.price_is_from') }), from.el),
-    h('div', { class: 'switch-row' }, h('span', { class: 'small', text: t('services.active') }), active.el),
-    h(
-      'div',
-      { class: 'field', style: { marginTop: '14px' } },
-      h('span', { class: 'label', text: t('services.staff') }),
-      store.staff.length ? staffPick.el : h('p', { class: 'muted small', text: t('services.no_staff') }),
-    ),
+    h('span', { class: 'field-label', text: t('services.icon') }),
+    iconPicker,
+    h('div', { style: { marginTop: '18px' } }, field(t('services.name'), nameAr), field(t('services.name_en'), nameEn, { optional: true }), field(t('services.desc'), desc, { optional: true })),
+    h('span', { class: 'field-label', text: t('services.duration') }),
+    durationChips,
+    h('div', { class: 'row', style: { marginTop: '10px' } }, h('span', { class: 'small muted grow', text: t('services.custom') }), h('div', { class: 'stepper' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': '-5', onclick: step(-5) }, icon('minus')), durationValue, h('button', { class: 'icon-btn', type: 'button', 'aria-label': '+5', onclick: step(5) }, icon('plus')))),
+    h('span', { class: 'field-label', text: t('services.price') }),
+    h('label', { class: 'price-field' }, price, h('span', { class: 'cur', text: currencySymbol(store.salon.currency) })),
+    h('div', { style: { marginTop: '6px' } }, from.el, active.el),
+    h('span', { class: 'field-label', text: t('services.who') }),
+    store.staff.length ? who.el : h('p', { class: 'small muted', text: t('services.no_team') }),
   );
 
   const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
-  const del = isNew ? null : h('button', { class: 'btn btn-danger', type: 'button' }, icon('trash'), t('delete'));
-  const panel = sheet({ title: isNew ? t('services.add') : t('services.edit'), body: form, actions: [del, save].filter(Boolean) });
+  const del = isNew ? null : h('button', { class: 'icon-btn danger', type: 'button', 'aria-label': t('delete') }, icon('trash'));
+  const panel = sheet({ title: isNew ? t('services.add') : t('services.edit'), body: form, actions: [del, save], tall: true });
 
   const submit = () => busy(save, async () => {
     const body = {
-      name_ar: f.name_ar.value,
-      name_en: f.name_en.value,
-      description_ar: f.description_ar.value,
-      duration_min: Number(westernDigits(f.duration_min.value)) || 0,
-      price: westernDigits(f.price.value).trim() || '0',
+      icon: chosenIcon,
+      name_ar: nameAr.value,
+      name_en: nameEn.value,
+      description_ar: desc.value,
+      duration_min: duration,
+      price: price.value.trim() || '0',
       price_is_from: from.input.checked,
       active: active.input.checked,
-      staff_ids: staffPick.value(),
+      staff_ids: who.value(),
     };
     try {
       const res = isNew ? await api('POST', '/api/manage/services', body) : await api('PATCH', `/api/manage/services/${s.id}`, body);
@@ -68,7 +102,10 @@ function openEditor(store, service, onSaved) {
     }
   });
   save.addEventListener('click', submit);
-  form.addEventListener('submit', (e) => { e.preventDefault(); submit(); });
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    submit();
+  });
   del?.addEventListener('click', async () => {
     if (!(await confirmDelete())) return;
     busy(del, async () => {
@@ -79,17 +116,80 @@ function openEditor(store, service, onSaved) {
   });
 }
 
-export function servicesTab(store) {
+/** A ready menu for one salon type: tick what you offer, type your prices, add them all. */
+function openTemplates(store, typeId, onSaved) {
+  const allowed = new Set(store.options.service_icons);
+  const existing = new Set(store.services.map((s) => s.name_ar.trim()));
+  const rows = SERVICE_TEMPLATES[typeId].map((tpl) => {
+    const check = h('input', { type: 'checkbox', checked: !existing.has(tpl.ar), 'aria-label': tpl.ar });
+    const price = priceInput('', { class: 'price-mini', 'aria-label': t('services.tpl_price'), placeholder: t('services.tpl_price') });
+    const row = h(
+      'div',
+      { class: 'tpl-row' },
+      h('label', { class: 'check' }, check, h('span', null, icon('check'))),
+      h('div', { class: 'tile emoji-tile', text: tpl.icon }),
+      h('div', { class: 'grow' }, h('div', { style: { fontWeight: '500' }, text: pick({ name_ar: tpl.ar, name_en: tpl.en }, 'name') }), h('div', { class: 'small muted', text: fmtDuration(tpl.min) })),
+      price,
+    );
+    const sync = () => {
+      row.classList.toggle('off', !check.checked);
+      update();
+    };
+    check.addEventListener('change', sync);
+    price.addEventListener('input', () => {
+      price.classList.remove('invalid');
+      if (price.value && !check.checked) {
+        check.checked = true;
+        sync();
+      }
+    });
+    return { tpl, check, price, row, sync };
+  });
+
+  const add = h('button', { class: 'btn btn-primary', type: 'button' });
+  const update = () => {
+    const n = rows.filter((r) => r.check.checked).length;
+    add.textContent = t('services.tpl_add', { n });
+    add.disabled = n === 0;
+  };
+  const panel = sheet({
+    title: t(`type.${typeId}`),
+    body: h('div', null, h('p', { class: 'muted small', style: { marginBottom: '8px' }, text: t('services.tpl_sub') }), rows.map((r) => r.row)),
+    actions: [add],
+    tall: true,
+  });
+  rows.forEach((r) => r.sync());
+
+  add.addEventListener('click', () => busy(add, async () => {
+    const picked = rows.filter((r) => r.check.checked);
+    const bad = picked.filter((r) => !PRICE.test(r.price.value.trim()));
+    bad.forEach((r) => r.price.classList.add('invalid'));
+    if (bad.length) {
+      bad[0].price.focus();
+      return;
+    }
+    const res = await api('POST', '/api/manage/services/bulk', {
+      services: picked.map(({ tpl, price }) => ({
+        name_ar: tpl.ar,
+        name_en: tpl.en,
+        duration_min: tpl.min,
+        price: price.value.trim(),
+        price_is_from: !!tpl.from,
+        icon: allowed.has(tpl.icon) ? tpl.icon : store.options.service_icons[0],
+      })),
+    });
+    panel.close();
+    onSaved(res.services);
+    toast(t('services.added'));
+  }));
+}
+
+export function servicesPage(store) {
   let reordering = false;
   const el = h('div');
-  const staffById = () => new Map(store.staff.map((m) => [m.id, m]));
 
   const setServices = (services) => {
-    // Links changed, so each member's service list did too.
-    store.set({
-      services,
-      staff: store.staff.map((m) => ({ ...m, service_ids: services.filter((s) => s.staff_ids.includes(m.id)).map((s) => s.id) })),
-    });
+    store.set(withServices(store, services));
     render();
   };
 
@@ -102,44 +202,80 @@ export function servicesTab(store) {
     render();
   }
 
+  const typeButtons = (cls) => SALON_TYPES.map((type) => h(
+    'button',
+    { class: cls, type: 'button', onclick: () => openTemplates(store, type.id, setServices) },
+    h('span', { class: 'emoji', text: type.emoji }),
+    h('span', { class: 'nm', text: t(`type.${type.id}`) }),
+  ));
+
   function render() {
     const services = store.services;
-    const byId = staffById();
-    const add = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => openEditor(store, null, setServices) }, icon('plus'), t('services.add'));
-    const reorder = services.length > 1
-      ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: () => { reordering = !reordering; render(); } },
-          reordering ? t('services.reorder_done') : h('span', { class: 'row', style: { gap: '6px' } }, icon('sort'), t('services.reorder')))
-      : null;
+    const staffById = new Map(store.staff.map((m) => [m.id, m]));
+    const add = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('services.add'), title: t('services.add'), onclick: () => openEditor(store, null, setServices) }, icon('plus'));
+    const head = h(
+      'div',
+      { class: 's-head' },
+      h('div', { class: 'grow' }, h('h1', { class: 's-title' }, t('services.title'), services.length ? h('span', { class: 'count num', text: String(services.length) }) : null), h('p', { class: 's-sub', text: t('services.sub') })),
+      services.length > 1 ? h('button', { class: `icon-btn ${reordering ? 'on' : ''}`, type: 'button', 'aria-pressed': String(reordering), 'aria-label': t('services.reorder'), title: t('services.reorder'), onclick: () => { reordering = !reordering; render(); } }, icon(reordering ? 'check' : 'sort')) : null,
+      add,
+    );
 
-    const list = services.length
-      ? h('div', { class: 'card flush' }, h('ul', { class: 'list' }, services.map((s, i) => h(
-          'li',
-          { class: 'row', style: { gap: '0' } },
+    if (!services.length) {
+      clear(el, head, h(
+        'section',
+        { class: 'card glow quick rise' },
+        h('div', { class: 'tile', style: { marginBottom: '14px' } }, icon('wand')),
+        h('h2', { text: t('services.quick') }),
+        h('p', { text: t('services.quick_sub') }),
+        h('div', { class: 'type-grid' }, stagger(typeButtons('type-card'), 2)),
+        h('button', { class: 'link-btn', type: 'button', style: { marginTop: '16px' }, onclick: () => openEditor(store, null, setServices) }, icon('plus'), t('services.manual')),
+      ));
+      return;
+    }
+
+    const list = h('div', { class: 'card flush' }, h('ul', { class: 'list' }, stagger(services.map((s, i) => h(
+      'li',
+      { class: 'svc-row' },
+      h(
+        'button',
+        { class: `svc ${s.active ? '' : 'off'}`, type: 'button', disabled: reordering, onclick: () => openEditor(store, s, setServices) },
+        h('div', { class: 'tile emoji-tile', text: s.icon }),
+        h(
+          'div',
+          { class: 'grow' },
+          h('div', { class: 'name truncate', text: pick(s, 'name') }),
           h(
-            'button',
-            { class: 'list-item', type: 'button', disabled: reordering, onclick: () => openEditor(store, s, setServices) },
-            h(
-              'div',
-              { class: 'grow' },
-              h('div', { class: 'row', style: { gap: '8px' } }, h('h3', { text: pick(s, 'name') }), s.active ? null : h('span', { class: 'badge', text: t('services.hidden') })),
-              h('div', { class: 'meta' }, `${fmtDuration(s.duration_min)} · ${s.price_is_from ? `${t('pub.from')} ` : ''}${fmtPrice(s.price, store.salon.currency)}`),
-            ),
-            h('span', { class: 'avatar-stack' }, s.staff_ids.slice(0, 4).map((id) => (byId.get(id) ? avatar(byId.get(id).photo_url, pick(byId.get(id), 'name')) : null))),
+            'div',
+            { class: 'meta' },
+            h('span', { class: 'num', text: fmtDuration(s.duration_min) }),
+            s.active ? null : h('span', { class: 'pill off', text: t('services.hidden') }),
+            h('span', { class: 'avatar-stack' }, s.staff_ids.slice(0, 4).map((id) => staffById.get(id) && avatar(staffById.get(id).photo_url, pick(staffById.get(id), 'name')))),
           ),
-          reordering
-            ? h(
-                'div',
-                { class: 'row', style: { gap: '0', paddingInlineEnd: '8px' } },
-                h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↑', disabled: i === 0, onclick: (e) => busy(e.currentTarget, () => move(i, -1)) }, icon('up')),
-                h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↓', disabled: i === services.length - 1, onclick: (e) => busy(e.currentTarget, () => move(i, 1)) }, icon('down')),
-              )
-            : null,
-        ))))
-      : h('div', { class: 'card empty' }, icon('scissors'), h('p', { text: t('services.empty') }), h('div', { style: { marginTop: '12px' } }, h('button', {
-          class: 'btn btn-primary', type: 'button', onclick: () => openEditor(store, null, setServices),
-        }, icon('plus'), t('services.add'))));
+        ),
+        h('div', { class: 'price num' }, s.price_is_from ? h('small', { text: t('pub.from') }) : null, fmtPrice(s.price, store.salon.currency)),
+      ),
+      reordering
+        ? h(
+            'div',
+            { class: 'reorder' },
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↑', disabled: i === 0, onclick: (e) => busy(e.currentTarget, () => move(i, -1)) }, icon('up')),
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↓', disabled: i === services.length - 1, onclick: (e) => busy(e.currentTarget, () => move(i, 1)) }, icon('down')),
+          )
+        : null,
+    )))));
 
-    clear(el, h('div', { class: 'section-title' }, h('h2', { text: t('services.title') }), h('div', { class: 'row', style: { gap: '8px' } }, reorder, services.length ? add : null)), list);
+    clear(
+      el,
+      head,
+      list,
+      h(
+        'section',
+        { class: 'section' },
+        h('div', { class: 'section-head' }, h('h2', { class: 'row', style: { gap: '8px' } }, icon('wand'), t('services.more'))),
+        h('div', { class: 'scroller' }, typeButtons('chip-btn')),
+      ),
+    );
   }
 
   render();

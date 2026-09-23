@@ -3,12 +3,14 @@
 import { api } from './api.js';
 import { h, clear } from './dom.js';
 import { applyLang, setLang, getLang, t } from './i18n.js';
+import { reducedMotion, setTheme } from './theme.js';
 import { loginView } from './views/login.js';
 import { salonPage } from './views/salon-page.js';
-import { manageView } from './views/manage.js';
+import { clearManageCache, manageView } from './views/manage.js';
 import { adminView } from './views/admin.js';
 
 const root = document.getElementById('app');
+let unmount = [];
 
 const app = {
   ctx: null,
@@ -26,8 +28,13 @@ const app = {
   },
   async logout() {
     await api('POST', '/api/auth/logout').catch(() => {});
+    clearManageCache();
     app.ctx.user = null;
     app.go(app.ctx.kind === 'salon' ? '#/' : '#/login');
+  },
+  /** Views register cleanup (floating bars, listeners) for when they are replaced. */
+  onUnmount(fn) {
+    unmount.push(fn);
   },
   get canManage() {
     const role = app.ctx?.user?.role;
@@ -40,22 +47,34 @@ function route() {
   return { name, rest };
 }
 
-function render() {
+function build() {
   const { name, rest } = route();
   const ctx = app.ctx;
-  let view;
-  if (ctx.kind === 'platform') {
-    view = ctx.user ? adminView(app) : loginView(app);
-  } else if (name === 'login') {
-    view = loginView(app);
-  } else if (name === 'manage') {
-    if (!app.canManage) return app.go('#/login');
-    view = manageView(app, rest[0] || 'salon');
-  } else {
-    view = salonPage(app);
+  if (ctx.kind === 'platform') return { theme: 'studio', view: () => (ctx.user ? adminView(app) : loginView(app)) };
+  if (name === 'login') return { theme: 'studio', view: () => loginView(app) };
+  if (name === 'manage') {
+    if (!app.canManage) return { redirect: '#/login' };
+    return { theme: 'studio', view: () => manageView(app, rest[0] || 'home') };
   }
-  clear(root, view);
-  window.scrollTo(0, 0);
+  return { theme: 'public', view: () => salonPage(app) };
+}
+
+function render() {
+  const next = build();
+  if (next.redirect) return app.go(next.redirect);
+  const swap = () => {
+    for (const fn of unmount) fn();
+    unmount = [];
+    setTheme(next.theme);
+    clear(root, next.view());
+    window.scrollTo(0, 0);
+  };
+  // A soft cross-fade between screens where the browser supports it.
+  if (document.startViewTransition && !reducedMotion() && root.firstElementChild && !root.querySelector('.boot')) {
+    document.startViewTransition(swap);
+  } else {
+    swap();
+  }
 }
 
 async function boot() {
@@ -65,7 +84,7 @@ async function boot() {
   } catch {
     clear(
       root,
-      h('div', { class: 'boot' }, h('div', { class: 'stack', style: { textAlign: 'center' } },
+      h('div', { class: 'boot' }, h('div', { class: 'stack center' },
         h('p', { text: t('err.network') }),
         h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => location.reload() }),
       )),
@@ -75,6 +94,7 @@ async function boot() {
   window.addEventListener('hashchange', render);
   window.addEventListener('session-expired', () => {
     app.ctx.user = null;
+    clearManageCache();
     app.go('#/login');
   });
   render();

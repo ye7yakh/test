@@ -1,140 +1,173 @@
-// Team tab: barbers and stylists, their photos (restyled server-side into the salon's
-// unified look), the services they offer and their working hours.
+// Team: barbers and stylists as portrait cards. Adding a photo plays the studio
+// touch (the server's unified rendering) and reveals a before/after comparison.
 import { api, pickImage, prepareImage } from '../api.js';
-import { busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, switchEl, toast } from '../dom.js';
+import { busy, chips, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast, toastError } from '../dom.js';
 import { hoursEditor } from '../hours-editor.js';
 import { pick, t } from '../i18n.js';
 
-function portrait(url, name) {
-  return h('div', { class: 'portrait' }, url ? h('img', { src: url, alt: name || '' }) : h('div', { class: 'placeholder' }, icon('camera')));
+/** Drag across the photo to compare the original with the studio version. */
+function compare(beforeUrl, afterUrl, { reveal = false } = {}) {
+  const after = h('img', { src: afterUrl, alt: '', class: reveal ? 'reveal' : '' });
+  const el = h(
+    'div',
+    { class: 'portrait compare hint', style: { '--pos': '50%' }, role: 'slider', tabindex: '0', 'aria-label': t('team.compare_hint'), 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': '50' },
+    after,
+    h('div', { class: 'before' }, h('img', { src: beforeUrl, alt: '' })),
+    h('div', { class: 'handle' }),
+    h('span', { class: 'tag l', text: t('team.before') }),
+    h('span', { class: 'tag r', text: t('team.after') }),
+  );
+  const set = (pct) => {
+    const v = Math.min(100, Math.max(0, pct));
+    el.style.setProperty('--pos', `${v}%`);
+    el.setAttribute('aria-valuenow', String(Math.round(v)));
+  };
+  let dragging = false;
+  const move = (e) => {
+    const r = el.getBoundingClientRect();
+    set(((e.clientX - r.left) / r.width) * 100);
+  };
+  el.addEventListener('pointerdown', (e) => {
+    dragging = true;
+    el.classList.remove('hint');
+    el.setPointerCapture(e.pointerId);
+    move(e);
+  });
+  el.addEventListener('pointermove', (e) => dragging && move(e));
+  el.addEventListener('pointerup', () => { dragging = false; });
+  el.addEventListener('keydown', (e) => {
+    const cur = parseFloat(el.style.getPropertyValue('--pos'));
+    if (e.key === 'ArrowLeft') set(cur - 5);
+    if (e.key === 'ArrowRight') set(cur + 5);
+  });
+  return el;
+}
+
+function processing() {
+  return h('div', { class: 'processing' }, h('div', { class: 'msg' }, icon('sparkles'), h('span', { text: t('team.processing') })));
 }
 
 function openEditor(store, member, onSaved) {
   const isNew = !member;
-  const m = member ?? { name_ar: '', name_en: '', title_ar: '', title_en: '', active: true, custom_hours: false, hours: null, service_ids: store.services.map((s) => s.id) };
-  let pendingPhoto = null; // chosen before a new member is saved
+  let m = member ?? { name_ar: '', name_en: '', title_ar: '', title_en: '', active: true, custom_hours: false, hours: null, service_ids: store.services.map((s) => s.id) };
+  let pending = null; // a photo chosen before a new member is saved
 
-  const f = {
-    name_ar: input({ name: 'name_ar', value: m.name_ar, maxlength: 60, required: true }),
-    title_ar: input({ name: 'title_ar', value: m.title_ar, maxlength: 60, placeholder: t('team.title_placeholder') }),
-    name_en: input({ name: 'name_en', value: m.name_en, maxlength: 60, dir: 'ltr' }),
-    title_en: input({ name: 'title_en', value: m.title_en, maxlength: 60, dir: 'ltr' }),
-  };
-  const active = switchEl(m.active);
-  const servicePick = chips(store.services.map((s) => ({ id: s.id, label: pick(s, 'name') })), m.service_ids);
-
-  // --- photo
-  const photoBox = h('div');
-  function renderPhoto(current) {
-    const hasPhoto = !!current.photo_url || !!pendingPhoto;
-    // Once there is a photo, show the owner's original next to the unified version.
-    const styled = portrait(current.photo_url, pick(current, 'name'));
-    const compare = !pendingPhoto && current.original_photo_url && current.photo_url
+  // ---- photo stage
+  const photo = h('div', { class: 'photo-stage' });
+  function renderPhoto({ reveal = false } = {}) {
+    const hasPhoto = !!m.photo_url || !!pending;
+    let visual;
+    if (pending) {
+      visual = h('div', { class: 'portrait' }, h('img', { src: URL.createObjectURL(pending), alt: '' }));
+    } else if (m.photo_url && m.original_photo_url) {
+      visual = h('div', { style: { position: 'relative' } }, compare(m.original_photo_url, m.photo_url, { reveal }), h('span', { class: 'studio-badge' }, icon('sparkles'), t('team.studio')));
+    } else {
+      visual = h('button', { class: 'drop', type: 'button', onclick: choose }, h('div', { class: 'tile' }, icon('camera')), h('b', { text: t('team.photo_add') }), h('small', { text: t('team.photo_add_sub') }));
+    }
+    const actions = hasPhoto
       ? h(
           'div',
-          { class: 'photo-compare' },
-          h('figure', null, portrait(current.original_photo_url), h('figcaption', { text: t('team.photo_original') })),
-          h('figure', null, styled, h('figcaption', { text: t('team.photo_styled') })),
+          { class: 'photo-actions' },
+          h('button', { class: 'btn btn-secondary btn-sm', type: 'button', onclick: choose }, icon('camera'), t('team.photo_change')),
+          !isNew && m.photo_url ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', onclick: (e) => remove(e.currentTarget) }, t('team.photo_remove')) : null,
         )
       : null;
-    const preview = compare ? styled : pendingPhoto ? portrait(URL.createObjectURL(pendingPhoto)) : styled;
-
-    const choose = h('button', { class: 'btn btn-ghost btn-sm', type: 'button' }, icon('camera'), hasPhoto ? t('team.photo_change') : t('team.photo_upload'));
-    choose.addEventListener('click', async () => {
-      const file = await pickImage();
-      if (!file) return;
-      const blob = await prepareImage(file);
-      if (isNew) {
-        pendingPhoto = blob;
-        renderPhoto(current);
-        return;
-      }
-      preview.classList.add('busy');
-      preview.append(h('div', { class: 'spinner' }));
-      await busy(choose, async () => {
-        const res = await api('PUT', `/api/manage/staff/${current.id}/photo`, blob);
-        onSaved(res.staff);
-        renderPhoto(res.staff.find((x) => x.id === current.id));
-      });
-      preview.classList.remove('busy');
-      preview.querySelector('.spinner')?.remove();
-    });
-    const remove = current.photo_url && !isNew ? h('button', { class: 'btn btn-danger btn-sm', type: 'button', text: t('team.photo_remove') }) : null;
-    remove?.addEventListener('click', () => busy(remove, async () => {
-      const res = await api('DELETE', `/api/manage/staff/${current.id}/photo`);
-      onSaved(res.staff);
-      renderPhoto(res.staff.find((x) => x.id === current.id));
-    }));
-
-    const actions = h(
-      'div',
-      { class: 'stack' },
-      h('p', { class: 'muted small', text: t('team.photo_hint') }),
-      h('div', { class: 'row', style: { flexWrap: 'wrap', gap: '8px' } }, choose, remove),
-    );
-    if (compare) clear(photoBox, compare, h('div', { style: { marginTop: '12px' } }, actions));
-    else clear(photoBox, h('div', { class: 'photo-edit' }, preview, actions));
+    clear(photo, visual, actions, m.photo_url && !pending ? h('p', { class: 'photo-hint', text: t('team.compare_hint') }) : null);
   }
-  renderPhoto(m);
 
-  // --- hours
-  const hoursBox = h('div', { style: { marginTop: '10px' } });
-  let editor = null;
-  const hoursMode = h(
-    'div',
-    { class: 'segmented', role: 'radiogroup' },
-    ['salon', 'custom'].map((mode) => {
-      const radio = h('input', { type: 'radio', name: 'hours_mode', value: mode, checked: (mode === 'custom') === m.custom_hours });
-      radio.addEventListener('change', renderHours);
-      return h('label', null, radio, h('span', { text: t(mode === 'salon' ? 'team.hours_salon' : 'team.hours_custom') }));
-    }),
-  );
-  const isCustom = () => hoursMode.querySelector('input:checked')?.value === 'custom';
-  function renderHours() {
-    if (!isCustom()) {
-      editor = null;
-      clear(hoursBox);
+  async function choose() {
+    const file = await pickImage();
+    if (!file) return;
+    const blob = await prepareImage(file);
+    if (isNew) {
+      pending = blob;
+      renderPhoto();
       return;
     }
-    editor = hoursEditor(m.hours ?? store.hours);
-    clear(hoursBox, editor.el);
+    // Show the original under the scanning overlay while the server renders.
+    clear(photo, h('div', { class: 'portrait', style: { position: 'relative' } }, h('img', { src: URL.createObjectURL(blob), alt: '' }), processing()));
+    try {
+      const res = await api('PUT', `/api/manage/staff/${m.id}/photo`, blob);
+      m = res.staff.find((x) => x.id === m.id) ?? m;
+      onSaved(res.staff);
+      renderPhoto({ reveal: true });
+      photo.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    } catch (err) {
+      renderPhoto();
+      toastError(err);
+    }
+  }
+
+  async function remove(button) {
+    await busy(button, async () => {
+      const res = await api('DELETE', `/api/manage/staff/${m.id}/photo`);
+      m = res.staff.find((x) => x.id === m.id) ?? m;
+      onSaved(res.staff);
+      renderPhoto();
+    });
+  }
+  renderPhoto();
+
+  // ---- details
+  const nameAr = input({ name: 'name_ar', value: m.name_ar, maxlength: 60 });
+  const titleAr = input({ name: 'title_ar', value: m.title_ar, maxlength: 60 });
+  const nameEn = input({ name: 'name_en', value: m.name_en, maxlength: 60, dir: 'ltr' });
+  const titleEn = input({ name: 'title_en', value: m.title_en, maxlength: 60, dir: 'ltr' });
+  const offered = chips(store.services.map((s) => ({ id: s.id, label: pick(s, 'name'), emoji: s.icon })), m.service_ids);
+  const active = switchRow(t('team.active'), t('team.active_sub'), m.active);
+
+  // ---- hours
+  const hoursBox = h('div', { style: { marginTop: '12px' } });
+  let editor = null;
+  const mode = h(
+    'div',
+    { class: 'segmented', role: 'radiogroup', 'aria-label': t('team.hours') },
+    ['salon', 'own'].map((v) => {
+      const radio = h('input', { type: 'radio', name: 'hours_mode', value: v, checked: (v === 'own') === m.custom_hours });
+      radio.addEventListener('change', renderHours);
+      return h('label', null, radio, h('span', { text: t(v === 'salon' ? 'team.hours_salon' : 'team.hours_own') }));
+    }),
+  );
+  const own = () => mode.querySelector('input:checked')?.value === 'own';
+  function renderHours() {
+    editor = own() ? hoursEditor(m.hours ?? store.hours, { timezone: store.salon.timezone }) : null;
+    clear(hoursBox, editor ? h('div', { class: 'card flush rise' }, editor.el) : null);
   }
   renderHours();
 
   const form = h(
     'form',
-    { novalidate: true, class: 'stack-lg' },
-    h('div', { class: 'field' }, h('span', { class: 'label', text: t('team.photo') }), photoBox),
-    h(
-      'div',
-      null,
-      field(t('team.name_ar'), f.name_ar),
-      field(t('team.title_ar'), f.title_ar, { optional: true }),
-      h('div', { class: 'field-row', style: { marginTop: '14px' } }, field(t('team.name_en'), f.name_en, { optional: true }), field(t('team.title_en'), f.title_en, { optional: true })),
-    ),
-    h('div', { class: 'field' }, h('span', { class: 'label', text: t('team.services') }), store.services.length ? servicePick.el : h('p', { class: 'muted small', text: t('team.no_services') })),
-    h('div', { class: 'field' }, h('span', { class: 'label', text: t('team.hours') }), hoursMode, hoursBox),
-    h('div', { class: 'switch-row' }, h('span', { text: t('team.active') }), active.el),
+    { novalidate: true },
+    photo,
+    h('div', { style: { marginTop: '22px' } }, h('div', { class: 'f-row' }, field(t('team.name'), nameAr), field(t('team.role'), titleAr, { hint: t('team.role_ph') }))),
+    h('div', { class: 'f-row', style: { marginTop: '12px' } }, field(t('team.name_en'), nameEn, { optional: true }), field(t('team.role_en'), titleEn, { optional: true })),
+    h('span', { class: 'field-label', text: t('team.services') }),
+    store.services.length ? offered.el : h('p', { class: 'small muted', text: t('team.no_services') }),
+    h('span', { class: 'field-label', text: t('team.hours') }),
+    mode,
+    hoursBox,
+    h('div', { style: { marginTop: '10px' } }, active.el),
   );
+  form.addEventListener('submit', (e) => e.preventDefault());
 
   const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
-  const del = isNew ? null : h('button', { class: 'btn btn-danger', type: 'button' }, icon('trash'), t('delete'));
-  const panel = sheet({ title: isNew ? t('team.add') : t('team.edit'), body: form, actions: [del, save].filter(Boolean) });
+  const del = isNew ? null : h('button', { class: 'icon-btn danger', type: 'button', 'aria-label': t('delete') }, icon('trash'));
+  const panel = sheet({ title: isNew ? t('team.add') : t('team.edit'), body: form, actions: [del, save], tall: true });
 
   save.addEventListener('click', () => busy(save, async () => {
     const body = {
-      name_ar: f.name_ar.value,
-      name_en: f.name_en.value,
-      title_ar: f.title_ar.value,
-      title_en: f.title_en.value,
+      name_ar: nameAr.value,
+      title_ar: titleAr.value,
+      name_en: nameEn.value,
+      title_en: titleEn.value,
       active: active.input.checked,
-      service_ids: servicePick.value(),
-      custom_hours: isCustom(),
-      ...(isCustom() ? { hours: editor.value() } : {}),
+      service_ids: offered.value(),
+      custom_hours: own(),
+      ...(own() ? { hours: editor.value() } : {}),
     };
     try {
       let res = isNew ? await api('POST', '/api/manage/staff', body) : await api('PATCH', `/api/manage/staff/${m.id}`, body);
-      if (isNew && pendingPhoto) res = await api('PUT', `/api/manage/staff/${res.id}/photo`, pendingPhoto);
+      if (isNew && pending) res = await api('PUT', `/api/manage/staff/${res.id}/photo`, pending);
       panel.close();
       onSaved(res.staff);
       toast(t('saved'));
@@ -154,7 +187,7 @@ function openEditor(store, member, onSaved) {
   });
 }
 
-export function teamTab(store) {
+export function teamPage(store) {
   const el = h('div');
 
   const setStaff = (staff) => {
@@ -168,20 +201,24 @@ export function teamTab(store) {
 
   function render() {
     const staff = store.staff;
-    const add = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: () => openEditor(store, null, setStaff) }, icon('plus'), t('team.add'));
-    const grid = staff.length
-      ? h('div', { class: 'team-grid' }, staff.map((m) => h(
-          'button',
-          { class: 'team-card', type: 'button', style: { background: 'none', border: '0', padding: '0', textAlign: 'start', cursor: 'pointer' }, onclick: () => openEditor(store, m, setStaff) },
-          portrait(m.photo_url, pick(m, 'name')),
-          h('div', { class: 'name', text: pick(m, 'name') }),
-          h('div', { class: 'role' }, pick(m, 'title') || t('team.services_count', { n: m.service_ids.length })),
-          m.active ? null : h('span', { class: 'badge', text: t('team.inactive') }),
-        )))
-      : h('div', { class: 'card empty' }, icon('users'), h('p', { text: t('team.empty') }), h('div', { style: { marginTop: '12px' } }, h('button', {
-          class: 'btn btn-primary', type: 'button', onclick: () => openEditor(store, null, setStaff),
-        }, icon('plus'), t('team.add'))));
-    clear(el, h('div', { class: 'section-title' }, h('h2', { text: t('team.title') }), staff.length ? add : null), grid);
+    const cards = staff.map((m) => h(
+      'button',
+      { class: `member ${m.active ? '' : 'paused'}`, type: 'button', onclick: () => openEditor(store, m, setStaff) },
+      h('div', { class: 'portrait' }, m.photo_url ? h('img', { src: m.photo_url, alt: '' }) : h('div', { class: 'placeholder' }, icon('camera'))),
+      m.active ? null : h('div', { class: 'flag' }, h('span', { class: 'pill', text: t('team.paused') })),
+      h('div', { class: 'info' }, h('div', { class: 'name truncate', text: pick(m, 'name') }), h('div', { class: 'role truncate', text: pick(m, 'title') || t('team.services_n', { n: m.service_ids.length }) })),
+    ));
+    const addTile = h('button', { class: 'add-member', type: 'button', onclick: () => openEditor(store, null, setStaff) }, h('div', { class: 'tile' }, icon('plus')), h('span', { text: t('team.add') }));
+    clear(
+      el,
+      h(
+        'div',
+        { class: 's-head' },
+        h('div', { class: 'grow' }, h('h1', { class: 's-title' }, t('team.title'), staff.length ? h('span', { class: 'count num', text: String(staff.length) }) : null), h('p', { class: 's-sub', text: t('team.sub') })),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('team.add'), title: t('team.add'), onclick: () => openEditor(store, null, setStaff) }, icon('plus')),
+      ),
+      h('div', { class: 'team-grid' }, stagger([...cards, addTile])),
+    );
   }
 
   render();

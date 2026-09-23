@@ -2,11 +2,17 @@
 import { requireOwner } from '../auth.js';
 import { one, pool, query, tx, type Db } from '../db.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
-import { bool, CURRENCIES, idList, Input, int, parseId, price, text, type Parser } from '../validate.js';
+import { bool, CURRENCIES, idList, Input, int, oneOf, parseId, price, text, type Parser } from '../validate.js';
+
+// The emoji an owner can give a service. Kept to a fixed set so every one renders well.
+export const SERVICE_ICONS = [
+  '✂️', '💈', '🧔', '🪒', '👦', '🎨', '💇‍♀️', '💇‍♂️', '💆', '💆‍♀️', '🧖', '💅', '🦶', '💄', '👰', '🧴', '✨', '🌿', '🔥', '👁️',
+] as const;
+const icon = oneOf(SERVICE_ICONS);
 
 const SERVICE_SELECT = `
   select s.id, s.name_ar, s.name_en, s.description_ar, s.description_en, s.duration_min, trim_scale(s.price)::text as price,
-         s.price_is_from, s.active, s.sort_order,
+         s.price_is_from, s.active, s.sort_order, s.icon,
          coalesce(array_agg(ss.staff_id order by ss.staff_id) filter (where ss.staff_id is not null), '{}') as staff_ids
     from services s
     left join staff_services ss on ss.service_id = s.id`;
@@ -58,6 +64,7 @@ function readService(ctx: Ctx, b: Input, creating: boolean) {
     price: pick('price', price(decimals)),
     price_is_from: b.opt('price_is_from', bool),
     active: b.opt('active', bool),
+    icon: b.opt('icon', icon),
   };
 }
 
@@ -69,12 +76,12 @@ async function createService(ctx: Ctx) {
   const id = await tx(async (db) => {
     const row = await one<{ id: number }>(
       `insert into services (salon_id, name_ar, name_en, description_ar, description_en, duration_min, price,
-                             price_is_from, active, sort_order)
-       values ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+                             price_is_from, active, icon, sort_order)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
                (select coalesce(max(sort_order), 0) + 1 from services where salon_id = $1))
        returning id`,
       [salonId, f.name_ar, f.name_en ?? '', f.description_ar ?? '', f.description_en ?? '', f.duration_min, f.price,
-        f.price_is_from ?? false, f.active ?? true],
+        f.price_is_from ?? false, f.active ?? true, f.icon ?? SERVICE_ICONS[0]],
       db,
     );
     // By default a new service is offered by the whole team.
@@ -83,6 +90,40 @@ async function createService(ctx: Ctx) {
     return row!.id;
   });
   ok(ctx, { services: await listServices(pool, salonId), id }, 201);
+}
+
+/** Several services at once, e.g. from a ready-made menu. Each is offered by the whole team. */
+async function createServices(ctx: Ctx) {
+  const salonId = requireOwner(ctx);
+  const body = await readJson(ctx);
+  const items = body.services;
+  if (!Array.isArray(items) || items.length < 1 || items.length > 30) throw new HttpError(400, 'invalid', 'services');
+  const rows = items.map((item, i) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) throw new HttpError(400, 'invalid', `services.${i}`);
+    try {
+      return readService(ctx, new Input(item as Record<string, unknown>), true);
+    } catch (err) {
+      if (err instanceof HttpError && err.field) err.field = `services.${i}.${err.field}`;
+      throw err;
+    }
+  });
+  await tx(async (db) => {
+    const staff = (await query<{ id: number }>('select id from staff where salon_id = $1', [salonId], db)).map((s) => s.id);
+    for (const f of rows) {
+      const row = await one<{ id: number }>(
+        `insert into services (salon_id, name_ar, name_en, description_ar, description_en, duration_min, price,
+                               price_is_from, active, icon, sort_order)
+         values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10,
+                 (select coalesce(max(sort_order), 0) + 1 from services where salon_id = $1))
+         returning id`,
+        [salonId, f.name_ar, f.name_en ?? '', f.description_ar ?? '', f.description_en ?? '', f.duration_min, f.price,
+          f.price_is_from ?? false, f.active ?? true, f.icon ?? SERVICE_ICONS[0]],
+        db,
+      );
+      await setLinks(db, salonId, { serviceId: row!.id }, staff);
+    }
+  });
+  ok(ctx, { services: await listServices(pool, salonId) }, 201);
 }
 
 async function updateService(ctx: Ctx) {
@@ -131,6 +172,7 @@ async function reorderServices(ctx: Ctx) {
 export function serviceRoutes(r: Router) {
   r.get('/api/manage/services', async (ctx) => ok(ctx, { services: await listServices(pool, requireOwner(ctx)) }));
   r.post('/api/manage/services', createService);
+  r.post('/api/manage/services/bulk', createServices);
   r.put('/api/manage/services/order', reorderServices);
   r.patch('/api/manage/services/:id', updateService);
   r.delete('/api/manage/services/:id', deleteService);

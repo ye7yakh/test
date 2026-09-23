@@ -28,7 +28,7 @@ async function publicSalon(ctx: Ctx) {
   const salon = requireSalon(ctx);
   const [services, staff, hours] = await Promise.all([
     query(
-      `select s.id, s.name_ar, s.name_en, s.description_ar, s.description_en, s.duration_min, trim_scale(s.price)::text as price, s.price_is_from,
+      `select s.id, s.name_ar, s.name_en, s.description_ar, s.description_en, s.duration_min, trim_scale(s.price)::text as price, s.price_is_from, s.icon,
               coalesce(array_agg(st.id order by st.sort_order, st.id) filter (where st.id is not null), '{}') as staff_ids
          from services s
          left join staff_services ss on ss.service_id = s.id

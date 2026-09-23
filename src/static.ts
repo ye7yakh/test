@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { config } from './config.js';
-import { HttpError, type Ctx } from './http.js';
+import { HttpError, requestProto, type Ctx } from './http.js';
 
 const TYPES: Record<string, string> = {
   '.js': 'text/javascript; charset=utf-8',
@@ -63,16 +63,43 @@ export async function serveAsset(ctx: Ctx): Promise<boolean> {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-/** Black or white, whichever reads better on the given background. */
-export function onColor(hex: string): string {
+function luminance(hex: string): number {
   const n = parseInt(hex.slice(1), 16);
   const lin = (c: number) => {
     const v = c / 255;
     return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
   };
-  const L = 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
+}
+
+/** Black or white, whichever reads better on the given background. */
+export function onColor(hex: string): string {
+  const L = luminance(hex);
   return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#111111' : '#ffffff';
 }
+
+const STUDIO_SURFACE = '#141418';
+
+/**
+ * The accent as the owner's dark studio uses it: lifted towards white until it
+ * stands out from the dark surfaces (3:1), so a navy accent still reads.
+ * Mirrored in web/assets/js/theme.js.
+ */
+export function studioBrand(accent: string): string {
+  const bg = luminance(STUDIO_SURFACE);
+  const n = parseInt(accent.slice(1), 16);
+  const rgb = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  for (let mix = 0; mix <= 0.9; mix += 0.05) {
+    const hex = `#${rgb.map((c) => Math.round(c + (255 - c) * mix).toString(16).padStart(2, '0')).join('')}`;
+    if ((luminance(hex) + 0.05) / (bg + 0.05) >= 3) return hex;
+  }
+  return '#ffffff';
+}
+
+// Owner screens (and the whole platform host) use the dark studio theme; the
+// salon's public page is light. Set before first paint so there is no flash.
+const BOOT_SCRIPT = `(function(){var s=/^#\\/(manage|login)/.test(location.hash)||document.documentElement.dataset.platform==='1';
+if(s){document.documentElement.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content='#09090b';}})();`;
 
 export async function serveIndex(ctx: Ctx): Promise<void> {
   const template = await readCached(path.join(config.webDir, 'index.html'));
@@ -80,6 +107,7 @@ export async function serveIndex(ctx: Ctx): Promise<void> {
   const salon = ctx.host.salon;
   const primary = salon?.color_primary ?? '#1f2a37';
   const accent = salon?.color_accent ?? '#c8a15a';
+  const brand = studioBrand(accent);
   const title = salon ? salon.name_ar : ctx.host.tenant.name;
   const head = salon
     ? `<link rel="manifest" href="/manifest.webmanifest">
@@ -89,21 +117,26 @@ export async function serveIndex(ctx: Ctx): Promise<void> {
 <meta name="apple-mobile-web-app-title" content="${escapeHtml(title)}">`
     : '';
   const nonce = crypto.randomBytes(16).toString('base64');
-  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)}}`;
+  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)};--studio-brand:${brand};--on-studio-brand:${onColor(brand)}}`;
   const html = template.body
     .toString('utf8')
+    .replace('data-theme="{{mode}}"', salon ? 'data-theme="public"' : 'data-theme="studio" data-platform="1"')
     .replaceAll('{{title}}', escapeHtml(title))
-    .replaceAll('{{theme}}', primary)
+    .replaceAll('{{theme}}', salon ? primary : '#09090b')
     .replace('{{head}}', head)
-    .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`);
+    .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
+    .replace('{{boot}}', `<script nonce="${nonce}">${BOOT_SCRIPT}</script>`);
+  // The platform host shows each salon's app icon, served from the salon's own subdomain.
+  const port = ctx.host.port ? `:${ctx.host.port}` : '';
+  const salonIcons = salon ? '' : ` ${requestProto(ctx.req, config.trustProxy)}://*.${ctx.host.tenant.domain}${port}`;
   ctx.res.writeHead(200, {
     'Content-Type': 'text/html; charset=utf-8',
     'Cache-Control': 'no-cache',
     'Content-Security-Policy': [
       "default-src 'self'",
-      "script-src 'self'",
+      `script-src 'self' 'nonce-${nonce}'`,
       `style-src 'self' 'nonce-${nonce}'`,
-      "img-src 'self' blob: data:",
+      `img-src 'self' blob: data:${salonIcons}`,
       "font-src 'self'",
       "connect-src 'self'",
       "manifest-src 'self'",

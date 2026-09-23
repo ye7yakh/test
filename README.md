@@ -12,24 +12,50 @@ Three kinds of users:
 | Salon owner | `salon.brand.com/#/manage` | Set up the salon: details, logo and colours, services and prices, team with photos, opening hours |
 | Customer | `salon.brand.com` | See the salon page: services, team, hours, open/closed now. Booking comes next |
 
-## What the first slice covers: salon setup
+## The owner studio
 
-- **Salon details and look**: Arabic and English name, intro, contact, logo, main and
-  accent colours (ready palettes or a colour picker, previewed live), time zone and currency.
-  The colours and logo drive the salon's PWA manifest, app icons and theme colour.
-- **Services**: name, description, duration, price (decimals follow the currency, so JOD
-  and KWD get 3), a "price starts from" flag, hidden/bookable, display order, and which
-  team members offer each one.
-- **Team**: barbers and stylists with name, title, photo, the services they offer, their
-  own working hours or the salon's, and paused/active.
-- **Opening hours**: per weekday, several ranges per day (morning and evening shifts),
-  ranges that run past midnight, and "apply to all days". Saturday comes first.
-- **Unified team photos**: every photo is cropped the same way (4:5 portrait centred on
-  the person), its levels are normalised so dark and bright shots match, and it gets
-  the salon's style: natural, warm, black and white, or a duotone in the salon's accent
-  colour, plus the same soft vignette. The original is kept, so changing the style
-  re-renders every photo. This is deterministic image processing (sharp/libvips), not
-  generative AI. See *Next steps* for the AI option.
+The salon owner's workspace (`salon.brand.com/#/manage`) is designed to impress
+on first open. It's a dark studio lit by the salon's own accent colour, with glass
+surfaces, a floating tab bar and springy motion. On desktop it has a sidebar and a
+live preview of the salon's app.
+
+- **Home**: a greeting, a readiness ring that counts up, the four setup steps,
+  numbers at a glance, open/closed now, and the app link to copy or share. A
+  tilted phone shows the salon's app as it looks right now. When every step is
+  done, the page celebrates (once) and becomes a share-your-app card.
+- **Brand**: name, logo, colours and team photo style, with a live preview.
+  On phones the preview is a swipeable stage with the app and the salon's icon on a
+  phone home screen; on desktop it's the side column. Choosing one of 11 ready
+  palettes (or custom colours) re-tints the whole studio and the preview at once.
+  Changes wait in a "you have unsaved changes" bar until saved.
+- **Services**: an empty salon starts from a ready menu. Pick barbershop, ladies'
+  salon or spa, tick the services, type prices, and they're all added at once.
+  Each service has an emoji icon, duration chips with a stepper, a large price
+  field, "price starts from", bookable on/off, and who offers it (chips with the
+  team's photos).
+- **Team**: magazine-style portrait cards. Adding a photo plays the "studio
+  touch" (a scanning animation while the server renders), then reveals a
+  before/after slider to drag across.
+- **Hours**: each day is a 24-hour track with glowing open ranges, including
+  ranges past midnight carried into the next morning, and a "now" marker on
+  today. There are quick presets (all day, split shift, late nights, Friday after
+  prayer); tap a day to edit it inline.
+- **Settings** (sheet): contact details, time zone and currency, password,
+  language, sign out.
+- **Login and platform admin** use the same design: an aurora background in the
+  salon's colours for login, and each salon's real app icon in the admin list.
+
+Arabic first and fully mirrored in English. The typeface is Readex Pro
+(self-hosted, OFL). Motion respects `prefers-reduced-motion`.
+
+The customer-facing salon page (`salon.brand.com`) is intentionally left plain for
+now; the customer experience will be designed separately.
+
+**Unified team photos** are deterministic image processing (sharp/libvips), not
+AI yet: the same 4:5 crop centred on the person, normalised levels, one of four
+styles (natural, warm, black and white, or a duotone in the salon's accent) and
+the same vignette. The original is kept, so a new style re-renders every photo.
+Real AI (background replacement, relighting) is planned; see *Next steps*.
 
 ## Stack
 
@@ -37,9 +63,11 @@ Three kinds of users:
 - PostgreSQL through `pg` with plain SQL. Numbered migrations in `migrations/` are
   idempotent and recorded in `schema_migrations`. Run them with `npm run migrate` before each deploy.
 - Frontend: one Arabic-first RTL single-page app in vanilla HTML/CSS/JS (`web/`). All UI
-  text is in one string table (`web/assets/js/i18n.js`, ar/en). Digits are always Western,
-  and Arabic-Indic digits typed by users are converted. Mobile-first. Minified with terser at build.
-  The font (IBM Plex Sans Arabic, OFL) is self-hosted.
+  text is in one string table (`web/assets/js/i18n.js`, ar/en, with Arabic plural forms).
+  Digits are always Western, and Arabic-Indic digits typed by users are converted.
+  Mobile-first. Minified with terser at build.
+  One design system (`web/assets/app.css`) with two themes on shared tokens: the dark
+  owner studio and the light public page.
 - Images: `sharp`. Stored in Postgres (`media` table) as re-encoded WebP.
 
 ## Multi-tenancy
@@ -87,15 +115,16 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 94 checks
-npm run screenshots    # needs `npm run dev`; renders and presses through the UI at 400px
+npm run test:api       # starts its own api on :3457 against local Postgres; 108 checks
+npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
 `test:api` covers the setup flow and the security edges: tenant isolation, CSRF, upload
-validation, rate limits and session revocation. `screenshots` drives Chrome through the
-owner flow and the super admin flow. It writes one PNG per step to `screenshots/` and
-fails on any page error, console error, CSP violation or unexpected failed request. It
-finds Chrome at `CHROME_PATH` or in the usual places.
+validation, rate limits and session revocation. `screenshots` drives Chrome through a
+brand-new salon's whole journey, from the admin creating it to the owner's ready menu,
+photo upload, brand, hours, the celebration, English and desktop. It writes 27 PNGs to
+`screenshots/` and fails on any page error, console error, CSP violation or unexpected
+failed request. It finds Chrome at `CHROME_PATH` or in the usual places.
 
 ## Build and deploy
 
@@ -121,18 +150,21 @@ src/auth.ts            passwords, sessions, roles, login rate limit, phone norma
 src/media.ts           upload validation, photo styles, app icons
 src/hours.ts           weekly hours parsing/validation
 src/routes/            auth, admin, public (page data, manifest, icons, media), salon, services, staff
-web/index.html         rendered per host (title, theme colour, manifest, CSS colours)
-web/assets/js/         app.js (boot + routes), i18n.js (all text), dom.js, api.js, views/
+web/index.html         rendered per host (title, theme, manifest, CSS colours)
+web/assets/app.css     the design system (tokens, components, studio and public themes)
+web/assets/js/         app.js (routes), i18n.js (all text), dom.js (toolkit), preview.js (phone
+                       previews), hours-editor.js, templates.js (palettes, ready menus), views/
 scripts/               build-web.mjs, test-api.ts, screenshots.ts
 ```
 
 ## Next steps
 
-1. **Booking**: customer sign-up (phone + password), available slots from staff hours and
+1. **Customer experience and booking** (to be designed): customer sign-up (phone + password), available slots from staff hours and
    service durations, booking and cancelling, the owner's day view. Live updates over SSE.
 2. **Notifications**: Web Push (VAPID) for new and changed bookings. The service worker is already registered.
 3. **Infra**: Terraform for ECR, ECS on one EC2 host, RDS, Route 53, and Caddy with a
    wildcard certificate (DNS challenge), plus the build → migrate → roll deploy script.
-4. **AI photo backgrounds** (optional): a background-removal / relighting model would put
-   every barber on the same studio backdrop in the salon's colours. It would slot in as one
-   more step before `renderPortrait` in `src/media.ts`, with the original kept as it is today.
+4. **AI photo processing**: a background-removal and relighting model would put every
+   barber on the same studio backdrop in the salon's colours. It slots in as one more step
+   before `renderPortrait` in `src/media.ts`. The studio-touch animation and before/after
+   slider already frame it, and the original is kept as it is today.
