@@ -13,7 +13,7 @@ import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppetee
 const BASE_HOST = process.env.BASE_HOST ?? 'localhost:3000';
 const PLATFORM = `http://${BASE_HOST}`;
 const OUT = path.resolve('screenshots');
-const ADMIN = { phone: process.env.SEED_ADMIN_PHONE ?? '+966500000000', password: process.env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123' };
+const ADMIN = { phone: process.env.SEED_ADMIN_PHONE ?? '+962790000000', password: process.env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123' };
 const PHONE = { width: 400, height: 860, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
 const DESKTOP = { width: 1440, height: 900, deviceScaleFactor: 1 };
 
@@ -136,7 +136,7 @@ async function main() {
   const files = await fixtures(path.join(OUT, 'fixtures'));
   const browser = await puppeteer.launch({ executablePath, headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage'] });
   const sub = `s${Date.now().toString(36).slice(-6)}`;
-  const owner = { phone: `05${String(Date.now()).slice(-8)}`, password: 'owner-pass-777' };
+  const owner = { phone: `07${String(Date.now()).slice(-8)}`, password: 'owner-pass-777' };
   const SALON = `http://${sub}.${BASE_HOST}`;
   try {
     // ---- the platform owner creates a salon
@@ -173,7 +173,7 @@ async function main() {
     await page.click('.type-card');
     await page.waitForSelector('.sheet .tpl-row');
     await settle(page, 400);
-    const prices = ['50', '30', '70', '25', '40', '120', '60', '35'];
+    const prices = ['6', '3', '8', '4', '5', '15', '10', '3.500'];
     const inputs = await page.$$('.sheet .price-mini');
     for (const [i, el] of inputs.entries()) await el.type(prices[i] ?? '20');
     await snap(page, 'services-ready-menu');

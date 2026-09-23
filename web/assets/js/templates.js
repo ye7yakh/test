@@ -55,8 +55,9 @@ export const SERVICE_TEMPLATES = {
   ],
 };
 
-// Weekly hours presets: week[weekday] = ranges. Friday (5) often opens after prayer.
-const every = (ranges, friday = ranges) => [0, 1, 2, 3, 4, 5, 6].map((d) => (d === 5 ? friday : ranges).map((r) => ({ ...r })));
+// Weekly hours presets: week[weekday] = ranges. Monday (1) stays the day off;
+// Friday (5) often opens after the prayer.
+const every = (ranges, friday = ranges) => [0, 1, 2, 3, 4, 5, 6].map((d) => (d === 1 ? [] : (d === 5 ? friday : ranges).map((r) => ({ ...r }))));
 export const HOURS_PRESETS = [
   { id: 'full', week: () => every([{ open: '10:00', close: '22:00' }]) },
   { id: 'split', week: () => every([{ open: '09:00', close: '13:00' }, { open: '16:00', close: '23:00' }], [{ open: '16:00', close: '23:00' }]) },

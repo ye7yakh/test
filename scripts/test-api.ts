@@ -128,10 +128,10 @@ async function setupTenant() {
   await cleanup();
   const tenant = (await query<{ id: number }>(
     `insert into tenants (domain, name, default_calling_code, default_timezone, default_currency)
-     values ($1, 'Test Brand', '966', 'Asia/Riyadh', 'SAR') returning id`,
+     values ($1, 'Test Brand', '962', 'Asia/Amman', 'JOD') returning id`,
     [DOMAIN],
   ))[0]!;
-  const admin = { phone: '+966511111111', password: 'admin-test-pass' };
+  const admin = { phone: '+962791111111', password: 'admin-test-pass' };
   await query(`insert into users (tenant_id, phone, name, password_hash, is_super_admin) values ($1, $2, 'Test admin', $3, true)`, [
     tenant.id,
     admin.phone,
@@ -174,8 +174,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const subB = `b${run}`;
   const A = hostOf(subA);
   const B = hostOf(subB);
-  const phoneA = `05${String(Date.now()).slice(-8)}`;
-  const phoneB = `05${String(Date.now() + 7).slice(-8)}`;
+  const phoneA = `07${String(Date.now()).slice(-8)}`;
+  const phoneB = `07${String(Date.now() + 7).slice(-8)}`;
 
   section('Hosts');
   expectStatus(await anon.get('nothing.example:1', '/healthz'), 200, 'health check needs no tenant');
@@ -198,7 +198,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   );
   expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: subA, name_ar: 'x', owner_phone: phoneA }), 409, 'duplicate subdomain', 'subdomain_taken');
   expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: 'admin', name_ar: 'x', owner_phone: phoneA }), 400, 'reserved subdomain', 'invalid');
-  expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: `c${run}`, name_ar: 'x', owner_phone: '0599999990', owner_password: 'short' }), 400, 'weak owner password', 'weak_password');
+  expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: `c${run}`, name_ar: 'x', owner_phone: '0799999990', owner_password: 'short' }), 400, 'weak owner password', 'weak_password');
   expectStatus(await admin.get(A, '/api/manage/salon'), 401, "platform session does not work on a salon's host");
 
   section('Owner login and tenant isolation');
@@ -212,6 +212,10 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const ctxA = await ownerA.get(A, '/api/context');
   expect(ctxA.json?.user?.role === 'owner' && ctxA.json.salon.subdomain === subA, 'context says owner of salon A', ctxA.json);
   expectStatus(await ownerB.login(B, phoneB, 'owner-b-pass'), 200, 'owner B logs in');
+  const fresh = (await ownerB.get(B, '/api/manage/salon')).json;
+  expect(fresh?.salon.currency === 'JOD' && fresh.salon.timezone === 'Asia/Amman', 'new salons are in JD on Amman time', fresh?.salon);
+  expect(fresh?.hours[1].length === 0 && fresh.hours.filter((d: unknown[]) => d.length).length === 6, 'Monday is off by default', fresh?.hours);
+  expect((await ownerB.get(B, '/api/context')).json?.user?.phone?.startsWith('+9627'), 'Jordanian mobile numbers normalise to +962');
 
   // Owner A's cookie, replayed against salon B's host.
   const stolen = new Client();

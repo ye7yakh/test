@@ -184,7 +184,7 @@ const STRINGS = {
     'hours.title': 'أوقات العمل',
     'hours.sub': 'متى يفتح صالونك؟ يمكنك إضافة أكثر من فترة في اليوم.',
     'hours.presets': 'قوالب سريعة',
-    'preset.full': 'يوميًا 10ص – 10م',
+    'preset.full': '10ص – 10م',
     'preset.split': 'فترتين',
     'preset.night': 'حتى 2 بعد منتصف الليل',
     'preset.friday': 'الجمعة بعد الصلاة',
@@ -203,9 +203,6 @@ const STRINGS = {
     'settings.address': 'العنوان',
     'settings.about': 'نبذة عن الصالون',
     'settings.about_en': 'نبذة بالإنجليزية',
-    'settings.region': 'المنطقة والعملة',
-    'settings.timezone': 'المنطقة الزمنية',
-    'settings.currency': 'العملة',
     'settings.account': 'الحساب',
     'settings.signed_in': 'مسجّل الدخول برقم',
     'settings.password_current': 'كلمة المرور الحالية',
@@ -443,7 +440,7 @@ const STRINGS = {
     'hours.title': 'Opening hours',
     'hours.sub': 'When is your salon open? A day can have more than one range.',
     'hours.presets': 'Quick presets',
-    'preset.full': 'Daily 10am – 10pm',
+    'preset.full': '10am – 10pm',
     'preset.split': 'Split shift',
     'preset.night': 'Until 2am',
     'preset.friday': 'Friday after prayer',
@@ -462,9 +459,6 @@ const STRINGS = {
     'settings.address': 'Address',
     'settings.about': 'About the salon (Arabic)',
     'settings.about_en': 'About (English)',
-    'settings.region': 'Region and currency',
-    'settings.timezone': 'Time zone',
-    'settings.currency': 'Currency',
     'settings.account': 'Account',
     'settings.signed_in': 'Signed in as',
     'settings.password_current': 'Current password',
@@ -573,16 +567,15 @@ const LOCALE = () => (lang === 'ar' ? 'ar-u-nu-latn' : 'en-u-nu-latn');
 export function fmtPrice(price, currency) {
   const n = Number(price);
   const decimals = new Intl.NumberFormat('en', { style: 'currency', currency }).resolvedOptions().maximumFractionDigits;
-  return new Intl.NumberFormat(LOCALE(), {
-    style: 'currency',
-    currency,
-    minimumFractionDigits: Number.isInteger(n) ? 0 : decimals,
-    maximumFractionDigits: decimals,
-  }).format(n);
+  const opts = { minimumFractionDigits: Number.isInteger(n) ? 0 : decimals, maximumFractionDigits: decimals };
+  // In English, Jordan writes "6 JD" rather than the ISO "JOD 6".
+  if (lang === 'en' && currency === 'JOD') return `${new Intl.NumberFormat(LOCALE(), opts).format(n)} JD`;
+  return new Intl.NumberFormat(LOCALE(), { style: 'currency', currency, ...opts }).format(n);
 }
 
-/** The currency's short symbol on its own, e.g. "ر.س." or "SAR". */
+/** The currency's short symbol on its own, e.g. "د.أ." or "JD". */
 export function currencySymbol(currency) {
+  if (lang === 'en' && currency === 'JOD') return 'JD';
   const parts = new Intl.NumberFormat(LOCALE(), { style: 'currency', currency }).formatToParts(0);
   return parts.find((p) => p.type === 'currency')?.value ?? currency;
 }

@@ -87,9 +87,12 @@ export async function saveStaffWeek(db: Db, salonId: number, staffId: number, ro
   }
 }
 
-/** A sensible starting week for a new salon: Saturday to Thursday 10:00–22:00, Friday 14:00–22:00. */
+/**
+ * A new salon's starting week, as salons in Jordan usually work: Monday off,
+ * Friday from 14:00 (after the prayer), other days 10:00–22:00.
+ */
 export function defaultWeek(): HoursRow[] {
-  return [0, 1, 2, 3, 4, 5, 6].map((weekday) => ({
+  return [0, 2, 3, 4, 5, 6].map((weekday) => ({
     weekday,
     open_min: weekday === 5 ? 14 * 60 : 10 * 60,
     close_min: 22 * 60,

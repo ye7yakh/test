@@ -1,7 +1,7 @@
 // Sets up a brand (tenant) and its super admin, plus an optional demo salon.
 // Idempotent: run it as often as you like.
 //
-//   SEED_DOMAIN=localhost SEED_ADMIN_PHONE=+966500000000 SEED_ADMIN_PASSWORD=... npm run seed
+//   SEED_DOMAIN=localhost SEED_ADMIN_PHONE=+962790000000 SEED_ADMIN_PASSWORD=... npm run seed
 import sharp from 'sharp';
 import { hashPassword } from './auth.js';
 import { one, pool, query, tx } from './db.js';
@@ -17,7 +17,7 @@ if (isProd && (!env.SEED_DOMAIN || !env.SEED_ADMIN_PHONE || !env.SEED_ADMIN_PASS
 }
 const domain = (env.SEED_DOMAIN ?? 'localhost').toLowerCase();
 const brandName = env.SEED_BRAND_NAME ?? 'Salon Platform';
-const adminPhone = env.SEED_ADMIN_PHONE ?? '+966500000000';
+const adminPhone = env.SEED_ADMIN_PHONE ?? '+962790000000';
 const adminPassword = env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123';
 const demo = (env.SEED_DEMO ?? (isProd ? 'false' : 'true')) === 'true';
 
@@ -27,7 +27,7 @@ async function main() {
      values ($1, $2, $3, $4, $5)
      on conflict (domain) do update set name = excluded.name
      returning id, default_timezone, default_currency`,
-    [domain, brandName, env.SEED_CALLING_CODE ?? '966', env.SEED_TIMEZONE ?? 'Asia/Riyadh', env.SEED_CURRENCY ?? 'SAR'],
+    [domain, brandName, env.SEED_CALLING_CODE ?? '962', env.SEED_TIMEZONE ?? 'Asia/Amman', env.SEED_CURRENCY ?? 'JOD'],
   );
   await query(
     `insert into users (tenant_id, phone, name, password_hash, is_super_admin)
@@ -60,7 +60,7 @@ async function seedDemoSalon(tenant: { id: number; default_timezone: string; def
     console.log('demo salon already exists');
     return;
   }
-  const ownerPhone = env.SEED_OWNER_PHONE ?? '+966500000001';
+  const ownerPhone = env.SEED_OWNER_PHONE ?? '+962790000001';
   const ownerPassword = env.SEED_OWNER_PASSWORD ?? 'owner-pass-123';
 
   const photos = await Promise.all(
@@ -81,7 +81,7 @@ async function seedDemoSalon(tenant: { id: number; default_timezone: string; def
     const salon = await one<{ id: number; color_accent: string }>(
       `insert into salons (tenant_id, subdomain, name_ar, name_en, about_ar, timezone, currency, phone, address, photo_style)
        values ($1, 'demo', 'صالون النخبة', 'Elite Barbers', 'حلاقة رجالية وعناية بالبشرة منذ 2010', $2, $3,
-               '+966 50 000 0001', 'الرياض، حي العليا', 'mono')
+               '+962 79 000 0001', 'عمّان، عبدون', 'mono')
        returning id, color_accent`,
       [tenant.id, tenant.default_timezone, tenant.default_currency],
       db,
@@ -91,11 +91,11 @@ async function seedDemoSalon(tenant: { id: number; default_timezone: string; def
     await saveSalonWeek(db, salonId, defaultWeek());
 
     const services: [string, string, number, string, boolean, string][] = [
-      ['قص شعر', 'Haircut', 30, '50', false, '✂️'],
-      ['حلاقة ذقن', 'Beard trim', 20, '30', false, '🧔'],
-      ['قص شعر مع ذقن', 'Haircut & beard', 45, '70', false, '💈'],
-      ['صبغة شعر', 'Hair colour', 60, '120', true, '🎨'],
-      ['تنظيف بشرة', 'Facial', 40, '90', false, '🧖'],
+      ['قص شعر', 'Haircut', 30, '6', false, '✂️'],
+      ['حلاقة ذقن', 'Beard trim', 20, '3', false, '🧔'],
+      ['قص شعر مع ذقن', 'Haircut & beard', 45, '8', false, '💈'],
+      ['صبغة شعر', 'Hair colour', 60, '15', true, '🎨'],
+      ['تنظيف بشرة', 'Facial', 40, '10', false, '🧖'],
     ];
     const serviceIds: number[] = [];
     for (const [i, [ar, en, min, price, from, icon]] of services.entries()) {

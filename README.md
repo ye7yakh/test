@@ -44,7 +44,7 @@ colours appear in its app (the previews and the icon).
   ranges past midnight carried into the next morning, and a "now" marker on
   today. There are quick presets (all day, split shift, late nights, Friday after
   prayer); tap a day to edit it inline. The bars grow in when the page opens.
-- **Settings** (sheet): contact details, time zone and currency, password,
+- **Settings** (sheet): contact details, password,
   language, sign out.
 - **Login and platform admin** use the same design: a violet and blue aurora
   behind login, and each salon's real app icon in the admin list.
@@ -60,6 +60,14 @@ AI yet: the same 4:5 crop centred on the person, normalised levels, one of four
 styles (natural, warm, black and white, or a duotone in the salon's accent) and
 the same vignette. The original is kept, so a new style re-renders every photo.
 Real AI (background replacement, relighting) is planned; see *Next steps*.
+
+## Market: Jordan
+
+Everything defaults to Jordan: prices in Jordanian dinars (3 decimal places,
+shown as "6 د.أ." / "6 JD"), phone numbers as +962 (people can type 07…), and
+Amman time. Salons are closed on Monday by default, and Friday opens at 14:00,
+after the prayer. The server still supports other currencies and time zones per
+brand (the `tenants` defaults), but owners never have to choose them.
 
 ## Stack
 
@@ -111,7 +119,7 @@ npm run dev                   # http://localhost:3000
 ```
 
 - Salon page: http://demo.localhost:3000. Owner login: `0500000001` / `owner-pass-123`.
-- Platform admin: http://localhost:3000. Login: `+966500000000` / `admin-pass-123`.
+- Platform admin: http://localhost:3000. Login: `+962790000000` / `admin-pass-123`.
 
 Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work with no setup.
 
