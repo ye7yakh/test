@@ -16,6 +16,11 @@ export function salonSummary(s: Salon) {
     color_accent: s.color_accent,
     currency: s.currency,
     logo_url: mediaUrl(s.logo_media_id),
+    booking_enabled: s.booking_enabled,
+    cliq_required: s.cliq_required,
+    deposit_kind: s.deposit_kind,
+    deposit_amount: s.deposit_amount,
+    payment_window_min: s.payment_window_min,
   };
 }
 

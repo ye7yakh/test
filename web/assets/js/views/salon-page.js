@@ -1,5 +1,6 @@
-// The salon's own page, as customers see it. Booking comes in the next step.
+// The salon's own page, as customers see it, with online booking.
 import { api } from '../api.js';
+import { myBookingsCard, openBooking } from './booking.js';
 import { avatar, clear, h, icon } from '../dom.js';
 import { DAY_ORDER, dayName, errorText, fmtDuration, fmtPrice, fmtTime, pick, t } from '../i18n.js';
 import { applyColors } from '../theme.js';
@@ -28,7 +29,10 @@ export function salonPage(app) {
   return el;
 }
 
-function render(app, { salon, services, staff, hours }) {
+function render(app, data) {
+  const { salon, services, staff, hours } = data;
+  const canBook = salon.booking_enabled && services.length > 0;
+  const book = (serviceId) => (canBook ? openBooking(app, data, { serviceId }) : null);
   const name = pick(salon, 'name');
   const about = pick(salon, 'about');
   const now = nowIn(salon.timezone);
@@ -67,7 +71,7 @@ function render(app, { salon, services, staff, hours }) {
         h('div', { class: 'section-title' }, h('h2', { text: t('pub.services') })),
         h('div', { class: 'card flush' }, h('ul', { class: 'list' }, services.map((s) => h(
           'li',
-          { class: 'service-line' },
+          { class: `service-line ${canBook ? 'bookable' : ''}`, role: canBook ? 'button' : null, tabindex: canBook ? '0' : null, onclick: () => book(s.id) },
           h(
             'div',
             { class: 'grow' },
@@ -129,12 +133,15 @@ function render(app, { salon, services, staff, hours }) {
       'main',
       { class: 'page stack-lg' },
       !services.length && !staff.length ? h('p', { class: 'empty', text: t('pub.empty') }) : null,
+      myBookingsCard(salon),
       servicesCard,
       teamSection,
       h('section', null, h('div', { class: 'section-title' }, h('h2', { text: t('pub.hours') })), h('div', { class: 'card' }, hoursTable(hours, now.weekday))),
       contact,
       app.canManage ? null : h('p', { class: 'small', style: { textAlign: 'center' } }, h('a', { class: 'muted', href: '#/login', text: t('pub.owner_login') })),
     ),
-    h('div', { class: 'cta-bar' }, h('div', { class: 'cta-bar-inner' }, h('button', { class: 'btn btn-primary btn-block', type: 'button', disabled: true, text: t('pub.book') }))),
+    h('div', { class: 'cta-bar' }, h('div', { class: 'cta-bar-inner' }, canBook
+      ? h('button', { class: 'btn btn-primary btn-block sheen', type: 'button', onclick: () => book() }, icon('clock'), t('book.cta'))
+      : h('button', { class: 'btn btn-primary btn-block', type: 'button', disabled: true, text: salon.booking_enabled ? t('pub.book') : t('book.closed') }))),
   );
 }

@@ -6,6 +6,7 @@ import { applyLang, setLang, getLang, t } from './i18n.js';
 import { reducedMotion, setTheme } from './theme.js';
 import { loginView } from './views/login.js';
 import { salonPage } from './views/salon-page.js';
+import { bookingPage } from './views/booking.js';
 import { clearManageCache, manageView } from './views/manage.js';
 import { adminView } from './views/admin.js';
 
@@ -52,6 +53,7 @@ function build() {
   const ctx = app.ctx;
   if (ctx.kind === 'platform') return { theme: 'studio', view: () => (ctx.user ? adminView(app) : loginView(app)) };
   if (name === 'login') return { theme: 'studio', view: () => loginView(app) };
+  if (name === 'b' && rest[0]) return { theme: 'public', view: () => bookingPage(app, rest[0]) };
   if (name === 'manage') {
     if (!app.canManage) return { redirect: '#/login' };
     return { theme: 'studio', view: () => manageView(app, rest[0] || 'home') };

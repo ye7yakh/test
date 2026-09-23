@@ -5,7 +5,8 @@ import { loadSalonWeek, parseWeek, saveSalonWeek } from '../hours.js';
 import { ok, readJson, type Ctx, type Router } from '../http.js';
 import { deleteMedia, intakeImage, mediaUrl, PHOTO_STYLES, readImageUpload, saveMedia } from '../media.js';
 import { SALON_COLUMNS, type Salon } from '../tenancy.js';
-import { color, currency, CURRENCIES, Input, oneOf, text, timezone } from '../validate.js';
+import { bool, color, currency, CURRENCIES, Input, int, oneOf, price, text, timezone } from '../validate.js';
+import { HttpError } from '../http.js';
 import { SERVICE_ICONS } from './services.js';
 import { rerenderTeamPhotos } from './staff.js';
 
@@ -35,7 +36,17 @@ async function updateSalon(ctx: Ctx) {
     color_primary: b.opt('color_primary', color),
     color_accent: b.opt('color_accent', color),
     photo_style: b.opt('photo_style', oneOf(PHOTO_STYLES)),
+    booking_enabled: b.opt('booking_enabled', bool),
+    cliq_required: b.opt('cliq_required', bool),
+    cliq_alias: b.opt('cliq_alias', text(60)),
+    cliq_name: b.opt('cliq_name', text(80)),
+    deposit_kind: b.opt('deposit_kind', oneOf(['fixed', 'full'] as const)),
+    deposit_amount: b.opt('deposit_amount', price(3)),
+    payment_window_min: b.opt('payment_window_min', int(5, 1440)),
   };
+  // Customers need somewhere to send the deposit.
+  const requiresCliq = fields.cliq_required ?? current.cliq_required;
+  if (requiresCliq && !(fields.cliq_alias ?? current.cliq_alias)) throw new HttpError(400, 'required', 'cliq_alias');
   // Keys come from the object above, never from the request.
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
   await tx(async (db) => {

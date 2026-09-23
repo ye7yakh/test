@@ -30,6 +30,13 @@ export interface Salon {
   logo_media_id: string | null;
   active: boolean;
   updated_at: Date;
+  booking_enabled: boolean;
+  cliq_required: boolean;
+  cliq_alias: string;
+  cliq_name: string;
+  deposit_kind: 'fixed' | 'full';
+  deposit_amount: string;
+  payment_window_min: number;
 }
 
 export type PhotoStyle = 'natural' | 'warm' | 'mono' | 'brand';
@@ -66,7 +73,9 @@ export function clearTenantCache(): void {
 }
 
 export const SALON_COLUMNS = `id, tenant_id, subdomain, name_ar, name_en, about_ar, about_en, phone, address,
-  timezone, currency, color_primary, color_accent, photo_style, logo_media_id, active, updated_at`;
+  timezone, currency, color_primary, color_accent, photo_style, logo_media_id, active, updated_at,
+  booking_enabled, cliq_required, cliq_alias, cliq_name, deposit_kind, trim_scale(deposit_amount)::text as deposit_amount,
+  payment_window_min`;
 
 export async function resolveHost(hostHeader: string | undefined): Promise<HostContext | null> {
   if (!hostHeader) return null;

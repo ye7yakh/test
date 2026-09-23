@@ -8,7 +8,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import sharp from 'sharp';
-import puppeteer, { type Browser, type ElementHandle, type Page } from 'puppeteer-core';
+import puppeteer, { type Browser, type BrowserContext, type ElementHandle, type Page } from 'puppeteer-core';
 
 const BASE_HOST = process.env.BASE_HOST ?? 'localhost:3000';
 const PLATFORM = `http://${BASE_HOST}`;
@@ -76,12 +76,20 @@ async function upload(page: Page, trigger: string, file: string) {
 }
 
 async function go(page: Page, url: string, selector: string) {
-  await page.goto(url, { waitUntil: 'networkidle0' });
+  const from = new URL(page.url());
+  const to = new URL(url);
+  if (from.origin === to.origin && from.pathname === to.pathname && from.hash !== to.hash) {
+    // Same app, another screen: a hash change, like a tap on a link.
+    await page.evaluate((hash) => { location.hash = hash; }, to.hash);
+  } else {
+    // The studio keeps one live stream open, so wait for "almost" idle.
+    await page.goto(url, { waitUntil: 'networkidle2' });
+  }
   await page.waitForSelector(selector);
   await settle(page);
 }
 
-async function newPage(browser: Browser, viewport: typeof PHONE | typeof DESKTOP = PHONE) {
+async function newPage(browser: Browser | BrowserContext, viewport: typeof PHONE | typeof DESKTOP = PHONE) {
   const page = await browser.newPage();
   await page.setViewport(viewport);
   page.on('pageerror', (err) => problems.push(`pageerror: ${(err as Error).message}`));
@@ -277,6 +285,87 @@ async function main() {
     const pub = await newPage(browser);
     await go(pub, `${SALON}/`, '.hero h1');
     await snap(pub, 'public-page', { full: true });
+
+    // ---- bookings: the owner asks for a CliQ deposit
+    await page.bringToFront();
+    await go(page, `${SALON}/#/manage/bookings`, '.sched-summary');
+    // Back to Arabic (set above).
+    await page.reload({ waitUntil: 'networkidle2' });
+    await page.waitForSelector('.sched-summary');
+    await snap(page, 'bookings-empty', { wait: 1000 });
+    await page.click('.s-head .icon-btn[aria-label="إعدادات الحجز"]');
+    await page.waitForSelector('.sheet input[name=cliq_alias]');
+    await clickText(page, '.sheet .switch-row', 'CliQ');
+    await page.waitForSelector('.sheet .fold.open');
+    await page.type('.sheet input[name=cliq_alias]', 'LUXSALON');
+    await page.type('.sheet input[name=cliq_name]', 'فهد العلي');
+    await snap(page, 'booking-settings', { wait: 900 });
+    await clickText(page, '.sheet-foot button', 'حفظ');
+    await find(page, '.toast', 'تم حفظ إعدادات الحجز');
+
+    // ---- a customer, on their own phone, books from the salon page
+    const customer = await browser.createBrowserContext();
+    const cust = await newPage(customer);
+    await go(cust, `${SALON}/`, '.hero h1');
+    await clickText(cust, 'button', 'احجز موعدك');
+    await cust.waitForSelector('.sheet .svc');
+    await snap(cust, 'book-service');
+    await cust.click('.sheet .svc');
+    await cust.waitForSelector('.sheet .pick-card');
+    await snap(cust, 'book-staff');
+    await cust.click('.sheet .pick-card.anyone');
+    await cust.waitForSelector('.sheet .slot');
+    await cust.click('.sheet .slot');
+    await snap(cust, 'book-time');
+    await clickText(cust, '.sheet-foot button', 'التالي');
+    await cust.waitForSelector('.sheet input[name=name]');
+    await cust.type('.sheet input[name=name]', 'سامي خالد');
+    await cust.type('.sheet input[name=phone]', `079${String(Date.now()).slice(-7)}`);
+    await snap(cust, 'book-details');
+    await clickText(cust, '.sheet-foot button', 'تأكيد الحجز');
+    await cust.waitForSelector('.cliq-card');
+    await snap(cust, 'booking-cliq', { full: true });
+    await clickText(cust, 'button', 'أرسلت الحوالة');
+    await cust.waitForSelector('.status-icon.pulse');
+    await snap(cust, 'booking-sent');
+
+    // ---- the owner sees it arrive live and confirms the transfer
+    await page.bringToFront();
+    await page.waitForSelector('.att-row.sent');
+    await snap(page, 'bookings-deposit-to-check', { wait: 1200 });
+    await clickText(page, '.att-row.sent button', 'استلمت الدفعة');
+    await find(page, '.toast', 'تم تأكيد الحجز');
+    await page.waitForFunction(() => !document.querySelector('.att-row'));
+    await cust.bringToFront();
+    await cust.waitForSelector('.status-icon.ok', { timeout: 20_000 });
+    await snap(cust, 'booking-confirmed', { wait: 1200 });
+
+    // ---- a booking taken by phone, on the same day
+    await page.bringToFront();
+    await page.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
+    await page.waitForSelector('.appt');
+    await page.click('.s-head .primary-icon');
+    await page.waitForSelector('.sheet .slot');
+    await page.$$eval('.sheet .slot', (els) => (els[Math.min(4, els.length - 1)] as HTMLElement).click());
+    await page.type('.sheet input[name=name]', 'ليث');
+    await page.type('.sheet input[name=phone]', '0791234567');
+    await snap(page, 'bookings-new');
+    await clickText(page, '.sheet-foot button', 'احفظ الحجز');
+    await find(page, '.toast', 'تم الحجز');
+    await page.waitForFunction(() => document.querySelectorAll('.appt').length >= 2);
+    await snap(page, 'bookings-day', { full: true, wait: 1200 });
+    await page.click('.appt.s-confirmed');
+    await page.waitForSelector('.sheet .customer-box');
+    await snap(page, 'booking-detail');
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    await go(page, `${SALON}/#/manage`, '.today-card .head');
+    await snap(page, 'home-today', { full: true, wait: 1500 });
+    await desk.bringToFront();
+    await go(desk, `${SALON}/#/manage/bookings`, '.sched-summary');
+    await desk.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
+    await desk.waitForSelector('.appt');
+    await snap(desk, 'desktop-bookings', { wait: 1200 });
   } finally {
     await browser.close();
   }

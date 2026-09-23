@@ -6,6 +6,8 @@ import { baseSecurityHeaders, clientIp, HttpError, Router, sendJson, type Ctx } 
 import { serveAsset, serveIndex } from './static.js';
 import { resolveHost } from './tenancy.js';
 import { adminRoutes } from './routes/admin.js';
+import { bookingRoutes } from './routes/bookings.js';
+import { expireHolds } from './booking.js';
 import { authRoutes } from './routes/auth.js';
 import { publicRoutes } from './routes/public.js';
 import { salonRoutes } from './routes/salon.js';
@@ -19,6 +21,7 @@ publicRoutes(router);
 salonRoutes(router);
 serviceRoutes(router);
 staffRoutes(router);
+bookingRoutes(router);
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
 
@@ -89,6 +92,11 @@ function sendError(ctx: Ctx, err: unknown): void {
     sendJson(res, 400, { error: 'bad_request' });
     return;
   }
+  // A service or team member that bookings still point at.
+  if ((err as { code?: string }).code === '23503') {
+    sendJson(res, 409, { error: 'in_use' });
+    return;
+  }
   if ((err as { code?: string }).code === '23505') {
     sendJson(res, 409, { error: 'conflict' });
     return;
@@ -111,6 +119,9 @@ server.listen(config.port, () => console.log(`listening on :${config.port}`));
 
 const purge = setInterval(() => purgeExpiredSessions().catch((e) => console.error('session purge', e)), 3600_000);
 purge.unref();
+// Unpaid deposit holds give their slot back.
+const sweep = setInterval(() => expireHolds(pool).catch((e) => console.error('expire holds', e)), 60_000);
+sweep.unref();
 
 // ECS stops tasks with SIGTERM: finish in-flight requests, then exit.
 for (const signal of ['SIGTERM', 'SIGINT'] as const) {

@@ -107,6 +107,10 @@ const ICONS = {
   pin: [['path', { d: 'M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z' }], ['circle', { cx: 12, cy: 10, r: 3 }]],
   lock: [['rect', { x: 4, y: 11, width: 16, height: 10, rx: 2.5 }], ['path', { d: 'M8 11V7a4 4 0 0 1 8 0v4' }]],
   wand: [['path', { d: 'M15 4V2M15 16v-2M8 9h2M20 9h2M17.8 11.8 19 13M17.8 6.2 19 5M3 21l9-9M12.2 6.2 11 5' }]],
+  calendar: [['rect', { x: 3, y: 4.5, width: 18, height: 17, rx: 3 }], ['path', { d: 'M8 2.5v4M16 2.5v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01' }]],
+  chat: [['path', { d: 'M21 11.5a8.4 8.4 0 0 1-9 8.4 8.6 8.6 0 0 1-3.9-.9L3 21l2-5.1A8.4 8.4 0 0 1 12.5 3 8.4 8.4 0 0 1 21 11.5z' }]],
+  undo: [['path', { d: 'M9 14 4 9l5-5M4 9h10.5a5.5 5.5 0 0 1 0 11H11' }]],
+  sliders: [['path', { d: 'M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6' }]],
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
@@ -254,14 +258,15 @@ export function sheet({ title, body, actions = [], onClose, tall = false }) {
   return { close, el: panel };
 }
 
-export function confirmDelete() {
+/** Asks before something that cannot be undone. Defaults to the delete wording. */
+export function confirmDelete({ title = t('confirm.title'), message = t('confirm.delete'), yesText = t('confirm.yes') } = {}) {
   return new Promise((resolve) => {
     let answered = false;
-    const yes = h('button', { class: 'btn btn-danger', type: 'button', text: t('confirm.yes') });
+    const yes = h('button', { class: 'btn btn-danger', type: 'button', text: yesText });
     const no = h('button', { class: 'btn btn-secondary', type: 'button', text: t('cancel') });
     const s = sheet({
-      title: t('confirm.title'),
-      body: h('p', { class: 'muted', text: t('confirm.delete') }),
+      title,
+      body: h('p', { class: 'muted', text: message }),
       actions: [no, yes],
       onClose: () => answered || resolve(false),
     });

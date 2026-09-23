@@ -108,7 +108,8 @@ const WEEK = (open: string, close: string) => Array.from({ length: 7 }, () => [{
 
 async function startServer(): Promise<() => void> {
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
-    env: { ...process.env, PORT: String(PORT), NODE_ENV: 'development' },
+    // Trust X-Forwarded-For so each test can act as its own client address.
+    env: { ...process.env, PORT: String(PORT), NODE_ENV: 'development', TRUST_PROXY: 'true' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await new Promise<void>((resolve, reject) => {
@@ -404,6 +405,161 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await anon.get(A, '/api/public/salon'), 200, 'back online');
   const list = await admin.get(PLATFORM, '/api/admin/salons');
   expect(list.json?.salons.length === 2 && list.json.salons.every((s: any) => s.owners.length === 1), 'admin sees both salons with owners', list.json);
+
+  await bookingTests(admin, { B, ownerB });
+}
+
+/** Opens the owner's live event stream and collects what arrives. */
+function openEvents(host: string, cookie: string) {
+  const received: string[] = [];
+  const req = http.request({ host: '127.0.0.1', port: PORT, path: '/api/manage/events', headers: { Host: host, Cookie: cookie } }, (res) => {
+    res.setEncoding('utf8');
+    res.on('data', (chunk: string) => received.push(chunk));
+  });
+  req.on('error', () => {});
+  req.end();
+  return {
+    async waitFor(text: string, ms = 1500) {
+      const until = Date.now() + ms;
+      while (Date.now() < until) {
+        if (received.join('').includes(text)) return true;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      return false;
+    },
+    close: () => req.destroy(),
+  };
+}
+
+async function bookingTests(admin: Client, other: { B: string; ownerB: Client }) {
+  // A fresh salon open around the clock, so tomorrow's slots do not depend on the time the tests run.
+  const sub = `k${run}`;
+  const K = hostOf(sub);
+  const ownerPhone = `07${String(Date.now() + 99).slice(-8)}`;
+  const createdK = await admin.post(PLATFORM, '/api/admin/salons', { subdomain: sub, name_ar: 'صالون ك', owner_phone: ownerPhone, owner_password: 'owner-k-pass' });
+  const owner = new Client();
+  await owner.login(K, ownerPhone, 'owner-k-pass');
+  const sami = (await owner.post(K, '/api/manage/staff', { name_ar: 'سامي' })).json?.id;
+  const rami = (await owner.post(K, '/api/manage/staff', { name_ar: 'رامي' })).json?.id;
+  const cut = (await owner.post(K, '/api/manage/services', { name_ar: 'قص', duration_min: 30, price: '5' })).json?.id;
+  const color = (await owner.post(K, '/api/manage/services', { name_ar: 'صبغة', duration_min: 60, price: '1.500', staff_ids: [sami] })).json?.id;
+  await owner.put(K, '/api/manage/hours', { hours: WEEK('00:00', '00:00') });
+
+  section('Availability');
+  // Each customer gets their own address so the per-address booking limit stays out of the way.
+  let ip = 10;
+  const customer = () => {
+    const c = new Client();
+    const addr = `10.9.0.${ip++}`;
+    const request = c.request.bind(c);
+    c.request = (host, method, path, opts = {}) => request(host, method, path, { ...opts, headers: { 'X-Forwarded-For': addr, ...opts.headers } });
+    return c;
+  };
+  const guest = customer();
+  const days = await guest.get(K, `/api/public/days?service_id=${cut}`);
+  expectStatus(days, 200, 'next two weeks');
+  expect(days.json?.days.length === 14 && days.json.days[1].slots > 0, 'every day has slots when open around the clock', days.json?.days?.slice(0, 2));
+  const tomorrow = days.json?.days[1].date as string;
+  const avail = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`);
+  const first = avail.json?.slots?.[0];
+  expect(first?.time === '00:00' && first.staff.length === 2 && avail.json.slots.length === 96 - 1, '15-minute slots across the day, both barbers free', { first, n: avail.json?.slots?.length });
+  const colourSlots = await guest.get(K, `/api/public/availability?service_id=${color}&date=${tomorrow}`);
+  expect(colourSlots.json?.slots.every((s: any) => s.staff.join() === String(sami)), 'only the barber who does colour is offered');
+  expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${rami}&date=2020-01-01`), 400, 'dates in the past', 'invalid');
+  const late = days.json?.days[13].date;
+  expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=${late}`), 200, 'two weeks ahead is fine');
+  expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=2099-01-01`), 400, 'beyond two weeks', 'invalid');
+  expectStatus(await guest.get(K, `/api/public/availability?service_id=999999&date=${tomorrow}`), 404, 'unknown service', 'not_found');
+
+  section('Booking without a deposit');
+  const book = (c: Client, body: Record<string, unknown>) => c.post(K, '/api/public/bookings', { service_id: cut, date: tomorrow, time: 600, name: 'محمد', phone: '0791234567', ...body });
+  const events = openEvents(K, owner.cookies.get(K)!);
+  const b1 = await book(customer(), {});
+  expectStatus(b1, 201, 'book 10:00 with anyone');
+  expect(b1.json?.booking.status === 'confirmed' && b1.json.booking.start === '10:00' && b1.json.booking.end === '10:30' && b1.json.booking.deposit === '0', 'confirmed straight away', b1.json?.booking);
+  expect(b1.json?.booking.customer.phone === '+962791234567' && b1.json.booking.salon.name_ar === 'صالون ك', 'phone normalised, salon details included');
+  expect(await events.waitFor('event: booking'), 'owner sees it live (server-sent events)');
+  events.close();
+  const b2 = await book(customer(), { name: 'علي', phone: '0781111111' });
+  expect(b2.status === 201 && b2.json.booking.staff.id !== b1.json.booking.staff.id, 'the same time goes to the other barber', b2.json);
+  expectStatus(await book(customer(), { name: 'سعد', phone: '0772222222' }), 409, 'nobody left at 10:00', 'slot_taken');
+  const after = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`);
+  expect(!after.json?.slots.some((s: any) => s.min === 600) && after.json.slots.some((s: any) => s.min === 630), '10:00 is gone, 10:30 is still free');
+  expect(!after.json?.slots.some((s: any) => s.min === 585), 'a 30-minute service cannot start at 9:45 either');
+  expectStatus(await book(customer(), { time: 605, phone: '0773333333' }), 409, 'a time that is not a slot', 'slot_taken');
+  expectStatus(await book(customer(), { name: '', phone: '0774444444' }), 400, 'name is required', 'invalid');
+  expectStatus(await book(customer(), { time: 660, phone: '123' }), 400, 'bad phone', 'invalid');
+  const view = await guest.get(K, `/api/public/bookings/${b1.json?.token}`);
+  expect(view.status === 200 && view.json.booking.id === b1.json.booking.id, 'the private link shows the booking');
+  expectStatus(await guest.get(other.B, `/api/public/bookings/${b1.json?.token}`), 404, "the link does not work on another salon's host");
+  expectStatus(await guest.get(K, '/api/public/bookings/not-a-real-token-at-all-000'), 404, 'unknown link');
+  const cancelled = await guest.post(K, `/api/public/bookings/${b1.json?.token}/cancel`);
+  expect(cancelled.status === 200 && cancelled.json.booking.status === 'cancelled', 'the customer can cancel');
+  expectStatus(await guest.post(K, `/api/public/bookings/${b1.json?.token}/cancel`), 409, 'cancelling twice', 'cannot_cancel');
+  const back = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`);
+  expect(back.json?.slots.some((s: any) => s.min === 600), 'a cancelled booking frees its slot');
+
+  section('CliQ deposit');
+  expectStatus(await owner.patch(K, '/api/manage/salon', { cliq_required: true }), 400, 'CliQ needs an alias first', 'required');
+  const withCliq = await owner.patch(K, '/api/manage/salon', { cliq_required: true, cliq_alias: 'SALONK', cliq_name: 'صالون ك', deposit_kind: 'fixed', deposit_amount: '2' });
+  expectStatus(withCliq, 200, 'turn on CliQ deposits');
+  expect(withCliq.json?.salon.cliq_alias === 'SALONK' && withCliq.json.salon.deposit_amount === '2', 'settings saved', withCliq.json?.salon);
+  const pub = await guest.get(K, '/api/public/salon');
+  expect(pub.json?.salon.cliq_required === true && pub.json.salon.deposit_amount === '2', 'customers are told a deposit is needed');
+  const d1 = await book(customer(), { time: 720, name: 'نور', phone: '0795555555' });
+  const pending = d1.json?.booking;
+  expect(d1.status === 201 && pending?.status === 'pending_payment' && pending.deposit === '2' && pending.expires_in_s > 1700 && pending.expires_in_s <= 1800, 'held for 30 minutes pending a 2 JD deposit', pending);
+  expect(pending?.salon.cliq_alias === 'SALONK' && pending.salon.cliq_name === 'صالون ك', 'the customer sees where to send it');
+  const colourBooking = await book(customer(), { service_id: color, time: 900, name: 'هبة', phone: '0796666666' });
+  expect(colourBooking.json?.booking.deposit === '1.5', 'the deposit never exceeds the price', colourBooking.json?.booking);
+  const held = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${pending?.staff.id}&date=${tomorrow}`);
+  expect(!held.json?.slots.some((s: any) => s.min === 720), 'a held slot is not offered to anyone else');
+  const sent = await guest.post(K, `/api/public/bookings/${d1.json?.token}/sent`, { note: 'نور أحمد - بنك الإسكان' });
+  expect(sent.status === 200 && sent.json.booking.status === 'payment_sent' && sent.json.booking.payment_note === 'نور أحمد - بنك الإسكان', 'customer says the transfer is sent');
+  expectStatus(await guest.post(K, `/api/public/bookings/${d1.json?.token}/sent`, {}), 409, 'saying it twice', 'not_pending');
+  const overview = await owner.get(K, '/api/manage/bookings/overview');
+  expect(overview.json?.attention.some((b: any) => b.id === pending.id && b.status === 'payment_sent') && overview.json.counts[tomorrow] >= 3, 'the owner sees what needs checking and the day counts', overview.json);
+  const confirmed = await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'confirmed' });
+  expect(confirmed.status === 200 && confirmed.json.booking.status === 'confirmed', 'owner confirms the money arrived');
+  expect((await guest.get(K, `/api/public/bookings/${d1.json?.token}`)).json?.booking.status === 'confirmed', 'the customer sees it confirmed');
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'completed' }), 200, 'mark as done');
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'cancelled' }), 409, 'done bookings cannot be cancelled', 'bad_transition');
+
+  section('Holds that run out');
+  const d2 = await book(customer(), { time: 780, name: 'ليث', phone: '0797777777' });
+  await query(`update bookings set expires_at = now() - interval '1 minute' where id = $1`, [d2.json?.booking.id]);
+  expect((await guest.get(K, `/api/public/bookings/${d2.json?.token}`)).json?.booking.status === 'expired', 'reads as expired the moment time is up');
+  expectStatus(await guest.post(K, `/api/public/bookings/${d2.json?.token}/sent`, {}), 409, 'too late to say it was sent', 'not_pending');
+  const freed = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${d2.json?.booking.staff.id}&date=${tomorrow}`);
+  expect(freed.json?.slots.some((s: any) => s.min === 780), 'and the slot is free again');
+  const rebook = await book(customer(), { time: 780, staff_id: d2.json?.booking.staff.id, name: 'زيد', phone: '0798888888' });
+  expectStatus(rebook, 201, 'someone else can take it');
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${d2.json?.booking.id}`, { status: 'confirmed' }), 409, 'an expired hold cannot be confirmed', 'bad_transition');
+  await owner.patch(K, '/api/manage/salon', { deposit_kind: 'full' });
+  const full = await book(customer(), { time: 840, name: 'رنا', phone: '0799999991' });
+  expect(full.json?.booking.deposit === '5', 'or the full price as deposit', full.json?.booking);
+
+  section('Owner bookings');
+  const manual = await owner.post(K, '/api/manage/bookings', { service_id: cut, staff_id: rami, date: tomorrow, time: 1200, name: 'زبون هاتفي', phone: '0790000123' });
+  expect(manual.status === 201 && manual.json.booking.status === 'confirmed' && manual.json.booking.deposit === '0' && manual.json.booking.source === 'owner', 'owner books a phone customer, no deposit', manual.json);
+  const day = await owner.get(K, `/api/manage/bookings?date=${tomorrow}`);
+  expect(day.status === 200 && day.json.bookings.length >= 6 && day.json.bookings.every((b: any, i: number, a: any[]) => i === 0 || a[i - 1].start <= b.start), "the day's bookings, in time order", day.json?.bookings?.map((b: any) => b.start));
+  expect(!day.json?.bookings.some((b: any) => b.status === 'expired'), 'expired holds stay off the schedule');
+  expectStatus(await other.ownerB.patch(other.B, `/api/manage/bookings/${manual.json?.booking.id}`, { status: 'cancelled' }), 404, "another salon's owner cannot touch it");
+  expectStatus(await guest.get(K, `/api/manage/bookings?date=${tomorrow}`), 401, 'the schedule needs the owner');
+  expectStatus(await owner.del(K, `/api/manage/staff/${rami}`), 409, 'a barber with bookings cannot be deleted (pause instead)', 'in_use');
+
+  section('Booking limits');
+  const busy = customer();
+  const same = { phone: '0791112233', name: 'تجربة' };
+  for (const time of [60, 120, 180]) await book(busy, { ...same, time });
+  expectStatus(await book(busy, { ...same, time: 240 }), 429, 'a fourth upcoming booking for one phone', 'too_many_bookings');
+  const spam = customer();
+  for (let i = 0; i < 10; i++) await book(spam, { time: 300 + i * 15, phone: `07900${String(i).padStart(5, '0')}` });
+  expectStatus(await book(spam, { time: 480, phone: '0790099999' }), 429, 'too many bookings from one address', 'too_many_bookings');
+  await owner.patch(K, '/api/manage/salon', { booking_enabled: false });
+  expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`), 403, 'online booking switched off', 'booking_closed');
+  expect(createdK.status === 201, 'booking salon was created');
 }
 
 main().catch(async (err) => {

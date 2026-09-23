@@ -12,19 +12,47 @@ import { servicesPage } from './manage-services.js';
 import { teamPage } from './manage-team.js';
 import { hoursPage } from './manage-hours.js';
 import { openSettings } from './manage-settings.js';
+import { bookingsPage } from './manage-bookings.js';
 
 export const PAGES = [
   { id: 'home', icon: 'home', render: homePage },
-  { id: 'brand', icon: 'palette', render: brandPage },
+  { id: 'bookings', icon: 'calendar', render: bookingsPage },
   { id: 'services', icon: 'scissors', render: servicesPage },
   { id: 'team', icon: 'users', render: teamPage },
   { id: 'hours', icon: 'clock', render: hoursPage },
+  { id: 'brand', icon: 'palette', render: brandPage },
 ];
 
 let cache = null;
+
+// ---------------------------------------------------------------- live updates
+// One stream for the whole studio; the current page subscribes while it is shown.
+let events = null;
+const listeners = new Set();
+function connectEvents() {
+  if (events || typeof EventSource === 'undefined') return;
+  events = new EventSource('/api/manage/events');
+  events.addEventListener('booking', (e) => {
+    const data = JSON.parse(e.data);
+    for (const fn of listeners) fn(data);
+  });
+}
+
 export const clearManageCache = () => {
   cache = null;
+  events?.close();
+  events = null;
 };
+
+/** How many deposits wait for the owner, for the Bookings badge. */
+let attention = 0;
+async function loadAttention() {
+  try {
+    attention = (await api('GET', '/api/manage/bookings/overview?days=1')).attention.filter((b) => b.status === 'payment_sent').length;
+  } catch {
+    attention = 0;
+  }
+}
 
 async function load() {
   const [salon, services, staff] = await Promise.all([
@@ -119,7 +147,15 @@ export function manageView(app, pageId) {
     previewState() {
       return { salon: { ...store.salon, ...(store.draftSalon ?? {}) }, services: store.services, staff: store.staff, hours: store.hours };
     },
+    /** Called with { id, status } whenever a booking changes, while this view is shown. */
+    onBooking(fn) {
+      listeners.add(fn);
+      app.onUnmount(() => listeners.delete(fn));
+    },
+    refreshBadges: () => loadAttention().then(refresh),
   };
+  connectEvents();
+  store.onBooking(() => store.refreshBadges());
 
   const identities = [];
   const identity = () => {
@@ -191,8 +227,9 @@ export function manageView(app, pageId) {
     const steps = setupSteps(store);
     const needs = new Set(steps.filter((s) => !s.done).map((s) => s.page));
     for (const link of navLinks) {
-      link.querySelector('.badge-dot')?.remove();
-      if (needs.has(link.dataset.page)) link.append(h('span', { class: 'badge-dot', 'aria-hidden': 'true' }));
+      link.querySelector('.badge-dot, .badge-count')?.remove();
+      if (link.dataset.page === 'bookings' && attention) link.append(h('span', { class: 'badge-count num', text: String(attention) }));
+      else if (needs.has(link.dataset.page)) link.append(h('span', { class: 'badge-dot', 'aria-hidden': 'true' }));
     }
     refreshPreview();
   }
@@ -213,8 +250,8 @@ export function manageView(app, pageId) {
   if (cache) {
     queueMicrotask(show);
   } else {
-    load()
-      .then((data) => {
+    Promise.all([load(), loadAttention()])
+      .then(([data]) => {
         cache = data;
         Object.assign(store, data);
         show();

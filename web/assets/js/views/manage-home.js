@@ -1,9 +1,10 @@
 // Home: where the owner lands. How ready the app is, what to do next, a glance at
 // the salon, and the link to share once it is ready.
-import { avatar, confetti, countUp, h, icon, ring, stagger, toast } from '../dom.js';
+import { api } from '../api.js';
+import { avatar, clear, confetti, countUp, h, icon, ring, stagger, toast } from '../dom.js';
 import { fmtTime, pick, t } from '../i18n.js';
 import { miniApp, phone } from '../preview.js';
-import { nowIn, openStatus } from '../time.js';
+import { nowIn, openStatus, toMin } from '../time.js';
 import { openPreview, setupSteps } from './manage.js';
 
 function greeting(store, app) {
@@ -120,6 +121,36 @@ function glance(store) {
   );
 }
 
+/** Today's visits, the next one, and deposits waiting for a check. Filled in once loaded. */
+function todayCard(store) {
+  const card = h('a', { class: 'card today-card', href: '#/manage/bookings' }, h('div', { class: 'skel', style: { height: '52px' } }));
+  const section = h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: t('home.today') }), h('a', { class: 'link-btn', href: '#/manage/bookings', text: t('home.open_schedule') })), card);
+  Promise.all([api('GET', '/api/manage/bookings'), api('GET', '/api/manage/bookings/overview?days=1')])
+    .then(([day, overview]) => {
+      const live = day.bookings.filter((b) => ['pending_payment', 'payment_sent', 'confirmed', 'completed'].includes(b.status));
+      const now = nowIn(store.salon.timezone).minutes;
+      const next = live.find((b) => b.status !== 'completed' && toMin(b.start) >= now);
+      const waiting = overview.attention.filter((b) => b.status === 'payment_sent').length;
+      const big = countUp(h('span', { class: 'big num' }), live.length);
+      clear(
+        card,
+        h(
+          'div',
+          { class: 'head' },
+          h('div', { class: 'tile' }, icon('calendar')),
+          h('div', { class: 'grow' }, live.length ? big : null, h('div', { class: 'muted small', text: live.length ? t('sched.count', { n: live.length }) : t('home.today_empty') })),
+          icon('chevron', 'flip-ltr faint'),
+        ),
+        next
+          ? h('div', { class: 'next' }, avatar(next.staff.photo_url, pick(next.staff, 'name')), h('span', { class: 'grow truncate', text: t('home.next', { name: next.customer.name, time: fmtTime(next.start) }) }), h('span', { class: 'emoji', text: next.service.icon || '✂️' }))
+          : live.length ? h('div', { class: 'next', text: t('home.today_done') }) : null,
+        waiting ? h('div', { class: 'today-alert' }, h('span', { class: 'dot' }), h('span', { text: t('home.waiting', { n: waiting }) })) : null,
+      );
+    })
+    .catch(() => section.remove());
+  return section;
+}
+
 function linkCard(store) {
   const copy = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('copy') }, icon('copy'));
   copy.addEventListener('click', async () => {
@@ -156,6 +187,7 @@ export function homePage(store, app) {
     'div',
     null,
     stagger([greeting(store, app), heroCard(store, app, steps)]),
+    store.services.some((s) => s.active) ? todayCard(store) : null,
     ready ? linkCard(store) : stepsCard(steps),
     glance(store),
     ready ? stepsCard(steps) : linkCard(store),
