@@ -9,7 +9,7 @@ import {
 import { one, pool, query, tx } from '../db.js';
 import { publish, subscribe } from '../events.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
-import { mediaUrl } from '../media.js';
+import { intakeProof, mediaUrl, readImageUpload } from '../media.js';
 import type { Salon } from '../tenancy.js';
 import { Input, int, oneOf, text } from '../validate.js';
 
@@ -40,19 +40,37 @@ async function checkDateWindow(salon: Salon, date: string, maxDays: number) {
   return today;
 }
 
-// Bookings created per client address: generous for real people, tight for scripts.
-const recent = new Map<string, number[]>();
-function limitBookings(ip: string) {
-  const now = Date.now();
-  const list = (recent.get(ip) ?? []).filter((t) => now - t < 10 * 60_000);
-  if (list.length >= 10) throw new HttpError(429, 'too_many_bookings');
-  list.push(now);
-  recent.set(ip, list);
+// Per client address, per 10 minutes: generous for real people, tight for scripts.
+function rateLimit(max: number, code: string) {
+  const recent = new Map<string, number[]>();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [ip, list] of recent) if (!list.some((t) => now - t < 10 * 60_000)) recent.delete(ip);
+  }, 60_000).unref();
+  return (ip: string) => {
+    const now = Date.now();
+    const list = (recent.get(ip) ?? []).filter((t) => now - t < 10 * 60_000);
+    if (list.length >= max) throw new HttpError(429, code);
+    list.push(now);
+    recent.set(ip, list);
+  };
 }
-setInterval(() => {
-  const now = Date.now();
-  for (const [ip, list] of recent) if (!list.some((t) => now - t < 10 * 60_000)) recent.delete(ip);
-}, 60_000).unref();
+const limitBookings = rateLimit(10, 'too_many_bookings');
+const limitUploads = rateLimit(20, 'too_many_attempts');
+
+/** Payment screenshots are private: never cached by shared caches, never framed, never sniffed. */
+function sendProof(ctx: Ctx, row: { content_type: string; bytes: Buffer }) {
+  ctx.res.writeHead(200, {
+    'Content-Type': row.content_type,
+    'Content-Length': row.bytes.length,
+    // The URL carries a version, so the browser may keep it a while; proxies may not.
+    'Cache-Control': 'private, max-age=3600',
+    'Content-Security-Policy': "default-src 'none'; sandbox",
+    'Cross-Origin-Resource-Policy': 'same-origin',
+    'X-Content-Type-Options': 'nosniff',
+  });
+  ctx.res.end(row.bytes);
+}
 
 // ---------------------------------------------------------------- public (customers)
 
@@ -104,6 +122,7 @@ async function publicBooking(salon: Salon, token: string) {
   const booking = shapeBooking(row, mediaUrl);
   return {
     ...booking,
+    proof_url: row.proof_v ? `/api/public/bookings/${token}/proof?v=${row.proof_v}` : null,
     // The customer sees their own name and number, nothing about anyone else.
     salon: {
       name_ar: salon.name_ar,
@@ -129,18 +148,72 @@ async function publicGet(ctx: Ctx) {
   ok(ctx, { booking: await publicBooking(salon, tokenParam(ctx)) });
 }
 
-/** The customer says the CliQ transfer is on its way; the owner checks their bank. */
+/** The customer's own screenshot, for their booking page. */
+async function publicProof(ctx: Ctx) {
+  const salon = requireBookableSalon(ctx);
+  const row = await one<{ content_type: string; bytes: Buffer }>(
+    `select p.content_type, p.bytes from booking_proofs p join bookings b on b.id = p.booking_id
+      where b.salon_id = $1 and b.token_hash = $2`,
+    [salon.id, hashToken(tokenParam(ctx))],
+  );
+  if (!row) throw new HttpError(404, 'not_found');
+  sendProof(ctx, row);
+}
+
+/**
+ * The customer uploads the CliQ receipt. Allowed while the deposit is awaited and,
+ * to fix a wrong picture, until the owner has decided.
+ */
+async function publicProofUpload(ctx: Ctx) {
+  const salon = requireBookableSalon(ctx);
+  const token = tokenParam(ctx);
+  limitUploads(ctx.ip);
+  // Validate and re-encode before touching the booking: this is the slow part.
+  const img = await intakeProof(await readImageUpload(ctx));
+  const changed = await tx(async (db) => {
+    const b = await one<{ id: number; status: BookingStatus }>(
+      `select id, status from bookings
+        where salon_id = $1 and token_hash = $2
+          and (status = 'payment_sent' or (status = 'pending_payment' and expires_at > now()))
+        for update`,
+      [salon.id, hashToken(token)],
+      db,
+    );
+    if (!b) throw new HttpError(409, 'not_pending');
+    await query(
+      `insert into booking_proofs (booking_id, content_type, bytes, width, height) values ($1, $2, $3, $4, $5)
+       on conflict (booking_id) do update
+         set content_type = excluded.content_type, bytes = excluded.bytes, width = excluded.width, height = excluded.height, created_at = now()`,
+      [b.id, img.contentType, img.bytes, img.width, img.height],
+      db,
+    );
+    return b;
+  });
+  // A replaced picture on a payment already under review: the owner's screen refreshes.
+  if (changed.status === 'payment_sent') publish(salon.id, 'booking', { id: changed.id, status: 'payment_sent', proof: 'replaced' });
+  ok(ctx, { booking: await publicBooking(salon, token) });
+}
+
+/** The customer says the CliQ transfer is sent, with its screenshot; the owner reviews it. */
 async function publicSent(ctx: Ctx) {
   const salon = requireBookableSalon(ctx);
   const token = tokenParam(ctx);
   const note = new Input(await readJson(ctx)).opt('note', text(120)) ?? '';
-  const row = await one<{ id: number }>(
-    `update bookings set status = 'payment_sent', payment_note = $3, updated_at = now()
-      where salon_id = $1 and token_hash = $2 and status = 'pending_payment' and expires_at > now()
-      returning id`,
+  const row = await one<{ id: number; has_proof: boolean }>(
+    `update bookings b set status = 'payment_sent', payment_note = $3, updated_at = now()
+      where b.salon_id = $1 and b.token_hash = $2 and b.status = 'pending_payment' and b.expires_at > now()
+        and exists (select 1 from booking_proofs p where p.booking_id = b.id)
+      returning b.id, true as has_proof`,
     [salon.id, hashToken(token), note],
   );
-  if (!row) throw new HttpError(409, 'not_pending');
+  if (!row) {
+    // Tell "still waiting, but no screenshot yet" apart from "too late".
+    const waiting = await one(
+      `select 1 from bookings where salon_id = $1 and token_hash = $2 and status = 'pending_payment' and expires_at > now()`,
+      [salon.id, hashToken(token)],
+    );
+    throw waiting ? new HttpError(400, 'required', 'proof') : new HttpError(409, 'not_pending');
+  }
   publish(salon.id, 'booking', { id: row.id, status: 'payment_sent' });
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
@@ -240,6 +313,19 @@ const NEXT: Record<BookingStatus, BookingStatus[]> = {
   expired: [],
 };
 
+async function ownerProof(ctx: Ctx) {
+  const salonId = requireOwner(ctx);
+  const id = Number(ctx.params.id);
+  if (!Number.isSafeInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
+  const row = await one<{ content_type: string; bytes: Buffer }>(
+    `select p.content_type, p.bytes from booking_proofs p join bookings b on b.id = p.booking_id
+      where b.salon_id = $1 and b.id = $2`,
+    [salonId, id],
+  );
+  if (!row) throw new HttpError(404, 'not_found');
+  sendProof(ctx, row);
+}
+
 async function ownerUpdate(ctx: Ctx) {
   const salonId = requireOwner(ctx);
   const id = Number(ctx.params.id);
@@ -251,7 +337,13 @@ async function ownerUpdate(ctx: Ctx) {
     if (!current) throw new HttpError(404, 'not_found');
     if (!NEXT[current.status].includes(status)) throw new HttpError(409, 'bad_transition');
     try {
-      await query(`update bookings set status = $3, expires_at = null, updated_at = now() where salon_id = $1 and id = $2`, [salonId, id, status], db);
+      // Cancelling a payment the customer said they sent is a rejection; they are told so.
+      const rejected = status === 'cancelled' && current.status === 'payment_sent';
+      await query(
+        `update bookings set status = $3, expires_at = null, payment_rejected = $4, updated_at = now() where salon_id = $1 and id = $2`,
+        [salonId, id, status, rejected],
+        db,
+      );
     } catch (err) {
       // Bringing back a cancelled-then-rebooked slot would double-book.
       if ((err as { code?: string }).code === '23P01') throw new HttpError(409, 'slot_taken');
@@ -286,6 +378,8 @@ export function bookingRoutes(r: Router) {
   r.get('/api/public/availability', publicAvailability);
   r.post('/api/public/bookings', publicCreate);
   r.get('/api/public/bookings/:token', publicGet);
+  r.get('/api/public/bookings/:token/proof', publicProof);
+  r.put('/api/public/bookings/:token/proof', publicProofUpload);
   r.post('/api/public/bookings/:token/sent', publicSent);
   r.post('/api/public/bookings/:token/cancel', publicCancel);
 
@@ -294,5 +388,6 @@ export function bookingRoutes(r: Router) {
   r.get('/api/manage/availability', ownerAvailability);
   r.post('/api/manage/bookings', ownerCreate);
   r.patch('/api/manage/bookings/:id', ownerUpdate);
+  r.get('/api/manage/bookings/:id/proof', ownerProof);
   r.get('/api/manage/events', ownerEvents);
 }

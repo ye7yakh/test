@@ -128,7 +128,22 @@ async function fixtures(dir: string) {
       <path d="M${cx - head} ${cy - head * 0.1} Q${cx} ${cy - head * 1.6} ${cx + head} ${cy - head * 0.1} Q${cx} ${cy - head * 0.8} ${cx - head} ${cy - head * 0.1}Z" fill="#2b1d14"/>
     </svg>`);
   };
-  const files = { p1: path.join(dir, 'p1.jpg'), p2: path.join(dir, 'p2.jpg'), logo: path.join(dir, 'logo.png') };
+  const files = { p1: path.join(dir, 'p1.jpg'), p2: path.join(dir, 'p2.jpg'), logo: path.join(dir, 'logo.png'), receipt: path.join(dir, 'receipt.png') };
+  // A made-up transfer receipt in no real bank's style, shaped like a phone screenshot.
+  await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688">
+    <rect width="780" height="1688" fill="#f3f4f6"/><rect width="780" height="150" fill="#334155"/>
+    <circle cx="390" cy="420" r="92" fill="#16a34a"/><path d="M345 420 l32 32 l62 -66" fill="none" stroke="#fff" stroke-width="18" stroke-linecap="round" stroke-linejoin="round"/>
+    <g font-family="DejaVu Sans, sans-serif" text-anchor="middle" fill="#111827">
+      <text x="390" y="600" font-size="44" font-weight="bold">Transfer sent</text>
+      <text x="390" y="700" font-size="76" font-weight="bold">2.000 JOD</text>
+    </g>
+    <g font-family="DejaVu Sans, sans-serif" font-size="30" fill="#374151">
+      <rect x="60" y="780" width="660" height="420" rx="24" fill="#fff"/>
+      <text x="100" y="860">To</text><text x="680" y="860" text-anchor="end" font-weight="bold">LUXSALON</text>
+      <text x="100" y="960">From</text><text x="680" y="960" text-anchor="end">SAMI KHALED</text>
+      <text x="100" y="1060">Reference</text><text x="680" y="1060" text-anchor="end">TX 48213907</text>
+      <text x="100" y="1160">Time</text><text x="680" y="1160" text-anchor="end">09:12</text>
+    </g></svg>`)).png().toFile(files.receipt);
   await sharp(portrait(1000, 1300, ['#9fd3c7', '#3f7f73'], '#d4a373', '#582f0e', 520)).jpeg().toFile(files.p1);
   await sharp(portrait(1500, 1000, ['#ffd6a5', '#ff9f68'], '#8d5524', '#1b263b', 620)).jpeg().toFile(files.p2);
   await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600">
@@ -325,20 +340,61 @@ async function main() {
     await clickText(cust, '.sheet-foot button', 'تأكيد الحجز');
     await cust.waitForSelector('.cliq-card');
     await snap(cust, 'booking-cliq', { full: true });
+    await upload(cust, '.proof-drop', files.receipt);
+    await cust.waitForSelector('.proof-drop.has img');
+    await cust.$eval('.proof-drop', (el) => el.scrollIntoView({ block: 'center' }));
+    await snap(cust, 'booking-proof-picked');
     await clickText(cust, 'button', 'أرسلت الحوالة');
     await cust.waitForSelector('.status-icon.pulse');
-    await snap(cust, 'booking-sent');
+    await cust.waitForSelector('.proof-card .proof-img');
+    await snap(cust, 'booking-sent', { full: true });
 
-    // ---- the owner sees it arrive live and confirms the transfer
+    // ---- the owner sees it arrive live, opens the screenshot and approves
     await page.bringToFront();
-    await page.waitForSelector('.att-row.sent');
+    await page.waitForSelector('.att-row.sent .proof-strip');
     await snap(page, 'bookings-deposit-to-check', { wait: 1200 });
-    await clickText(page, '.att-row.sent button', 'استلمت الدفعة');
+    await page.click('.att-row.sent .proof-strip');
+    await page.waitForSelector('.proof-viewer .pv-stage img');
+    await page.waitForFunction(() => (document.querySelector('.proof-viewer img') as HTMLImageElement)?.complete);
+    await snap(page, 'owner-review-screenshot', { wait: 900 });
+    await clickText(page, '.proof-viewer .pv-actions button', 'استلمت الدفعة');
     await find(page, '.toast', 'تم تأكيد الحجز');
-    await page.waitForFunction(() => !document.querySelector('.att-row'));
+    await page.waitForFunction(() => !document.querySelector('.att-row') && !document.querySelector('.proof-viewer'));
     await cust.bringToFront();
     await cust.waitForSelector('.status-icon.ok', { timeout: 20_000 });
     await snap(cust, 'booking-confirmed', { wait: 1200 });
+
+    // ---- another customer's transfer is not found: rejected from the review
+    // Sent as source text: tsx would wrap named helpers in a function the page lacks.
+    const token2 = (await cust.evaluate(`(async () => {
+      const json = (r) => r.json();
+      const post = (url, body) => fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(json);
+      const { services } = await fetch('/api/public/salon').then(json);
+      const svc = services[0].id;
+      const { days } = await fetch('/api/public/days?service_id=' + svc).then(json);
+      const date = days.find((d) => d.slots > 0).date;
+      const { slots } = await fetch('/api/public/availability?service_id=' + svc + '&date=' + date).then(json);
+      const made = await post('/api/public/bookings', { service_id: svc, staff_id: null, date, time: slots[slots.length - 1].min, name: 'رامي', phone: '0781234500' });
+      const canvas = Object.assign(document.createElement('canvas'), { width: 600, height: 1200 });
+      canvas.getContext('2d').fillRect(0, 0, 600, 1200);
+      const blob = await new Promise((done) => canvas.toBlob(done, 'image/png'));
+      await fetch('/api/public/bookings/' + made.token + '/proof', { method: 'PUT', headers: { 'Content-Type': 'image/png' }, body: blob });
+      await post('/api/public/bookings/' + made.token + '/sent', { note: 'رامي' });
+      return made.token;
+    })()`)) as string;
+    await page.bringToFront();
+    await page.waitForSelector('.att-row.sent .proof-strip');
+    await page.click('.att-row.sent .proof-strip');
+    await page.waitForSelector('.proof-viewer .pv-actions');
+    await clickText(page, '.proof-viewer .pv-actions button', 'رفض');
+    await page.waitForSelector('.sheet .btn-danger');
+    await snap(page, 'owner-reject-confirm');
+    await page.click('.sheet .btn-danger');
+    await find(page, '.toast', 'رُفضت الدفعة');
+    await page.waitForFunction(() => !document.querySelector('.proof-viewer'));
+    await cust.bringToFront();
+    await go(cust, `${SALON}/#/b/${token2}`, '.status-hero h1');
+    await snap(cust, 'booking-rejected', { wait: 1000 });
 
     // ---- a booking taken by phone, on the same day
     await page.bringToFront();

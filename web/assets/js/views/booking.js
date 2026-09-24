@@ -1,6 +1,6 @@
 // Customer booking: a four-step sheet (service, who, when, details) and the booking's
 // own page, which walks the customer through a CliQ deposit when the salon asks for one.
-import { api } from '../api.js';
+import { api, pickImage, prepareImage } from '../api.js';
 import { appIcon, avatar, busy, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
 import { errorText, fmtDuration, fmtPrice, fmtTime, pick, t, westernDigits } from '../i18n.js';
 import { dayLabel, dayStrip, fmtDate, slotGrid } from '../slots.js';
@@ -215,17 +215,28 @@ export function bookingPage(app, token) {
   let tick = null;
   let poll = null;
   let remaining = 0;
+  // The screenshot picked but not sent yet; survives re-renders.
+  let proofFile = null;
+  let proofPreview = null;
+  const setProof = (file) => {
+    if (proofPreview) URL.revokeObjectURL(proofPreview);
+    proofFile = file;
+    proofPreview = file ? URL.createObjectURL(file) : null;
+  };
   app.onUnmount(() => {
     clearInterval(tick);
     clearInterval(poll);
+    setProof(null);
   });
 
   async function load() {
     try {
       const res = await api('GET', `/api/public/bookings/${token}`);
-      const changed = booking && booking.status !== res.booking.status;
+      const first = !booking;
+      const changed = !first && booking.status !== res.booking.status;
       booking = res.booking;
-      render(changed);
+      // Polling only redraws when something happened, so a half-filled form stays put.
+      if (first || changed) render(changed);
     } catch (err) {
       clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }), h('a', { class: 'btn btn-secondary btn-block', href: '#/', text: t('bk.back') })));
     }
@@ -238,8 +249,9 @@ export function bookingPage(app, token) {
     clearInterval(poll);
     if (LIVE.has(b.status)) poll = setInterval(load, 12_000);
 
-    const titleKey = `bk.${b.status}`;
-    const sub = {
+    const rejected = b.status === 'cancelled' && b.payment_rejected;
+    const titleKey = rejected ? 'bk.rejected' : `bk.${b.status}`;
+    const sub = rejected ? t('bk.rejected_sub') : {
       confirmed: t('bk.confirmed_sub', { day: `${fmtDate(b.date, { weekday: 'long', day: 'numeric', month: 'long' })}`, time: fmtTime(b.start) }),
       pending_payment: t('bk.pending_sub'),
       payment_sent: t('bk.payment_sent_sub'),
@@ -255,6 +267,11 @@ export function bookingPage(app, token) {
     );
 
     const cliq = b.status === 'pending_payment' ? cliqCard(b) : null;
+    const proof = b.status === 'payment_sent' && b.proof_url ? proofCard(b) : null;
+    const wa = waNumber(s.phone);
+    const contact = rejected && s.phone
+      ? h('a', { class: 'btn btn-secondary btn-block', href: wa ? `https://wa.me/${wa}?text=${encodeURIComponent(t('bk.contact_text', { id: b.id }))}` : `tel:${s.phone}`, target: '_blank', rel: 'noopener' }, icon(wa ? 'chat' : 'phone'), t('bk.contact'))
+      : null;
     const details = h(
       'section',
       { class: 'card details' },
@@ -282,7 +299,7 @@ export function bookingPage(app, token) {
     clear(
       el,
       h('header', { class: 'booking-top' }, h('a', { class: 'icon-btn plain', href: '#/', 'aria-label': t('bk.back') }, icon('arrow', 'flip-rtl')), appIcon(s.logo_url), h('span', { class: 'grow truncate', text: pick(s, 'name') })),
-      h('main', { class: 'page stack-lg' }, stagger([hero, cliq, details, again, cancel].filter(Boolean))),
+      h('main', { class: 'page stack-lg' }, stagger([hero, cliq, proof, details, contact, again, cancel].filter(Boolean))),
     );
     if (changed && ['confirmed'].includes(b.status)) requestAnimationFrame(() => sparkles(hero.querySelector('.status-icon')));
   }
@@ -306,11 +323,34 @@ export function bookingPage(app, token) {
     });
     const note = input({ name: 'note', maxlength: 120, value: me().name ?? '' });
     const sent = h('button', { class: 'btn btn-primary btn-block', type: 'button' }, icon('check'), t('bk.sent'));
+    const drop = h('button', { class: 'proof-drop', type: 'button', name: 'proof' });
+    const renderDrop = () => {
+      drop.classList.toggle('has', !!proofFile);
+      sent.disabled = !proofFile;
+      if (proofFile) {
+        clear(drop, h('img', { src: proofPreview, alt: t('bk.your_proof') }), h('span', { class: 'change' }, icon('camera'), t('bk.change_photo')));
+      } else {
+        clear(drop, h('div', { class: 'tile' }, icon('image')), h('div', { class: 'grow' }, h('b', { text: t('bk.upload') }), h('span', { text: t('bk.upload_sub') })), icon('plus', 'faint'));
+      }
+    };
+    drop.addEventListener('click', async () => {
+      const file = await pickImage();
+      if (!file) return;
+      setProof(file);
+      renderDrop();
+    });
+    renderDrop();
     sent.addEventListener('click', () => busy(sent, async () => {
-      booking = (await api('POST', `/api/public/bookings/${token}/sent`, { note: note.value })).booking;
-      render(true);
+      try {
+        await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(proofFile, 3000));
+        booking = (await api('POST', `/api/public/bookings/${token}/sent`, { note: note.value })).booking;
+        setProof(null);
+        render(true);
+      } catch (err) {
+        if (err.code === 'not_pending') load();
+        throw err;
+      }
     }));
-    const wa = waNumber(s.phone);
     const amount = fmtPrice(b.deposit, s.currency);
     return h(
       'section',
@@ -321,9 +361,29 @@ export function bookingPage(app, token) {
         h('li', null, t('bk.step2', { amount }), h('div', { class: 'alias' }, h('span', { class: 'ltr', text: s.cliq_alias }), copy), s.cliq_name ? h('div', { class: 'small muted', text: `${t('bk.beneficiary')}: ${s.cliq_name}` }) : null),
         h('li', { text: t('bk.step3') }),
       ),
-      field(t('bk.sender'), note),
+      drop,
+      h('div', { style: { marginTop: '12px' } }, field(t('bk.sender'), note, { optional: true })),
       h('div', { style: { marginTop: '12px' } }, sent),
-      wa ? h('a', { class: 'link-btn wa', href: `https://wa.me/${wa}?text=${encodeURIComponent(t('bk.whatsapp_text', { id: b.id, time: fmtTime(b.start), date: fmtDate(b.date, { day: 'numeric', month: 'long' }) }))}`, target: '_blank', rel: 'noopener' }, icon('share'), t('bk.whatsapp_proof')) : null,
+    );
+  }
+
+  /** While the salon reviews: the screenshot they are looking at, replaceable if it was the wrong one. */
+  function proofCard(b) {
+    const replace = h('button', { class: 'link-btn', type: 'button' }, icon('camera'), t('bk.replace'));
+    replace.addEventListener('click', async () => {
+      const file = await pickImage();
+      if (!file) return;
+      busy(replace, async () => {
+        booking = (await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(file, 3000))).booking;
+        toast(t('bk.replaced'));
+        render(false);
+      });
+    });
+    return h(
+      'section',
+      { class: 'card proof-card' },
+      h('div', { class: 'row between' }, h('div', { class: 'eyebrow', text: t('bk.your_proof') }), replace),
+      h('img', { class: 'proof-img', src: b.proof_url, alt: t('bk.your_proof') }),
     );
   }
 

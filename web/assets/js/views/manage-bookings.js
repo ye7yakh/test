@@ -62,9 +62,80 @@ async function runAction(button, b, [label, status, , confirmKey], onChange) {
   if (confirmKey && !(await confirmDelete({ title: t(label), message: t(confirmKey), yesText: t(label) }))) return false;
   const updated = await busy(button, () => setStatus(b, status));
   if (!updated) return false;
-  toast(status === 'confirmed' && AWAITING.has(b.status) ? t('sched.confirmed') : t('sched.updated'));
+  const message = !AWAITING.has(b.status) ? 'sched.updated' : status === 'confirmed' ? 'sched.confirmed' : 'sched.rejected';
+  toast(t(message));
   onChange(updated);
   return true;
+}
+
+/**
+ * Full-screen review of the customer's CliQ screenshot, with the decision right
+ * under it. Tap the picture to see it at full size.
+ */
+function openProof(store, b, onChange, { onDecided } = {}) {
+  const previous = document.activeElement;
+  const cur = store.salon.currency;
+  const img = h('img', { src: b.proof_url, alt: t('sched.proof') });
+  const stage = h('div', { class: 'pv-stage' }, img);
+  img.addEventListener('click', () => stage.classList.toggle('zoomed'));
+  const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('close') }, icon('x'));
+  const awaiting = AWAITING.has(b.status);
+  const buttons = awaiting ? actionsFor(b).map((a) => h('button', { class: `btn ${a[2]}`, type: 'button', text: t(a[0]) })) : [];
+  const viewer = h(
+    'div',
+    { class: 'proof-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': t('sched.proof') },
+    h(
+      'div',
+      { class: 'pv-top' },
+      h(
+        'div',
+        { class: 'grow' },
+        h('div', { class: 'name truncate', text: b.customer.name }),
+        h('div', { class: 'small muted truncate num', text: [t('sched.expected', { amount: fmtPrice(b.deposit, cur) }), b.payment_note].filter(Boolean).join(' · ') }),
+      ),
+      closeBtn,
+    ),
+    stage,
+    h('div', { class: 'pv-foot' }, awaiting ? h('p', { class: 'pv-hint' }, icon('alert'), h('span', { text: t('sched.review_hint') })) : h('p', { class: 'pv-hint faint', text: t('sched.zoom') }), buttons.length ? h('div', { class: 'pv-actions' }, buttons) : null),
+  );
+  const close = () => {
+    removeEventListener('keydown', onKey, true);
+    viewer.classList.add('closing');
+    setTimeout(() => {
+      viewer.remove();
+      if (!document.querySelector('.sheet-backdrop, .proof-viewer')) document.body.style.overflow = '';
+    }, 220);
+    previous?.focus?.({ preventScroll: true });
+  };
+  // Escape closes only the topmost layer: this viewer, not the sheet under it, and
+  // not this viewer while a confirmation sits on top of it.
+  const onKey = (e) => {
+    if (e.key !== 'Escape' || [...document.querySelectorAll('.sheet-backdrop, .proof-viewer')].pop() !== viewer) return;
+    e.stopPropagation();
+    close();
+  };
+  closeBtn.addEventListener('click', close);
+  addEventListener('keydown', onKey, true);
+  const decided = (updated) => {
+    close();
+    onDecided?.();
+    onChange(updated);
+  };
+  if (awaiting) actionsFor(b).forEach((a, i) => buttons[i].addEventListener('click', () => runAction(buttons[i], b, a, decided)));
+  document.body.style.overflow = 'hidden';
+  document.body.append(viewer);
+  closeBtn.focus({ preventScroll: true });
+}
+
+/** A strip that opens the screenshot: thumbnail, label, arrow. */
+function proofButton(store, b, onChange, opts) {
+  return h(
+    'button',
+    { class: 'proof-strip', type: 'button', onclick: () => openProof(store, b, onChange, opts) },
+    h('img', { src: b.proof_url, alt: '' }),
+    h('div', { class: 'grow' }, h('b', { text: t('sched.proof') }), h('span', { text: t('sched.review') })),
+    icon('chevron', 'flip-ltr faint'),
+  );
 }
 
 function openDetail(store, b, onChange) {
@@ -96,6 +167,7 @@ function openDetail(store, b, onChange) {
       Number(b.deposit) > 0 ? h('div', null, h('span', { text: t('sched.deposit_paid') }), h('b', { class: 'num', text: fmtPrice(b.deposit, cur) })) : null,
     ),
     b.payment_note ? kv('chat', h('span', null, h('span', { class: 'muted', text: `${t('sched.note')}: ` }), b.payment_note)) : null,
+    b.proof_url ? h('div', { class: 'proof-slot' }) : null,
     b.status === 'pending_payment' && b.expires_in_s ? kv('clock', h('span', { class: 'muted num', text: t('sched.not_sent', { time: mmss(b.expires_in_s) }) })) : null,
     h('div', { class: 'kv faint small' }, h('span', { text: t(b.source === 'owner' ? 'sched.source_owner' : 'sched.source_online') })),
   );
@@ -110,6 +182,8 @@ function openDetail(store, b, onChange) {
     panel.close();
     onChange(updated);
   };
+  // A decision taken in the full-screen review closes this sheet too.
+  body.querySelector('.proof-slot')?.replaceWith(proofButton(store, b, onChange, { onDecided: () => panel.close() }));
   actionsFor(b).forEach((a, i) => buttons[i].addEventListener('click', () => runAction(buttons[i], b, a, done)));
   cancel?.addEventListener('click', () => runAction(cancel, b, ['sched.cancel', 'cancelled', '', 'sched.cancel_confirm'], done));
 }
@@ -142,7 +216,8 @@ function attentionSection(store, list, onChange, seen) {
         ),
         h('div', { class: 'amt' }, h('b', { class: 'num', text: fmtPrice(b.deposit, cur) }), statusPill(b.status)),
       ),
-      b.payment_note ? h('div', { class: 'att-note' }, icon('chat'), h('span', { text: b.payment_note })) : null,
+      b.proof_url ? proofButton(store, b, onChange) : null,
+      b.payment_note && !b.proof_url ? h('div', { class: 'att-note' }, icon('chat'), h('span', { text: b.payment_note })) : null,
       b.status === 'pending_payment' ? h('div', { class: 'att-note faint num' }, icon('clock'), h('span', { text: t('sched.not_sent', { time: mmss(b.expires_in_s ?? 0) }) })) : null,
       h('div', { class: 'att-acts' }, acts),
     );
@@ -533,7 +608,8 @@ export function bookingsPage(store, app) {
   let reloadTimer = null;
   store.onBooking((e) => {
     if (Date.now() > quietUntil) {
-      if (e.status === 'payment_sent') toast(t('sched.payment_arrived'));
+      if (e.proof === 'replaced') toast(t('sched.proof_replaced'));
+      else if (e.status === 'payment_sent') toast(t('sched.payment_arrived'));
       else if (!known.has(e.id) && HOLDING.has(e.status)) toast(t('sched.new_plain'));
     }
     clearTimeout(reloadTimer);

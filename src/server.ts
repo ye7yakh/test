@@ -7,7 +7,7 @@ import { serveAsset, serveIndex } from './static.js';
 import { resolveHost } from './tenancy.js';
 import { adminRoutes } from './routes/admin.js';
 import { bookingRoutes } from './routes/bookings.js';
-import { expireHolds } from './booking.js';
+import { expireHolds, purgeProofs } from './booking.js';
 import { authRoutes } from './routes/auth.js';
 import { publicRoutes } from './routes/public.js';
 import { salonRoutes } from './routes/salon.js';
@@ -117,7 +117,10 @@ server.requestTimeout = 60_000;
 
 server.listen(config.port, () => console.log(`listening on :${config.port}`));
 
-const purge = setInterval(() => purgeExpiredSessions().catch((e) => console.error('session purge', e)), 3600_000);
+const purge = setInterval(() => {
+  purgeExpiredSessions().catch((e) => console.error('session purge', e));
+  purgeProofs(pool).catch((e) => console.error('proof purge', e));
+}, 3600_000);
 purge.unref();
 // Unpaid deposit holds give their slot back.
 const sweep = setInterval(() => expireHolds(pool).catch((e) => console.error('expire holds', e)), 60_000);

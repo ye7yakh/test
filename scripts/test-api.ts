@@ -7,6 +7,7 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import sharp from 'sharp';
 import { hashPassword } from '../src/auth.js';
+import { purgeProofs } from '../src/booking.js';
 import { pool, query } from '../src/db.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
@@ -514,16 +515,55 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expect(colourBooking.json?.booking.deposit === '1.5', 'the deposit never exceeds the price', colourBooking.json?.booking);
   const held = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${pending?.staff.id}&date=${tomorrow}`);
   expect(!held.json?.slots.some((s: any) => s.min === 720), 'a held slot is not offered to anyone else');
-  const sent = await guest.post(K, `/api/public/bookings/${d1.json?.token}/sent`, { note: 'نور أحمد - بنك الإسكان' });
+
+  section('Payment screenshot');
+  const t1 = d1.json?.token;
+  const receipt = await sharp({ create: { width: 390, height: 844, channels: 3, background: '#f4f4f4' } }).png().toBuffer();
+  expectStatus(await guest.post(K, `/api/public/bookings/${t1}/sent`, { note: 'نور' }), 400, 'no "sent" without a screenshot', 'required');
+  expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: Buffer.from('%PDF-1.4 not an image'), type: 'image/png' }), 415, 'a file that is not an image', 'unsupported_image');
+  expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'text/plain' }), 415, 'a non-image content type', 'unsupported_image');
+  const up = await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'image/png' });
+  expect(up.status === 200 && up.json.booking.proof_url?.startsWith(`/api/public/bookings/${t1}/proof?v=`) && up.json.booking.status === 'pending_payment', 'customer uploads the transfer screenshot', up.json);
+  const mine = await guest.get(K, up.json?.booking.proof_url);
+  expect(mine.status === 200 && mine.headers['content-type'] === 'image/webp' && /private/.test(String(mine.headers['cache-control'])), 'the customer can see their upload, re-encoded and privately cached', mine.headers);
+  const sent = await guest.post(K, `/api/public/bookings/${t1}/sent`, { note: 'نور أحمد - بنك الإسكان' });
   expect(sent.status === 200 && sent.json.booking.status === 'payment_sent' && sent.json.booking.payment_note === 'نور أحمد - بنك الإسكان', 'customer says the transfer is sent');
-  expectStatus(await guest.post(K, `/api/public/bookings/${d1.json?.token}/sent`, {}), 409, 'saying it twice', 'not_pending');
+  expectStatus(await guest.post(K, `/api/public/bookings/${t1}/sent`, {}), 409, 'saying it twice', 'not_pending');
   const overview = await owner.get(K, '/api/manage/bookings/overview');
-  expect(overview.json?.attention.some((b: any) => b.id === pending.id && b.status === 'payment_sent') && overview.json.counts[tomorrow] >= 3, 'the owner sees what needs checking and the day counts', overview.json);
+  const waitingRow = overview.json?.attention.find((b: any) => b.id === pending.id);
+  expect(waitingRow?.status === 'payment_sent' && overview.json.counts[tomorrow] >= 3, 'the owner sees what needs checking and the day counts', overview.json);
+  expect(waitingRow?.proof_url === `/api/manage/bookings/${pending.id}/proof?v=${up.json?.booking.proof_url.split('v=')[1]}`, 'with a link to the screenshot', waitingRow);
+  const ownerView = await owner.get(K, waitingRow?.proof_url);
+  expect(ownerView.status === 200 && ownerView.headers['content-type'] === 'image/webp' && ownerView.body.equals(mine.body), 'the owner opens the screenshot to review it');
+  expectStatus(await guest.get(K, waitingRow?.proof_url), 401, 'the screenshot is not public');
+  expectStatus(await other.ownerB.get(other.B, `/api/manage/bookings/${pending.id}/proof`), 404, "another salon's owner cannot see it");
+  expectStatus(await guest.get(other.B, `/api/public/bookings/${t1}/proof`), 404, "nor through another salon's host");
+  const tall = await sharp({ create: { width: 1179, height: 2556, channels: 3, background: '#e8f5e9' } }).jpeg().toBuffer();
+  const replaced = await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: tall, type: 'image/jpeg' });
+  const size = await sharp((await owner.get(K, `/api/manage/bookings/${pending.id}/proof`)).body).metadata();
+  expect(replaced.status === 200 && replaced.json.booking.proof_url !== up.json?.booking.proof_url && size.height! > size.width! * 2, 'a wrong picture can be replaced while under review, tall screenshots stay tall', { url: replaced.json?.booking.proof_url, size: [size.width, size.height] });
+
   const confirmed = await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'confirmed' });
   expect(confirmed.status === 200 && confirmed.json.booking.status === 'confirmed', 'owner confirms the money arrived');
   expect((await guest.get(K, `/api/public/bookings/${d1.json?.token}`)).json?.booking.status === 'confirmed', 'the customer sees it confirmed');
   expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'completed' }), 200, 'mark as done');
   expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'cancelled' }), 409, 'done bookings cannot be cancelled', 'bad_transition');
+  expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'image/png' }), 409, 'no new screenshot once decided', 'not_pending');
+
+  section('Rejected payment');
+  const r1 = await book(customer(), { time: 750, name: 'سلمى', phone: '0795550000' });
+  await guest.request(K, 'PUT', `/api/public/bookings/${r1.json?.token}/proof`, { raw: receipt, type: 'image/png' });
+  await guest.post(K, `/api/public/bookings/${r1.json?.token}/sent`, { note: 'سلمى' });
+  const rejected = await owner.patch(K, `/api/manage/bookings/${r1.json?.booking.id}`, { status: 'cancelled' });
+  expect(rejected.status === 200 && rejected.json.booking.status === 'cancelled' && rejected.json.booking.payment_rejected === true, 'the owner rejects a payment that did not arrive');
+  const told = (await guest.get(K, `/api/public/bookings/${r1.json?.token}`)).json?.booking;
+  expect(told?.status === 'cancelled' && told.payment_rejected === true, 'the customer is told the payment was not found', told);
+  const freedAgain = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${r1.json?.booking.staff.id}&date=${tomorrow}`);
+  expect(freedAgain.json?.slots.some((s: any) => s.min === 750), 'and the time is free again');
+  await query(`update bookings set updated_at = now() - interval '8 days' where id = $1`, [r1.json?.booking.id]);
+  const purged = await purgeProofs(pool);
+  expect(purged >= 1 && (await owner.get(K, `/api/manage/bookings/${r1.json?.booking.id}/proof`)).status === 404, 'screenshots are deleted a week after the decision', { purged });
+  expectStatus(await owner.get(K, `/api/manage/bookings/${pending.id}/proof`), 200, 'recent ones are kept');
 
   section('Holds that run out');
   const d2 = await book(customer(), { time: 780, name: 'ليث', phone: '0797777777' });

@@ -216,7 +216,9 @@ export function bookingSelect(where: string): string {
   return `
     select b.id,
            case when b.status = 'pending_payment' and b.expires_at <= now() then 'expired' else b.status end as status,
-           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note,
+           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note, b.payment_rejected,
+           -- Changes when the screenshot is replaced, so the image URL does too (no stale cache).
+           floor(extract(epoch from p.created_at) * 1000)::bigint::text as proof_v,
            greatest(0, floor(extract(epoch from b.expires_at - now())))::int as expires_in_s,
            to_char(b.start_at at time zone s.timezone, 'YYYY-MM-DD') as date,
            to_char(b.start_at at time zone s.timezone, 'HH24:MI') as start,
@@ -232,6 +234,7 @@ export function bookingSelect(where: string): string {
       join customers c on c.id = b.customer_id
       join staff st on st.id = b.staff_id
       join services sv on sv.id = b.service_id
+      left join booking_proofs p on p.booking_id = b.id
      where ${where}`;
 }
 
@@ -243,6 +246,9 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     price: r.price,
     deposit: r.deposit,
     payment_note: r.payment_note,
+    payment_rejected: r.payment_rejected,
+    // The owner's view of the screenshot; the customer's page swaps in its own link.
+    proof_url: r.proof_v ? `/api/manage/bookings/${r.id}/proof?v=${r.proof_v}` : null,
     expires_in_s: r.status === 'pending_payment' ? r.expires_in_s : null,
     date: r.date,
     start: r.start,
@@ -254,4 +260,18 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     staff: { id: r.staff_id, name_ar: r.staff_name_ar, name_en: r.staff_name_en, photo_url: mediaUrl(r.staff_photo_id) },
     service: { id: r.service_id, name_ar: r.service_name_ar, name_en: r.service_name_en, icon: r.service_icon },
   };
+}
+
+/** Payment screenshots hold bank details: gone a week after the booking is decided. */
+export async function purgeProofs(db: Db): Promise<number> {
+  const rows = await query(
+    `delete from booking_proofs p using bookings b
+      where b.id = p.booking_id
+        and (b.status not in ('pending_payment', 'payment_sent') or (b.status = 'pending_payment' and b.expires_at <= now()))
+        and b.updated_at < now() - interval '7 days'
+      returning p.booking_id`,
+    [],
+    db,
+  );
+  return rows.length;
 }

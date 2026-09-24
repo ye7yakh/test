@@ -72,6 +72,34 @@ export async function intakeImage(buf: Buffer, minSide = 200): Promise<StoredIma
   }
 }
 
+/**
+ * A payment screenshot. Phone screenshots are tall and full of small print, so they
+ * keep more height than photos do and are not cropped; still validated and
+ * re-encoded like every other upload.
+ */
+export async function intakeProof(buf: Buffer): Promise<StoredImage> {
+  const type = sniffImage(buf);
+  if (!type) throw new HttpError(415, 'unsupported_image');
+  let meta: Metadata;
+  try {
+    meta = await sharp(buf, INPUT).metadata();
+  } catch {
+    throw new HttpError(415, 'unsupported_image');
+  }
+  if (meta.format !== FORMAT_OF[type] || !meta.width || !meta.height) throw new HttpError(415, 'unsupported_image');
+  if (Math.min(meta.width, meta.height) < 200) throw new HttpError(422, 'image_too_small');
+  try {
+    const { data, info } = await sharp(buf, INPUT)
+      .rotate()
+      .resize({ width: 1400, height: 3000, fit: 'inside', withoutEnlargement: true })
+      .webp({ quality: 82 })
+      .toBuffer({ resolveWithObject: true });
+    return { bytes: data, contentType: 'image/webp', width: info.width, height: info.height };
+  } catch {
+    throw new HttpError(415, 'unsupported_image');
+  }
+}
+
 // ---------------------------------------------------------------- team portraits
 
 export const PORTRAIT = { width: 800, height: 1000 };
