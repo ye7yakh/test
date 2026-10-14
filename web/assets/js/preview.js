@@ -1,7 +1,7 @@
 // A live picture of the salon's app, drawn from the owner's data: a phone showing
 // the app itself, and a phone home screen with the salon's icon among the others.
 // Everything reads the salon colours from CSS variables, so previews follow edits.
-import { appIcon, h, icon } from './dom.js';
+import { appIcon, h, icon, salonIcon } from './dom.js';
 import { fmtDuration, fmtPrice, pick, t } from './i18n.js';
 import { nowIn, openStatus } from './time.js';
 
@@ -33,10 +33,11 @@ export function miniApp({ salon, services, staff, hours }) {
   const team = staff.filter((m) => m.active !== false);
   return h(
     'div',
-    { class: 'mini' },
+    { class: `mini ${salon.page_theme === 'day' ? 'day' : ''}` },
     h(
       'div',
-      { class: 'mini-hero' },
+      { class: `mini-hero ${salon.cover_url ? 'has-cover' : ''}` },
+      salon.cover_url ? h('img', { class: 'cover', src: salon.cover_url, alt: '' }) : null,
       h('div', { class: 'mini-mirror' }, appIcon(salon.logo_url)),
       h('div', { class: 't', text: name }),
       about ? h('div', { class: 'a', text: about }) : null,
@@ -74,12 +75,22 @@ export function miniApp({ salon, services, staff, hours }) {
 /** A phone home screen with the salon's app installed. */
 export function homeScreen({ salon }) {
   const ghost = () => h('div', null, h('div', { class: 'ghost' }), h('div', { class: 'lbl' }));
-  const mine = h('div', { class: 'mine' }, appIcon(salon.logo_url), h('div', { class: 'nm', text: pick(salon, 'name') }));
+  const mine = h('div', { class: 'mine' }, salonIcon(salon), h('div', { class: 'nm', text: pick(salon, 'name') }));
   const apps = Array.from({ length: 12 }, (_, i) => (i === 5 ? mine : ghost()));
   return h(
     'div',
     { class: 'home-screen' },
     h('div', { class: 'home-grid' }, apps),
     h('div', { class: 'home-dock' }, Array.from({ length: 4 }, () => h('div', { class: 'ghost' }))),
+  );
+}
+
+/** The launch screen as the installed app opens: the icon in a ring of lights, and the name. */
+export function splashScreen({ salon }) {
+  return h(
+    'div',
+    { class: `mini-splash ${salon.page_theme === 'day' ? 'day' : ''}` },
+    h('div', { class: 'mk' }, salonIcon(salon)),
+    h('div', { class: 'nm', text: pick(salon, 'name') }),
   );
 }

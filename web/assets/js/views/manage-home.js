@@ -152,6 +152,45 @@ function todayCard(store) {
   return section;
 }
 
+/** The owner's dashboard as an app on their phone: one tap on Android, a tip on iPhone. */
+function installCard(store, app) {
+  if (!app.ownerApp || app.installed()) return null;
+  const key = `install-later:${store.salon.id}`;
+  try {
+    if (localStorage.getItem(key) === '1') return null;
+  } catch {}
+  const actions = h('div', { class: 'row', style: { gap: '8px' } });
+  const sub = h('div', { class: 'card-sub' });
+  const card = h(
+    'section',
+    { class: 'card install-card rise' },
+    h('img', { class: 'app-icon', src: `/icons/owner-icon-192.png?v=${store.salon.icon_v}`, alt: '' }),
+    h('div', { class: 'grow' }, h('div', { class: 'card-title', text: t('install.owner') }), sub),
+    actions,
+  );
+  const later = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: t('later') });
+  later.addEventListener('click', () => {
+    try {
+      localStorage.setItem(key, '1');
+    } catch {}
+    card.remove();
+  });
+  const render = () => {
+    sub.textContent = app.canInstall() ? t('install.owner_sub') : t('install.ios');
+    const install = app.canInstall() ? h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: t('install.button') }) : null;
+    install?.addEventListener('click', async () => {
+      if (await app.install()) card.remove();
+      else render();
+    });
+    clear(actions, later, install);
+    card.hidden = !app.canInstall() && !app.isIOS;
+  };
+  render();
+  addEventListener('install-ready', render);
+  app.onUnmount(() => removeEventListener('install-ready', render));
+  return card;
+}
+
 function linkCard(store) {
   const copy = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('copy') }, icon('copy'));
   copy.addEventListener('click', async () => {
@@ -199,6 +238,7 @@ export function homePage(store, app) {
     null,
     tempPassword,
     stagger([greeting(store, app), heroCard(store, app, steps)]),
+    installCard(store, app),
     store.services.some((s) => s.active) ? todayCard(store) : null,
     ready ? linkCard(store) : stepsCard(steps),
     glance(store),

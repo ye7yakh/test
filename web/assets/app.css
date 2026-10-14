@@ -42,10 +42,14 @@
    studio's own; the salon's colours live in its app (previews, icon). */
 [data-theme='studio'] {
   color-scheme: dark;
+  /* Three lights the studio is lit by. They become the salon's own colours when the
+     owner chooses "my salon's colours" for their dashboard (see below). */
+  --glow-1: #a855f7; --glow-2: #6366f1; --glow-3: #3b82f6;
+  --glow-1-soft: #c4b5fd; --glow-3-soft: #93c5fd;
   --violet: #a78bfa; --blue: #60a5fa;
   --brand: #8b7cff; --on-brand: #fff;
-  --grad: linear-gradient(135deg, #a855f7 0%, #6366f1 52%, #3b82f6 100%);
-  --grad-soft: linear-gradient(135deg, rgb(168 85 247 / .24), rgb(59 130 246 / .18));
+  --grad: linear-gradient(135deg, var(--glow-1) 0%, var(--glow-2) 52%, var(--glow-3) 100%);
+  --grad-soft: linear-gradient(135deg, color-mix(in srgb, var(--glow-1) 24%, transparent), color-mix(in srgb, var(--glow-3) 18%, transparent));
   --bg: #0a0918; --bg-2: #0f0d22;
   --surface: #15122c; --surface-2: #1c1839; --surface-3: #262149;
   --line: rgb(167 139 250 / .1); --line-2: rgb(167 139 250 / .18);
@@ -54,6 +58,37 @@
   --glass: rgb(21 18 44 / .72);
   --shadow: 0 1px 0 rgb(255 255 255 / .04) inset, 0 14px 34px -18px rgb(3 0 20 / .9);
   --shadow-lg: 0 30px 60px -24px rgb(3 0 20 / .95);
+}
+/* The salon's page by day: light, the accent inked dark enough to read on white. */
+[data-theme='public'][data-page='day'] {
+  color-scheme: light;
+  --brand: var(--accent-ink); --on-brand: var(--on-accent-ink);
+  --grad: linear-gradient(135deg, color-mix(in srgb, var(--accent-ink), #fff 16%), var(--accent-ink) 50%, color-mix(in srgb, var(--accent-ink), #000 14%));
+  --grad-soft: color-mix(in srgb, var(--accent-ink) 12%, transparent);
+  --bg: var(--day); --bg-2: #fff;
+  --surface: #fff; --surface-2: color-mix(in srgb, var(--day), #000 3%); --surface-3: color-mix(in srgb, var(--day), #000 7%);
+  --line: rgb(20 18 16 / .08); --line-2: rgb(20 18 16 / .14);
+  --text: #1b1a19; --text-2: #67635d; --text-3: #9a958d;
+  --danger: #c62828; --ok: #1e7d3a; --warn: #b45309; --info: #1d4ed8;
+  --glass: rgb(255 255 255 / .8);
+  --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 10px 28px -14px rgb(0 0 0 / .16);
+  --shadow-lg: 0 24px 50px -20px rgb(0 0 0 / .3);
+}
+/* The owner's dashboard in the salon's own colours: its night as the room, its
+   accent as the main light and its main colour as the second. Buttons take the
+   accent's own metallic shades, so their text always reads. */
+[data-theme='studio'][data-studio='brand']:not([data-platform]) {
+  --glow-1: var(--accent-lift); --glow-3: var(--primary-lift);
+  --glow-2: color-mix(in srgb, var(--accent-lift), var(--primary-lift));
+  --glow-1-soft: color-mix(in srgb, var(--accent-lift), #fff 45%); --glow-3-soft: color-mix(in srgb, var(--primary-lift), #fff 45%);
+  --violet: color-mix(in srgb, var(--accent-lift), #fff 15%); --blue: color-mix(in srgb, var(--primary-lift), #fff 15%);
+  --brand: var(--accent-lift); --on-brand: var(--on-accent-lift);
+  --grad: linear-gradient(135deg, color-mix(in srgb, var(--accent-lift), #fff 24%), var(--accent-lift) 48%, color-mix(in srgb, var(--accent-lift), #000 16%));
+  --bg: var(--night); --bg-2: color-mix(in srgb, var(--night), #fff 4%);
+  --surface: color-mix(in srgb, var(--night), #fff 7%); --surface-2: color-mix(in srgb, var(--night), #fff 10%); --surface-3: color-mix(in srgb, var(--night), #fff 15%);
+  --line: rgb(255 255 255 / .08); --line-2: rgb(255 255 255 / .15);
+  --text: #f7f4ef; --text-2: rgb(247 244 239 / .68); --text-3: rgb(247 244 239 / .44);
+  --glass: color-mix(in srgb, var(--night) 72%, transparent);
 }
 /* The salon's page: its own night. The base is the salon's main colour deep in
    near-black (--night); the light is its accent (--accent-lift, lightened only if it
@@ -256,14 +291,14 @@ img { display: block; max-width: 100%; }
 .card.flush { padding: 0; overflow: hidden; }
 .card.glow {
   position: relative; border-color: var(--line-2); box-shadow: var(--shadow), 0 24px 70px -30px var(--brand-glow);
-  background: radial-gradient(110% 90% at 100% 0%, rgb(168 85 247 / .22), transparent 55%), radial-gradient(90% 80% at 0% 100%, rgb(59 130 246 / .16), transparent 60%), var(--surface);
+  background: radial-gradient(110% 90% at 100% 0%, color-mix(in srgb, var(--glow-1) 22%, transparent), transparent 55%), radial-gradient(90% 80% at 0% 100%, color-mix(in srgb, var(--glow-3) 16%, transparent), transparent 60%), var(--surface);
 }
 [data-theme='public'] .card.glow { background: radial-gradient(110% 90% at 100% 0%, color-mix(in srgb, var(--accent-lift) 16%, transparent), transparent 55%), var(--surface); }
 [data-theme='public'] .card.glow::before { background: conic-gradient(from var(--angle), transparent 0 60%, var(--accent-lift) 78%, transparent 96%); }
 /* A light that travels around the border. */
 .card.glow::before {
   content: ''; position: absolute; inset: -1px; z-index: 2; border-radius: inherit; padding: 1.5px; pointer-events: none;
-  background: conic-gradient(from var(--angle), transparent 0 58%, #a855f7 72%, #60a5fa 84%, transparent 96%);
+  background: conic-gradient(from var(--angle), transparent 0 58%, var(--glow-1) 72%, var(--blue) 84%, transparent 96%);
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude;
   animation: orbit 7s linear infinite;
 }
@@ -383,8 +418,8 @@ img { display: block; max-width: 100%; }
   content: ''; position: fixed; z-index: -1; width: 90vmax; height: 90vmax; border-radius: 50%; pointer-events: none;
   animation: drift 26s ease-in-out infinite alternate;
 }
-.studio::before { top: -55vmax; inset-inline-end: -40vmax; background: radial-gradient(circle, rgb(139 92 246 / .26), transparent 62%); }
-.studio::after { top: -50vmax; inset-inline-start: -50vmax; background: radial-gradient(circle, rgb(59 130 246 / .18), transparent 62%); animation-duration: 34s; animation-direction: alternate-reverse; }
+.studio::before { top: -55vmax; inset-inline-end: -40vmax; background: radial-gradient(circle, color-mix(in srgb, var(--glow-1) 26%, transparent), transparent 62%); }
+.studio::after { top: -50vmax; inset-inline-start: -50vmax; background: radial-gradient(circle, color-mix(in srgb, var(--glow-3) 18%, transparent), transparent 62%); animation-duration: 34s; animation-direction: alternate-reverse; }
 @keyframes drift { from { transform: translate(0, 0) scale(1); } to { transform: translate(-10vmax, 14vmax) scale(1.18); } }
 .s-main { min-width: 0; }
 .s-header {
@@ -471,7 +506,7 @@ img { display: block; max-width: 100%; }
    Brand studio
    ========================================================================== */
 .stage { position: relative; border-radius: var(--r-xl); overflow: hidden; border: 1px solid var(--line); background:
-  radial-gradient(60% 50% at 30% 25%, rgb(168 85 247 / .26), transparent 75%), radial-gradient(60% 50% at 75% 75%, rgb(59 130 246 / .2), transparent 75%), var(--surface); }
+  radial-gradient(60% 50% at 30% 25%, color-mix(in srgb, var(--glow-1) 26%, transparent), transparent 75%), radial-gradient(60% 50% at 75% 75%, color-mix(in srgb, var(--glow-3) 20%, transparent), transparent 75%), var(--surface); }
 .stage-track { display: flex; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; }
 .stage-track::-webkit-scrollbar { display: none; }
 .stage-slide { flex: none; width: 100%; scroll-snap-align: center; display: flex; flex-direction: column; align-items: center; padding: 24px 0 12px; }
@@ -708,6 +743,38 @@ img { display: block; max-width: 100%; }
 .mini-cta { position: absolute; z-index: 3; inset-inline: 14px; bottom: 16px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--on-accent-lift);
   background: linear-gradient(135deg, color-mix(in srgb, var(--accent-lift), #fff 24%), var(--accent-lift) 48%, color-mix(in srgb, var(--accent-lift), #000 16%)); box-shadow: 0 10px 26px -8px color-mix(in srgb, var(--accent-lift) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .3); }
 .mini-empty { font-size: 11px; color: rgb(247 244 239 / .5); padding: 10px 2px; }
+/* The salon's cover photo behind the mini hero, under a scrim. */
+.mini-hero .cover { position: absolute; inset: 0; z-index: -3; width: 100%; height: 100%; object-fit: cover; }
+.mini-hero.has-cover { color: #fff; }
+.mini-hero.has-cover::before { content: ''; position: absolute; inset: 0; z-index: -2; background: linear-gradient(180deg, rgb(0 0 0 / .45), rgb(0 0 0 / .28) 40%, rgb(0 0 0 / .62)); }
+/* The page by day, in miniature. */
+.mini.day { background: var(--day); color: #1b1a19; }
+.mini.day .mini-hero { padding-bottom: 30px; background: radial-gradient(70% 60% at 15% 10%, color-mix(in srgb, var(--primary), #fff 25%), transparent 70%), radial-gradient(60% 55% at 95% 25%, color-mix(in srgb, var(--accent) 50%, transparent), transparent 70%), var(--primary); color: var(--on-primary); }
+.mini.day .mini-hero.has-cover { color: #fff; }
+.mini.day .mini-hero::after { display: none; }
+.mini.day .mini-hero .st { background: color-mix(in srgb, var(--on-primary) 12%, transparent); border-color: color-mix(in srgb, var(--on-primary) 20%, transparent); }
+.mini.day .mini-hero.has-cover .st { background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .2); }
+.mini.day .mini-mirror::before { background: repeating-conic-gradient(var(--accent) 0 4deg, transparent 4deg 20deg); filter: drop-shadow(0 0 4px var(--accent)); }
+.mini.day .mini-body { position: relative; margin-top: -16px; padding-top: 14px; background: var(--day); border-radius: 18px 18px 0 0; }
+.mini.day .mini-svc { background: #fff; border-color: rgb(0 0 0 / .06); }
+.mini.day .mini-svc .d { color: #8a857d; }
+.mini.day .mini-svc .p { color: var(--accent-ink); }
+.mini.day .mini-svc .e { background: color-mix(in srgb, var(--accent-ink) 14%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-ink) 22%, transparent); }
+.mini.day .mini-team img, .mini.day .mini-team .ph { background: #e6e2da; color: #8a857d; }
+.mini.day .mini-empty { color: #9a958d; }
+.mini.day .mini-cta { color: var(--on-accent-ink); background: linear-gradient(135deg, color-mix(in srgb, var(--accent-ink), #fff 16%), var(--accent-ink) 50%, color-mix(in srgb, var(--accent-ink), #000 14%)); box-shadow: 0 10px 26px -8px color-mix(in srgb, var(--accent-ink) 60%, transparent), inset 0 1px 0 rgb(255 255 255 / .3); }
+/* The launch screen, in miniature. */
+.mini-splash { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; background: var(--night); color: #f7f4ef; font-family: var(--font); }
+.mini-splash.day { background: var(--day); color: #1b1a19; }
+.mini-splash .mk { position: relative; width: 84px; height: 84px; margin-top: -40px; }
+.mini-splash .mk::before { content: ''; position: absolute; inset: -18px; border-radius: 50%; background: repeating-conic-gradient(var(--accent-lift) 0 3deg, transparent 3deg 18deg); -webkit-mask: radial-gradient(closest-side, transparent 90%, #000 91% 100%); mask: radial-gradient(closest-side, transparent 90%, #000 91% 100%); filter: drop-shadow(0 0 4px var(--accent-lift)); animation: spin 10s linear infinite; }
+.mini-splash.day .mk::before { background: repeating-conic-gradient(var(--accent-ink) 0 3deg, transparent 3deg 18deg); filter: none; }
+.mini-splash .app-icon { --s: 84px; border-radius: 24px; }
+.mini-splash .nm { font-size: 17px; font-weight: 700; }
+/* An app icon drawn the way the server renders it: own icon, or logo on a background. */
+.app-icon.own img { width: 100%; height: 100%; object-fit: cover; }
+.app-icon.on-bg { background: var(--icon-bg); }
+.app-icon.on-bg img { width: 84%; height: 84%; object-fit: contain; }
 
 .home-screen { position: absolute; inset: 0; background:
   radial-gradient(90% 60% at 20% 10%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%),
@@ -733,7 +800,7 @@ img { display: block; max-width: 100%; }
 .aurora { position: absolute; inset: 0; z-index: -1; overflow: hidden; }
 .aurora i { position: absolute; width: 70vmax; height: 70vmax; border-radius: 50%; filter: blur(80px); opacity: .5; animation: drift 18s ease-in-out infinite alternate; }
 .aurora i:nth-child(1) { background: var(--brand); top: -35vmax; inset-inline-end: -25vmax; }
-.aurora i:nth-child(2) { background: #3b82f6; bottom: -40vmax; inset-inline-start: -30vmax; opacity: .38; animation-duration: 24s; }
+.aurora i:nth-child(2) { background: var(--glow-3); bottom: -40vmax; inset-inline-start: -30vmax; opacity: .38; animation-duration: 24s; }
 .aurora i:nth-child(3) { background: #c026d3; top: 30%; inset-inline-start: 40%; width: 40vmax; height: 40vmax; opacity: .16; animation-duration: 30s; }
 @keyframes drift { to { transform: translate(-8vmax, 6vmax) scale(1.15); } }
 .login-inner { width: 100%; max-width: 400px; margin: 0 auto; }
@@ -959,8 +1026,8 @@ img { display: block; max-width: 100%; }
 
 .now-line { display: grid; grid-template-columns: 62px 1fr; gap: 8px; align-items: center; margin: -2px 0; }
 .now-line .t { text-align: center; font-size: 11.5px; font-weight: 700; color: #f472b6; }
-.now-line .l { position: relative; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #f472b6, #a855f7 45%, transparent); }
-[dir='rtl'] .now-line .l { background: linear-gradient(270deg, #f472b6, #a855f7 45%, transparent); }
+.now-line .l { position: relative; height: 2px; border-radius: 2px; background: linear-gradient(90deg, #f472b6, var(--glow-1) 45%, transparent); }
+[dir='rtl'] .now-line .l { background: linear-gradient(270deg, #f472b6, var(--glow-1) 45%, transparent); }
 .now-line .l::before { content: ''; position: absolute; inset-inline-start: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: #f472b6; box-shadow: 0 0 0 4px rgb(244 114 182 / .2), 0 0 14px #f472b6; animation: breathe 2.4s ease-in-out infinite; }
 @keyframes breathe { 50% { box-shadow: 0 0 0 7px rgb(244 114 182 / .08), 0 0 20px #f472b6; } }
 
@@ -1048,8 +1115,8 @@ img { display: block; max-width: 100%; }
    ========================================================================== */
 .trend-card { padding: 20px 18px 10px; }
 .trend-head { position: relative; z-index: 1; display: flex; align-items: flex-start; justify-content: space-between; gap: 10px 12px; flex-wrap: wrap; }
-.hero-figure { margin-top: 4px; font-size: 54px; font-weight: 700; line-height: 1.05; background: linear-gradient(90deg, #fff 30%, #c4b5fd 72%, #93c5fd); -webkit-background-clip: text; background-clip: text; color: transparent; }
-[dir='rtl'] .hero-figure { background-image: linear-gradient(270deg, #fff 30%, #c4b5fd 72%, #93c5fd); }
+.hero-figure { margin-top: 4px; font-size: 54px; font-weight: 700; line-height: 1.05; background: linear-gradient(90deg, #fff 30%, var(--glow-1-soft) 72%, var(--glow-3-soft)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+[dir='rtl'] .hero-figure { background-image: linear-gradient(270deg, #fff 30%, var(--glow-1-soft) 72%, var(--glow-3-soft)); }
 :lang(en) .hero-figure { letter-spacing: -.02em; }
 .delta { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border-radius: 999px; font-size: 12.5px; font-weight: 500; color: var(--text-2); background: var(--surface-2); border: 1px solid var(--line); }
 .delta .icon { width: 16px; height: 16px; }
@@ -1064,12 +1131,12 @@ img { display: block; max-width: 100%; }
 .chart svg { display: block; overflow: visible; }
 .chart .grid { stroke: var(--line-2); stroke-width: 1; shape-rendering: crispEdges; }
 .chart .tick { fill: var(--text-3); font: 11px var(--font); font-variant-numeric: tabular-nums; }
-.chart .line { fill: none; stroke: #8b7cff; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 0 6px rgb(139 124 255 / .5)); }
+.chart .line { fill: none; stroke: var(--brand); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; filter: drop-shadow(0 0 6px color-mix(in srgb, var(--brand) 50%, transparent)); }
 .chart .line.enter { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw 1.5s var(--ease-out) .2s forwards; }
-.chart .wash-top { stop-color: #8b7cff; stop-opacity: .22; }
-.chart .wash-bottom { stop-color: #8b7cff; stop-opacity: 0; }
+.chart .wash-top { stop-color: var(--brand); stop-opacity: .22; }
+.chart .wash-bottom { stop-color: var(--brand); stop-opacity: 0; }
 .chart .wash.enter { animation: fade 1.1s ease .7s both; }
-.chart .dot { fill: #8b7cff; stroke: var(--surface); stroke-width: 2; }
+.chart .dot { fill: var(--brand); stroke: var(--surface); stroke-width: 2; }
 .chart .dot.end.enter { transform-box: fill-box; transform-origin: center; animation: pop .5s var(--spring) 1.5s both; }
 .chart .cross { stroke: var(--text-3); stroke-width: 1; shape-rendering: crispEdges; }
 .chart-tip { position: absolute; z-index: 3; display: flex; flex-direction: column; align-items: center; padding: 6px 11px; border-radius: 11px; background: var(--surface-3); border: 1px solid var(--line-2); box-shadow: var(--shadow-lg); line-height: 1.3; white-space: nowrap; pointer-events: none; }
@@ -1086,7 +1153,7 @@ img { display: block; max-width: 100%; }
 .kpis { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 12px; }
 .kpi { position: relative; overflow: hidden; padding: 14px 14px 16px; border-radius: 20px; background: linear-gradient(165deg, rgb(255 255 255 / .045), transparent 45%), var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
 /* A thin light along the top edge, like a lit shelf. */
-.kpi::before { content: ''; position: absolute; top: 0; inset-inline: 16px; height: 1px; background: linear-gradient(90deg, transparent, rgb(196 181 253 / .55), transparent); }
+.kpi::before { content: ''; position: absolute; top: 0; inset-inline: 16px; height: 1px; background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--glow-1-soft) 55%, transparent), transparent); }
 .kpi-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .kpi-icon { flex: none; width: 28px; height: 28px; border-radius: 9px; display: grid; place-items: center; background: var(--grad-soft, var(--brand-soft)); color: var(--violet, var(--brand)); }
 .kpi-icon .icon { width: 16px; height: 16px; }
@@ -1146,7 +1213,7 @@ img { display: block; max-width: 100%; }
 /* Salon detail */
 .sd > * + * { margin-top: 14px; }
 .sd-hero { display: flex; align-items: center; gap: 14px; }
-.sd-icon { flex: none; padding: 3px; border-radius: 23px; background: conic-gradient(from var(--angle), #a855f7, #6366f1, #3b82f6, #a855f7); animation: orbit 6s linear infinite; }
+.sd-icon { flex: none; padding: 3px; border-radius: 23px; background: conic-gradient(from var(--angle), var(--glow-1), var(--glow-2), var(--glow-3), var(--glow-1)); animation: orbit 6s linear infinite; }
 .sd-icon .sc-icon { width: 62px; height: 62px; border-radius: 20px; box-shadow: 0 0 0 3px var(--bg-2); }
 .sd-hero.suspended .sd-icon { animation: none; background: var(--surface-3); }
 .sd-hero.suspended .sc-icon { filter: grayscale(1); }
@@ -1202,10 +1269,10 @@ img { display: block; max-width: 100%; }
    ========================================================================== */
 /* Headings and big numbers catch the studio light. */
 [data-theme='studio'] .greeting h1, [data-theme='studio'] .s-title, [data-theme='studio'] .login-brand h1 {
-  background: linear-gradient(90deg, #fff 35%, #c4b5fd 75%, #93c5fd); -webkit-background-clip: text; background-clip: text; color: transparent;
+  background: linear-gradient(90deg, #fff 35%, var(--glow-1-soft) 75%, var(--glow-3-soft)); -webkit-background-clip: text; background-clip: text; color: transparent;
 }
 [data-theme='studio'][dir='rtl'] .greeting h1, [data-theme='studio'][dir='rtl'] .s-title, [data-theme='studio'][dir='rtl'] .login-brand h1 {
-  background-image: linear-gradient(270deg, #fff 35%, #c4b5fd 75%, #93c5fd);
+  background-image: linear-gradient(270deg, #fff 35%, var(--glow-1-soft) 75%, var(--glow-3-soft));
 }
 [data-theme='studio'] .glance .big, [data-theme='studio'] .ring .label b, [data-theme='studio'] .stats b {
   background: var(--grad); -webkit-background-clip: text; background-clip: text; color: transparent;
@@ -1252,11 +1319,11 @@ html[dir='rtl'][data-nav='back']::view-transition-new(root) { animation-name: vt
 .photo-frame { position: relative; }
 .portrait.finished { border-radius: 26px; box-shadow: 0 30px 60px -30px rgb(0 0 0 / .9), 0 0 0 1px var(--line-2); }
 .portrait.finished.revealing { animation: halo 1.8s var(--ease-out); }
-@keyframes halo { 0% { box-shadow: 0 0 0 0 rgb(168 85 247 / .9), 0 0 0 1px var(--line-2); } 100% { box-shadow: 0 0 0 26px rgb(96 165 250 / 0), 0 0 0 1px var(--line-2); } }
+@keyframes halo { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--glow-1) 90%, transparent), 0 0 0 1px var(--line-2); } 100% { box-shadow: 0 0 0 26px color-mix(in srgb, var(--blue) 0%, transparent), 0 0 0 1px var(--line-2); } }
 .sparkle-burst { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
 .sparkle-burst i {
   position: absolute; left: 50%; top: 50%; width: var(--s); height: var(--s); margin: calc(var(--s) / -2) 0 0 calc(var(--s) / -2);
-  background: radial-gradient(circle, #fff 0 22%, #c4b5fd 48%, #60a5fa 70%);
+  background: radial-gradient(circle, #fff 0 22%, var(--glow-1-soft) 48%, var(--blue) 70%);
   clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%);
   animation: burst 1.2s var(--ease-out) var(--d) both;
 }
@@ -1281,39 +1348,65 @@ html[dir='rtl'][data-nav='back']::view-transition-new(root) { animation-name: vt
 .p-page { min-height: 100dvh; background: var(--bg); }
 [data-theme='public'] .avatar-stack .avatar { border-color: var(--surface); }
 
-/* Hero: aurora in the salon's colours, the logo in a ring of mirror lights. */
-.p-hero { position: relative; isolation: isolate; overflow: hidden; padding: calc(14px + var(--safe-top)) 20px 34px; text-align: center; background: var(--night); }
-.p-hero .aurora { position: absolute; inset: -30% -20% 0; z-index: -2; filter: blur(64px) saturate(1.25); pointer-events: none; }
-.p-hero .aurora i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: screen; animation: aurora 20s ease-in-out infinite alternate; }
+/* Hero: aurora in the salon's colours, the logo in a ring of mirror lights. Its
+   colours come from --hero-* (night, day, or over the salon's cover photo). */
+[data-theme='public'] {
+  --hero-bg: var(--night); --hero-ink: #fff; --hero-ink-2: rgb(255 255 255 / .72);
+  --hero-glass: rgb(255 255 255 / .08); --hero-glass-line: rgb(255 255 255 / .14);
+  --hero-light: var(--accent-lift); --hero-blend: screen;
+  --hero-title: linear-gradient(180deg, #fff 40%, color-mix(in srgb, var(--accent-lift), #fff 35%));
+}
+[data-theme='public'][data-page='day'] {
+  --hero-bg: var(--primary); --hero-ink: var(--on-primary); --hero-ink-2: color-mix(in srgb, var(--on-primary) 76%, transparent);
+  --hero-glass: color-mix(in srgb, var(--on-primary) 12%, transparent); --hero-glass-line: color-mix(in srgb, var(--on-primary) 22%, transparent);
+  --hero-light: var(--accent); --hero-blend: normal;
+  --hero-title: linear-gradient(var(--on-primary), var(--on-primary));
+}
+.p-hero.has-cover {
+  --hero-ink: #fff; --hero-ink-2: rgb(255 255 255 / .82); --hero-glass: rgb(255 255 255 / .12); --hero-glass-line: rgb(255 255 255 / .22);
+  --hero-light: var(--accent-lift); --hero-title: linear-gradient(180deg, #fff 45%, color-mix(in srgb, var(--accent-lift), #fff 40%));
+}
+.p-hero { position: relative; isolation: isolate; overflow: hidden; padding: calc(14px + var(--safe-top)) 20px 34px; text-align: center; background: var(--hero-bg); color: var(--hero-ink); }
+.p-hero .cover { position: absolute; inset: 0; z-index: -4; width: 100%; height: 100%; object-fit: cover; animation: cover-in 1.4s var(--ease-out) both; }
+@keyframes cover-in { from { opacity: 0; transform: scale(1.08); } }
+/* A scrim keeps text readable over any photo. */
+.p-hero.has-cover::before { content: ''; position: absolute; inset: 0; z-index: -2; background: linear-gradient(180deg, rgb(0 0 0 / .5), rgb(0 0 0 / .28) 38%, rgb(0 0 0 / .62)); }
+.p-hero .aurora { position: absolute; inset: -30% -20% 0; z-index: -3; filter: blur(64px) saturate(1.25); pointer-events: none; }
+.p-hero.has-cover .aurora { opacity: .4; }
+.p-hero .aurora i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: var(--hero-blend); animation: aurora 20s ease-in-out infinite alternate; }
 .p-hero .aurora i:nth-child(1) { top: 4%; left: -8%; background: color-mix(in srgb, var(--primary), #fff 18%); opacity: .75; }
-.p-hero .aurora i:nth-child(2) { top: 14%; right: -14%; background: var(--accent-lift); opacity: .42; animation-duration: 26s; animation-direction: alternate-reverse; }
-.p-hero .aurora i:nth-child(3) { bottom: -18%; left: 26%; background: color-mix(in srgb, var(--primary), var(--accent-lift) 35%); opacity: .5; animation-duration: 31s; }
+.p-hero .aurora i:nth-child(2) { top: 14%; right: -14%; background: var(--hero-light); opacity: .42; animation-duration: 26s; animation-direction: alternate-reverse; }
+.p-hero .aurora i:nth-child(3) { bottom: -18%; left: 26%; background: color-mix(in srgb, var(--primary), var(--hero-light) 35%); opacity: .5; animation-duration: 31s; }
+[data-page='day'] .p-hero:not(.has-cover) .aurora i { opacity: .45; }
 @keyframes aurora { to { transform: translate(9%, 7%) scale(1.18) rotate(24deg); } }
-/* Melts into the page, with a fine light line at the horizon. */
+/* At night the hero melts into the page; by day the page rises over it as a sheet. */
 .p-hero::after { content: ''; position: absolute; inset: auto 0 0; height: 46%; z-index: -1; background: linear-gradient(transparent, var(--bg)); }
+[data-page='day'] .p-hero { padding-bottom: 58px; }
+[data-page='day'] .p-hero::after { display: none; }
+[data-page='day'] .p-main { position: relative; margin-top: -28px; padding-top: 22px; background: var(--bg); border-radius: 28px 28px 0 0; box-shadow: 0 -12px 30px -18px rgb(0 0 0 / .35); }
 .p-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
-.p-glass-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .14); color: #fff; font-size: 13.5px; font-weight: 500; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); cursor: pointer; transition: background-color .2s; }
-.p-glass-btn:hover { background: rgb(255 255 255 / .14); }
+.p-glass-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background: var(--hero-glass); border: 1px solid var(--hero-glass-line); color: var(--hero-ink); font-size: 13.5px; font-weight: 500; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); cursor: pointer; transition: background-color .2s; }
+.p-glass-btn:hover { background: color-mix(in srgb, var(--hero-ink) 16%, transparent); }
 .p-glass-btn .icon { width: 18px; height: 18px; }
 .p-glass-btn.round { width: 40px; padding: 0; justify-content: center; }
 .p-hero-content { max-width: 560px; margin: 6px auto 0; }
 .p-mirror { position: relative; width: 168px; height: 168px; margin: 0 auto 14px; display: grid; place-items: center; }
-.p-lights i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--accent-lift); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent-lift) 65%, transparent); transform: rotate(calc(var(--i) * 20deg)) translateY(-78px); animation: mirror-light 2.8s ease-in-out infinite; animation-delay: calc(var(--i) * -.155s); }
+.p-lights i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--hero-light); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--hero-light) 65%, transparent); transform: rotate(calc(var(--i) * 20deg)) translateY(-78px); animation: mirror-light 2.8s ease-in-out infinite; animation-delay: calc(var(--i) * -.155s); }
 @keyframes mirror-light { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
-.p-logo { position: relative; width: 112px; height: 112px; border-radius: 34px; object-fit: contain; background: #fff; box-shadow: 0 0 0 1px rgb(255 255 255 / .2), 0 24px 50px -16px rgb(0 0 0 / .8), 0 0 60px -10px color-mix(in srgb, var(--accent-lift) 55%, transparent); animation: pop .8s var(--spring) both; }
+.p-logo { position: relative; width: 112px; height: 112px; border-radius: 34px; object-fit: contain; background: #fff; box-shadow: 0 0 0 1px rgb(255 255 255 / .2), 0 24px 50px -16px rgb(0 0 0 / .8), 0 0 60px -10px color-mix(in srgb, var(--hero-light) 55%, transparent); animation: pop .8s var(--spring) both; }
 .p-logo.letter { display: grid; place-items: center; background: var(--grad); color: var(--on-brand); font-size: 46px; font-weight: 700; }
-.p-hero h1 { font-size: 32px; line-height: 1.2; background: linear-gradient(180deg, #fff 40%, color-mix(in srgb, var(--accent-lift), #fff 35%)); -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .7s var(--ease-out) .1s both; }
-.p-about { margin: 8px auto 0; max-width: 42ch; color: var(--text-2); font-size: 15px; animation: rise .7s var(--ease-out) .18s both; }
-.p-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; padding: 7px 14px; border-radius: 999px; background: rgb(255 255 255 / .07); border: 1px solid rgb(255 255 255 / .12); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); font-size: 13.5px; animation: rise .7s var(--ease-out) .26s both; }
-.p-status .dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
-.p-status.open .dot { background: var(--ok); }
-.p-status.open .dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ok); animation: ping 2.2s var(--ease-out) infinite; }
+.p-hero h1 { font-size: 32px; line-height: 1.2; background: var(--hero-title); -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .7s var(--ease-out) .1s both; }
+.p-about { margin: 8px auto 0; max-width: 42ch; color: var(--hero-ink-2); font-size: 15px; animation: rise .7s var(--ease-out) .18s both; }
+.p-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; padding: 7px 14px; border-radius: 999px; background: var(--hero-glass); border: 1px solid var(--hero-glass-line); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); font-size: 13.5px; animation: rise .7s var(--ease-out) .26s both; }
+.p-status .dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--hero-ink-2); }
+.p-status.open .dot { background: #4ade80; }
+.p-status.open .dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #4ade80; animation: ping 2.2s var(--ease-out) infinite; }
 .p-actions { display: flex; justify-content: center; gap: 18px; margin-top: 22px; }
-.p-action { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 56px; padding: 0; background: none; border: 0; color: var(--text-2); font-size: 12px; cursor: pointer; animation: rise .7s var(--ease-out) both; }
+.p-action { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 56px; padding: 0; background: none; border: 0; color: var(--hero-ink-2); font-size: 12px; cursor: pointer; animation: rise .7s var(--ease-out) both; }
 .p-action:nth-child(1) { animation-delay: .32s; } .p-action:nth-child(2) { animation-delay: .38s; } .p-action:nth-child(3) { animation-delay: .44s; } .p-action:nth-child(4) { animation-delay: .5s; }
-.p-action .c { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .14); color: #fff; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: transform .3s var(--spring), background-color .2s, box-shadow .3s; }
+.p-action .c { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: var(--hero-glass); border: 1px solid var(--hero-glass-line); color: var(--hero-ink); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: transform .3s var(--spring), background-color .2s, box-shadow .3s; }
 .p-action .icon { width: 22px; height: 22px; }
-.p-action:hover .c { background: rgb(255 255 255 / .14); box-shadow: 0 0 28px -6px color-mix(in srgb, var(--accent-lift) 70%, transparent); }
+.p-action:hover .c { background: color-mix(in srgb, var(--hero-ink) 16%, transparent); box-shadow: 0 0 28px -6px color-mix(in srgb, var(--hero-light) 70%, transparent); }
 .p-action:active .c { transform: scale(.9); }
 
 /* The page below the hero. */
@@ -1325,14 +1418,14 @@ html[dir='rtl'][data-nav='back']::view-transition-new(root) { animation-name: vt
 
 /* Services: glass cards; the price in the salon's light. */
 .p-services { display: grid; gap: 10px; }
-.p-svc { position: relative; overflow: hidden; isolation: isolate; display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 22px; background: linear-gradient(160deg, rgb(255 255 255 / .05), transparent 55%), var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-align: start; }
+.p-svc { position: relative; overflow: hidden; isolation: isolate; display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 22px; background: linear-gradient(160deg, color-mix(in srgb, var(--text) 5%, transparent), transparent 55%), var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-align: start; }
 button.p-svc { cursor: pointer; transition: transform .3s var(--spring), border-color .25s, box-shadow .3s; }
-button.p-svc:hover { border-color: color-mix(in srgb, var(--accent-lift) 40%, transparent); box-shadow: var(--shadow), 0 18px 40px -22px color-mix(in srgb, var(--accent-lift) 60%, transparent); }
+button.p-svc:hover { border-color: color-mix(in srgb, var(--brand) 40%, transparent); box-shadow: var(--shadow), 0 18px 40px -22px color-mix(in srgb, var(--brand) 60%, transparent); }
 button.p-svc:active { transform: scale(.98); }
 /* A mirror glint on hover. */
-button.p-svc::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .07) 47%, transparent 60%); transform: translateX(-120%); transition: transform .9s var(--ease-out); }
+button.p-svc::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(105deg, transparent 35%, color-mix(in srgb, var(--text) 7%, transparent) 47%, transparent 60%); transform: translateX(-120%); transition: transform .9s var(--ease-out); }
 button.p-svc:hover::after { transform: translateX(120%); }
-.p-svc-e { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; font-family: var(--emoji); font-size: 25px; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent-lift) 30%, transparent), color-mix(in srgb, var(--accent-lift) 8%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-lift) 30%, transparent); }
+.p-svc-e { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; font-family: var(--emoji); font-size: 25px; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--brand) 30%, transparent), color-mix(in srgb, var(--brand) 8%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 30%, transparent); }
 button.p-svc:hover .p-svc-e { animation: wiggle .6s var(--spring); }
 .p-svc .n { font-size: 16px; font-weight: 600; line-height: 1.35; }
 .p-svc .d { margin-top: 2px; font-size: 13px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -1342,10 +1435,10 @@ button.p-svc:hover .p-svc-e { animation: wiggle .6s var(--spring); }
 .p-svc .avatar-stack .avatar { width: 24px; height: 24px; font-size: 10px; }
 .p-svc-p { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .p-svc-p small { font-size: 11px; color: var(--text-3); }
-.p-svc-p b { font-size: 17px; color: var(--accent-lift); white-space: nowrap; }
+.p-svc-p b { font-size: 17px; color: var(--brand); white-space: nowrap; }
 .p-svc-p .go { display: grid; place-items: center; width: 30px; height: 30px; margin-top: 6px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); transition: background-color .25s, color .25s, transform .3s var(--spring); }
 .p-svc-p .go .icon { width: 16px; height: 16px; }
-button.p-svc:hover .go { background: var(--accent-lift); color: var(--on-accent-lift); transform: translateX(-3px); }
+button.p-svc:hover .go { background: var(--brand); color: var(--on-brand); transform: translateX(-3px); }
 [dir='ltr'] button.p-svc:hover .go { transform: translateX(3px); }
 
 /* Team: portraits in a carousel, name on the glass. */
@@ -1366,16 +1459,16 @@ button.p-svc:hover .go { background: var(--accent-lift); color: var(--on-accent-
 .p-hour .v { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
 .p-hour .v span + span { font-size: 13px; color: var(--text-2); }
 .p-hour.off .v { color: var(--text-3); }
-.p-hour.today { background: linear-gradient(90deg, color-mix(in srgb, var(--accent-lift) 14%, transparent), transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-lift) 28%, transparent); font-weight: 600; }
-[dir='rtl'] .p-hour.today { background: linear-gradient(270deg, color-mix(in srgb, var(--accent-lift) 14%, transparent), transparent); }
-.p-today { height: 20px; padding: 0 8px; border-radius: 99px; display: inline-grid; place-items: center; background: var(--accent-lift); color: var(--on-accent-lift); font-size: 11px; font-weight: 600; }
+.p-hour.today { background: linear-gradient(90deg, color-mix(in srgb, var(--brand) 14%, transparent), transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--brand) 28%, transparent); font-weight: 600; }
+[dir='rtl'] .p-hour.today { background: linear-gradient(270deg, color-mix(in srgb, var(--brand) 14%, transparent), transparent); }
+.p-today { height: 20px; padding: 0 8px; border-radius: 99px; display: inline-grid; place-items: center; background: var(--brand); color: var(--on-brand); font-size: 11px; font-weight: 600; }
 
 /* Contact */
 .p-contact { padding: 4px; }
 .p-line { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; transition: background-color .2s; }
 .p-line:hover { background: var(--surface-2); }
 .p-line + .p-line { margin-top: 2px; }
-.p-line .ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--grad-soft); color: var(--accent-lift); }
+.p-line .ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--grad-soft); color: var(--brand); }
 .p-line .ic .icon { width: 19px; height: 19px; }
 .p-line > .icon { width: 17px; height: 17px; flex: none; }
 .p-foot { display: grid; gap: 6px; justify-items: center; padding-top: 6px; font-size: 13px; }
@@ -1389,7 +1482,7 @@ button.p-svc:hover .go { background: var(--accent-lift); color: var(--on-accent-
 .p-bar-logo.letter { display: grid; place-items: center; background: var(--grad); color: var(--on-brand); font-size: 15px; }
 .p-cta { position: fixed; z-index: 40; bottom: 0; inset-inline: 0; padding: 14px 16px calc(14px + var(--safe-bottom)); background: linear-gradient(to top, var(--bg) 55%, transparent); pointer-events: none; }
 .p-cta-inner { max-width: 520px; margin: 0 auto; pointer-events: auto; }
-.p-book { height: 58px; font-size: 17px; border-radius: 20px; box-shadow: 0 18px 44px -14px color-mix(in srgb, var(--accent-lift) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .35); }
+.p-book { height: 58px; font-size: 17px; border-radius: 20px; box-shadow: 0 18px 44px -14px color-mix(in srgb, var(--brand) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .35); }
 
 /* Things drift up into place as they scroll into view. */
 .reveal { opacity: 0; transform: translateY(26px) scale(.985); transition: opacity .75s var(--ease-out), transform .9s var(--ease-out); transition-delay: calc(var(--i, 0) * 70ms); }
@@ -1408,6 +1501,67 @@ button.p-svc:hover .go { background: var(--accent-lift); color: var(--on-accent-
   }
 }
 @keyframes hero-sink { to { opacity: .1; transform: translateY(60px) scale(.94); filter: blur(3px); } }
+
+/* ==========================================================================
+   Brand kit controls (owner's brand page)
+   ========================================================================== */
+.icon-bgs { padding-bottom: 2px; }
+.bg-dot { width: 16px; height: 16px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .25); }
+.bg-dot.white { background: #fff; }
+.bg-dot.primary { background: var(--primary); }
+.bg-dot.night { background: var(--night); }
+.cover-frame { display: block; width: 100%; aspect-ratio: 16 / 7; padding: 0; border-radius: 22px; overflow: hidden; background: var(--surface); border: 1.5px dashed var(--line-2); cursor: pointer; transition: border-color .2s, transform .3s var(--spring); }
+.cover-frame.has { border-style: solid; border-color: var(--line); }
+.cover-frame:hover { border-color: var(--brand-line); }
+.cover-frame:active { transform: scale(.99); }
+.cover-frame img { width: 100%; height: 100%; object-fit: cover; animation: fade .6s ease both; }
+.cover-empty { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 16px; color: var(--text-2); font-size: 13.5px; text-align: center; }
+.cover-empty .icon { width: 28px; height: 28px; color: var(--violet, var(--brand)); }
+
+/* Look choices: two cards, each with a sketch of the page it gives. */
+.look-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.look-card { position: relative; display: flex; flex-direction: column; gap: 3px; padding: 10px 10px 14px; border-radius: 20px; background: var(--surface); border: 1.5px solid var(--line); cursor: pointer; transition: border-color .2s, box-shadow .25s, transform .3s var(--spring); }
+.look-card input { position: absolute; opacity: 0; pointer-events: none; }
+.look-card:has(input:checked) { border-color: var(--brand); box-shadow: 0 16px 36px -20px var(--brand-glow); }
+.look-card:has(input:checked)::after { content: ''; position: absolute; top: 18px; inset-inline-end: 18px; width: 22px; height: 22px; border-radius: 50%; background: var(--brand) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M5 12.5l4.5 4.5L19 7.5'/%3E%3C/svg%3E") center / 14px no-repeat; box-shadow: 0 0 0 3px var(--surface); animation: pop .4s var(--spring); }
+.look-card:has(input:focus-visible) { outline: 2px solid var(--brand); outline-offset: 2px; }
+.look-card:active { transform: scale(.97); }
+.look-card b { margin: 10px 4px 0; font-size: 15px; }
+.look-card span { margin: 0 4px; font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.look-swatch { position: relative; height: 92px; border-radius: 14px; overflow: hidden; box-shadow: inset 0 0 0 1px rgb(255 255 255 / .08); }
+.look-swatch i { position: absolute; border-radius: 6px; }
+.look-swatch i:nth-child(1) { inset-inline: 12px; top: 46%; height: 11px; background: rgb(255 255 255 / .15); }
+.look-swatch i:nth-child(2) { inset-inline: 12px 34px; top: calc(46% + 17px); height: 11px; background: rgb(255 255 255 / .1); }
+.look-swatch i:nth-child(3) { inset-inline: 22px; bottom: 9px; height: 12px; border-radius: 99px; }
+.look-swatch.sw-night { background: radial-gradient(80% 70% at 20% 0%, color-mix(in srgb, var(--primary), #fff 22%), transparent 70%), radial-gradient(60% 60% at 100% 15%, color-mix(in srgb, var(--accent-lift) 60%, transparent), transparent 70%), var(--night); }
+.look-swatch.sw-night i:nth-child(3) { background: var(--accent-lift); }
+.look-swatch.sw-day { background: radial-gradient(70% 45% at 25% 0%, color-mix(in srgb, var(--primary), #fff 25%), transparent 70%), linear-gradient(var(--primary) 0 40%, var(--day) 40%); }
+.look-swatch.sw-day i:nth-child(1), .look-swatch.sw-day i:nth-child(2) { background: #fff; box-shadow: 0 1px 3px rgb(0 0 0 / .1); }
+.look-swatch.sw-day i:nth-child(3) { background: var(--accent-ink); }
+.look-swatch.sw-studio { background: radial-gradient(70% 70% at 90% 0%, rgb(168 85 247 / .55), transparent 70%), radial-gradient(60% 60% at 0% 100%, rgb(59 130 246 / .45), transparent 70%), #0a0918; }
+.look-swatch.sw-studio i:nth-child(3) { background: linear-gradient(135deg, #a855f7, #6366f1, #3b82f6); }
+.look-swatch.sw-salon { background: radial-gradient(70% 70% at 90% 0%, color-mix(in srgb, var(--accent-lift) 55%, transparent), transparent 70%), radial-gradient(60% 60% at 0% 100%, color-mix(in srgb, var(--primary-lift) 45%, transparent), transparent 70%), var(--night); }
+.look-swatch.sw-salon i:nth-child(3) { background: var(--accent-lift); }
+
+/* The dashboard app, offered for installing on the owner's phone. */
+.install-card { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 12px; }
+.install-card .grow { min-width: 170px; }
+.install-card .app-icon { --s: 46px; border-radius: 13px; }
+
+/* ==========================================================================
+   Launch splash: the salon's icon and name, painted by the server, until the
+   first screen is ready (a moment longer when opened from the home screen).
+   ========================================================================== */
+.splash { min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; padding: 24px; background: var(--bg); color: var(--text); text-align: center; }
+.splash.overlay { position: fixed; inset: 0; z-index: 400; transition: opacity .5s ease, transform .6s var(--ease-out), filter .5s ease; }
+.splash.out { opacity: 0; transform: scale(1.05); filter: blur(6px); pointer-events: none; }
+.splash-mark { position: relative; width: 112px; height: 112px; margin-top: -6vh; animation: pop .7s var(--spring) both; }
+.splash-mark img { width: 100%; height: 100%; border-radius: 30px; box-shadow: 0 24px 60px -18px rgb(0 0 0 / .7), 0 0 0 1px rgb(255 255 255 / .12); }
+/* A ring of lights turns around the icon while the app opens. */
+.splash-mark::before { content: ''; position: absolute; inset: -24px; border-radius: 50%; background: repeating-conic-gradient(var(--brand) 0 3deg, transparent 3deg 18deg);
+  -webkit-mask: radial-gradient(closest-side, transparent 91%, #000 92% 100%); mask: radial-gradient(closest-side, transparent 91%, #000 92% 100%);
+  filter: drop-shadow(0 0 6px var(--brand)); opacity: .85; animation: spin 10s linear infinite; }
+.splash-name { font-size: 22px; font-weight: 700; animation: rise .7s var(--ease-out) .15s both; }
 
 /* ---------------------------------------------------------------- motion preferences */
 @media (prefers-reduced-motion: reduce) {

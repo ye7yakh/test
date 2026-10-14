@@ -107,8 +107,8 @@ async function newPage(browser: Browser | BrowserContext, viewport: typeof PHONE
   return page;
 }
 
-async function login(page: Page, base: string, phone: string, password: string) {
-  await go(page, `${base}/#/login`, 'input[name=phone]');
+async function login(page: Page, base: string, phone: string, password: string, path = '/#/login') {
+  await go(page, `${base}${path}`, 'input[name=phone]');
   await page.type('input[name=phone]', phone);
   await page.type('input[name=password]', password);
   await page.click('button[type=submit]');
@@ -128,7 +128,9 @@ async function fixtures(dir: string) {
       <path d="M${cx - head} ${cy - head * 0.1} Q${cx} ${cy - head * 1.6} ${cx + head} ${cy - head * 0.1} Q${cx} ${cy - head * 0.8} ${cx - head} ${cy - head * 0.1}Z" fill="#2b1d14"/>
     </svg>`);
   };
-  const files = { p1: path.join(dir, 'p1.jpg'), p2: path.join(dir, 'p2.jpg'), logo: path.join(dir, 'logo.png'), receipt: path.join(dir, 'receipt.png') };
+  const files = { p1: path.join(dir, 'p1.jpg'), p2: path.join(dir, 'p2.jpg'), logo: path.join(dir, 'logo.png'), receipt: path.join(dir, 'receipt.png'), cover: path.join(dir, 'cover.jpg') };
+  // A salon at night: a row of mirrors with their lights.
+  await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="900"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2c3a36"/><stop offset="1" stop-color="#0b1211"/></linearGradient></defs><rect width="1600" height="900" fill="url(#g)"/>${Array.from({ length: 9 }, (_, i) => `<rect x="${120 + i * 160}" y="170" width="110" height="420" rx="14" fill="#d9b45a" opacity="${0.14 + (i % 3) * 0.08}"/><circle cx="${175 + i * 160}" cy="128" r="24" fill="#ffe7b3" opacity=".85"/>`).join('')}<rect y="640" width="1600" height="260" fill="#0e1514"/></svg>`)).jpeg().toFile(files.cover);
   // A made-up transfer receipt in no real bank's style, shaped like a phone screenshot.
   await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="780" height="1688">
     <rect width="780" height="1688" fill="#f3f4f6"/><rect width="780" height="150" fill="#334155"/>
@@ -161,6 +163,8 @@ async function main() {
   const sub = `s${Date.now().toString(36).slice(-6)}`;
   const owner = { phone: `07${String(Date.now()).slice(-8)}`, password: 'owner-pass-777' };
   const SALON = `http://${sub}.${BASE_HOST}`;
+  // The owner's own installable app.
+  const STUDIO = `${SALON}/manage`;
   try {
     // ---- the platform owner creates a salon
     const admin = await newPage(browser);
@@ -200,7 +204,7 @@ async function main() {
 
     // ---- the salon owner's first visit
     const page = await newPage(browser);
-    await login(page, SALON, owner.phone, owner.password);
+    await login(page, SALON, owner.phone, owner.password, '/manage#/login');
     await page.waitForSelector('.hero-card');
     await snap(page, 'home-empty', { full: true, wait: 1500 });
     // First thing: their own password instead of the temporary one.
@@ -216,7 +220,7 @@ async function main() {
     await settle(page, 400);
 
     // Services: a ready menu for a barbershop, priced in one sheet.
-    await go(page, `${SALON}/#/manage/services`, '.type-card');
+    await go(page, `${STUDIO}#/manage/services`, '.type-card');
     await snap(page, 'services-empty');
     await page.click('.type-card');
     await page.waitForSelector('.sheet .tpl-row');
@@ -237,7 +241,7 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.sheet'));
 
     // Team: a new barber with a photo, then a new photo with the studio touch.
-    await go(page, `${SALON}/#/manage/team`, '.add-member');
+    await go(page, `${STUDIO}#/manage/team`, '.add-member');
     await page.click('.add-member');
     await page.waitForSelector('.sheet .drop');
     await settle(page, 400);
@@ -263,7 +267,7 @@ async function main() {
     await settle(page, 400);
 
     // Brand: logo, a palette; the save bar and live preview follow.
-    await go(page, `${SALON}/#/manage/brand`, '.logo-drop');
+    await go(page, `${STUDIO}#/manage/brand`, '.logo-drop');
     await upload(page, '.logo-drop .btn-secondary', files.logo);
     await page.waitForSelector('.logo-drop .app-icon.logo');
     await page.$eval('.palette[data-id="emerald"]', (el) => el.scrollIntoView({ block: 'center' }));
@@ -277,7 +281,7 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.savebar'));
 
     // Hours: a preset, one day opened, saved.
-    await go(page, `${SALON}/#/manage/hours`, '.day-row');
+    await go(page, `${STUDIO}#/manage/hours`, '.day-row');
     await clickText(page, '.chip-btn', 'فترتين');
     await page.waitForSelector('.savebar');
     await page.click('.day-row[data-day="6"] .day-line');
@@ -288,7 +292,7 @@ async function main() {
     await snap(page, 'hours', { full: true });
 
     // Home when everything is done: the celebration, then the settled page.
-    await go(page, `${SALON}/#/manage`, '.hero-card');
+    await go(page, `${STUDIO}#/manage`, '.hero-card');
     await snap(page, 'home-ready-celebration', { wait: 300 });
     await snap(page, 'home-ready', { full: true, wait: 2600 });
 
@@ -306,19 +310,19 @@ async function main() {
     await page.evaluate(() => ([...document.querySelectorAll<HTMLInputElement>('.sheet .segmented input')].find((i) => i.value === 'en')!).click());
     await page.waitForFunction(() => document.documentElement.dir === 'ltr');
     await snap(page, 'home-english', { full: true, wait: 1200 });
-    await go(page, `${SALON}/#/manage/hours`, '.day-row');
+    await go(page, `${STUDIO}#/manage/hours`, '.day-row');
     await snap(page, 'hours-english');
     await page.evaluate(() => { try { localStorage.setItem('lang', 'ar'); } catch {} });
 
     // Desktop: sidebar, page and live preview side by side.
     const desk = await newPage(browser, DESKTOP);
-    await login(desk, SALON, owner.phone, owner.password);
+    await login(desk, SALON, owner.phone, owner.password, '/manage#/login');
     await desk.waitForSelector('.hero-card');
     await snap(desk, 'desktop-home', { wait: 1500 });
-    await go(desk, `${SALON}/#/manage/brand`, '.palette');
+    await go(desk, `${STUDIO}#/manage/brand`, '.palette');
     await desk.click('.palette[data-id="rose"]');
     await snap(desk, 'desktop-brand-live-preview', { wait: 900 });
-    await go(desk, `${SALON}/#/manage/team`, '.member');
+    await go(desk, `${STUDIO}#/manage/team`, '.member');
     await snap(desk, 'desktop-team');
 
     // The salon's public page still renders in its own light theme.
@@ -328,7 +332,7 @@ async function main() {
 
     // ---- bookings: the owner asks for a CliQ deposit
     await page.bringToFront();
-    await go(page, `${SALON}/#/manage/bookings`, '.sched-summary');
+    await go(page, `${STUDIO}#/manage/bookings`, '.sched-summary');
     // Back to Arabic (set above).
     await page.reload({ waitUntil: 'networkidle2' });
     await page.waitForSelector('.sched-summary');
@@ -440,13 +444,39 @@ async function main() {
     await snap(page, 'booking-detail');
     await page.keyboard.press('Escape');
     await settle(page, 400);
-    await go(page, `${SALON}/#/manage`, '.today-card .head');
+    await go(page, `${STUDIO}#/manage`, '.today-card .head');
     await snap(page, 'home-today', { full: true, wait: 1500 });
     await desk.bringToFront();
-    await go(desk, `${SALON}/#/manage/bookings`, '.sched-summary');
+    await go(desk, `${STUDIO}#/manage/bookings`, '.sched-summary');
     await desk.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
     await desk.waitForSelector('.appt');
     await snap(desk, 'desktop-bookings', { wait: 1200 });
+
+    // ---- the salon's look, its way: a cover photo, its page by day, the dashboard in its colours
+    await page.bringToFront();
+    await go(page, `${STUDIO}#/manage/brand`, '.look-grid');
+    await upload(page, '.cover-drop .btn-secondary', files.cover);
+    await page.waitForSelector('.cover-frame.has img');
+    await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.look-card')].find((c) => c.textContent!.includes('نهاري'))!.click());
+    await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.look-card')].find((c) => c.textContent!.includes('ألوان صالونك'))!.click());
+    await page.evaluate(() => window.scrollTo(0, 0));
+    await snap(page, 'brand-looks', { full: true, wait: 1200 });
+    await page.evaluate(() => (document.querySelector('.savebar .btn-primary') as HTMLElement).click());
+    await find(page, '.toast', 'تم حفظ الهوية');
+    await go(page, `${STUDIO}#/manage`, '.hero-card');
+    await snap(page, 'home-salon-colours', { wait: 1500 });
+    // A customer opens the app: the splash holds until the salon's page has its data.
+    const visitor = await newPage(await browser.createBrowserContext());
+    await visitor.setRequestInterception(true);
+    visitor.on('request', (r) => {
+      if (r.url().includes('/api/public/salon')) setTimeout(() => r.continue(), 1500);
+      else r.continue();
+    });
+    await visitor.goto(`${SALON}/`, { waitUntil: 'domcontentloaded' });
+    await visitor.waitForSelector('.splash.overlay');
+    await snap(visitor, 'customer-splash', { wait: 500 });
+    await visitor.waitForSelector('.p-hero.has-cover h1');
+    await snap(visitor, 'public-day', { full: true, wait: 1600 });
   } finally {
     await browser.close();
   }

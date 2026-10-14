@@ -377,6 +377,20 @@ export function appIcon(logoUrl, cls = '') {
     : h('div', { class: `app-icon ${cls}` }, scissorsMark());
 }
 
+/**
+ * The salon's app icon drawn the way the server renders it: its own icon full bleed,
+ * or the logo (or the scissors mark) on the chosen background.
+ */
+export function salonIcon(salon, cls = '') {
+  if (salon.icon_url) return h('div', { class: `app-icon own ${cls}` }, h('img', { src: salon.icon_url, alt: '' }));
+  const art = salon.logo_url;
+  const bg = { white: '#fff', primary: 'var(--primary)', night: 'var(--night)' }[salon.icon_bg] ?? (art ? '#fff' : 'var(--primary)');
+  const el = h('div', { class: `app-icon on-bg ${cls}` }, art ? h('img', { src: art, alt: '' }) : scissorsMark());
+  el.style.setProperty('--icon-bg', bg);
+  el.style.color = bg === '#fff' ? '#111' : bg === 'var(--night)' ? '#fff' : 'var(--on-primary)';
+  return el;
+}
+
 /** Counts a number up from zero, e.g. on stat cards. `format` turns the value into text. */
 export function countUp(el, to, { duration = 900, format = (v) => String(v) } = {}) {
   if (reducedMotion() || to === 0) {
@@ -408,15 +422,16 @@ export function ring(value, { big, small, size = 92 } = {}) {
   const svg = document.createElementNS(SVG_NS, 'svg');
   svg.setAttribute('viewBox', '0 0 100 100');
   svg.setAttribute('aria-hidden', 'true');
-  // Violet to blue along the arc.
   const id = `ring-${Math.random().toString(36).slice(2)}`;
   const defs = document.createElementNS(SVG_NS, 'defs');
   const grad = document.createElementNS(SVG_NS, 'linearGradient');
   grad.setAttribute('id', id);
-  for (const [offset, color] of [['0', '#c084fc'], ['0.5', '#818cf8'], ['1', '#60a5fa']]) {
+  // The studio's lights, so the ring follows a salon-coloured dashboard too.
+  for (const [offset, color] of [['0', 'var(--glow-1-soft)'], ['0.5', 'var(--glow-2)'], ['1', 'var(--blue)']]) {
     const stop = document.createElementNS(SVG_NS, 'stop');
     stop.setAttribute('offset', offset);
-    stop.setAttribute('stop-color', color);
+    // Through the style API: a style attribute would be refused by the page's CSP.
+    stop.style.setProperty('stop-color', color);
     grad.append(stop);
   }
   defs.append(grad);

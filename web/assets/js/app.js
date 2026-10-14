@@ -15,9 +15,31 @@ let unmount = [];
 // /manage is the owner's installable app; everything else is the customers' app.
 const ownerApp = location.pathname === '/manage';
 
+// Android and desktop Chrome offer to install; the offer is kept for our own buttons.
+let installOffer = null;
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installOffer = e;
+  dispatchEvent(new Event('install-ready'));
+});
+addEventListener('appinstalled', () => {
+  installOffer = null;
+});
+
 const app = {
   ctx: null,
   ownerApp,
+  isIOS: /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1),
+  installed: () => matchMedia('(display-mode: standalone)').matches || navigator.standalone === true,
+  canInstall: () => !!installOffer,
+  /** Shows the browser's install prompt; true if the person installed. */
+  async install() {
+    const offer = installOffer;
+    if (!offer) return false;
+    installOffer = null;
+    offer.prompt();
+    return (await offer.userChoice).outcome === 'accepted';
+  },
   async reload() {
     app.ctx = await api('GET', '/api/context');
     render();

@@ -58,6 +58,22 @@ function watchScroll(app, root) {
   }
 }
 
+/** "Install the app", where the phone offers it (Android, desktop Chrome). */
+function installButton(app) {
+  const btn = h('button', { class: 'p-glass-btn', type: 'button', hidden: true }, icon('down'), h('span', { text: t('install.app') }));
+  const sync = () => {
+    btn.hidden = !app.canInstall() || app.installed();
+  };
+  btn.addEventListener('click', async () => {
+    await app.install();
+    sync();
+  });
+  sync();
+  addEventListener('install-ready', sync);
+  app.onUnmount(() => removeEventListener('install-ready', sync));
+  return btn;
+}
+
 async function share(salon) {
   const name = pick(salon, 'name');
   const data = { title: name, text: t('home.share_text', { name }), url: location.origin };
@@ -106,13 +122,15 @@ function render(app, data) {
 
   const hero = h(
     'header',
-    { class: 'p-hero' },
+    { class: `p-hero ${salon.cover_url ? 'has-cover' : ''}` },
+    // The salon's own photo across the top, when it has one.
+    salon.cover_url ? h('img', { class: 'cover', src: salon.cover_url, alt: '', fetchpriority: 'high' }) : null,
     h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h(
       'div',
       { class: 'p-top' },
       app.canManage ? h('a', { class: 'p-glass-btn', href: '/manage' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
-      h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
+      h('div', { class: 'row', style: { gap: '8px' } }, installButton(app), h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe'))),
     ),
     h(
       'div',

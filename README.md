@@ -9,12 +9,12 @@ Three kinds of users:
 | Who | Where | What they do today |
 | --- | --- | --- |
 | Platform owner (super admin) | `brand.com` / `admin.brand.com` | See every salon's activity and setup, create salons and hand them over, rename them or move them to a new link, suspend them, reset owners' passwords |
-| Salon owner | `salon.brand.com/#/manage` | Set up the salon (details, logo and colours, services and prices, team with photos, opening hours), run the day's bookings, check CliQ deposits |
+| Salon owner | `salon.brand.com/manage` (its own installable app) | Set up the salon (details, logo, app icon, cover photo, colours, how their page and their dashboard look, services and prices, team with photos, opening hours), run the day's bookings, check CliQ deposits |
 | Customer | `salon.brand.com` | See the salon's page, book a service with anyone or a chosen barber, pay a CliQ deposit when the salon asks for one, follow or cancel the booking |
 
 ## The owner studio
 
-The salon owner's workspace (`salon.brand.com/#/manage`) is designed to impress
+The salon owner's workspace (`salon.brand.com/manage`) is designed to impress
 on first open. It's a deep indigo studio lit in violet and blue, with glass
 surfaces, a floating tab bar and plenty of motion: drifting background light, a
 light circling the main card, a tab highlight that slides between tabs, gradient
@@ -58,7 +58,34 @@ colours appear in its app (the previews and the icon).
 Arabic first and fully mirrored in English. The typeface is Readex Pro
 (self-hosted, OFL). Motion respects `prefers-reduced-motion`.
 
-## The salon's page (customers)
+## The brand kit and the two apps
+
+Each salon has two installable apps (PWAs) on its own link:
+
+- **The customers' app** at `salon.brand.com`: the salon's name, its icon, and its page.
+- **The owner's app** at `salon.brand.com/manage`: named "إدارة …", opening straight on the
+  dashboard, with the salon's icon wearing a small dashboard badge so the two apps are
+  told apart on a phone. Owners are sent there when they sign in, and Home offers
+  one-tap install where the phone allows it (Android, desktop Chrome) or the "Add to
+  Home Screen" tip on iPhone. Customers get an install button on the salon page where
+  the phone allows it.
+
+On the brand page the owner decides how both look, with a live preview:
+
+- **Colours**: 13 ready palettes or their own main and accent colours.
+- **The customer page**: **night** (dark, the main colour deep in near-black, lit by the
+  accent) or **day** (light, a coloured hero and the page rising over it as a sheet).
+  The accent is lightened or darkened automatically so it always reads.
+- **The dashboard**: the studio's violet and blue, or **the salon's own colours**; the
+  dashboard recolours live as they pick.
+- **Cover photo** across the top of the customer page, under a scrim so text reads.
+- **App icon**: made from the logo on a chosen background (auto, white, main colour or
+  dark), or a separate square icon uploaded full bleed.
+- **Launch screen**: the icon in a ring of lights with the salon's name, painted by the
+  server so it shows before any script runs, and held until the first screen has its
+  content. Android builds its launch screen from the manifest; iPhones and iPads get
+  launch images rendered for every screen size.
+
 
 Each salon's page is its own night: the salon's main colour deep in near-black,
 lit by its accent (lightened automatically if it would not read on dark). The
@@ -164,7 +191,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 213 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 234 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
@@ -174,7 +201,8 @@ and session revocation. `screenshots` drives Chrome through a brand-new salon's 
 journey: the admin creating and handing it over and resetting the owner's password, the
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
-English and desktop. It writes 49 PNGs to `screenshots/` and fails on any page error,
+English and desktop, then a cover photo, the page by day and the dashboard in the salon's
+colours, and the launch splash. It writes 53 PNGs to `screenshots/` and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
@@ -198,6 +226,7 @@ Seed a production brand with `SEED_DOMAIN`, `SEED_ADMIN_PHONE` and
 migrations/            numbered SQL, idempotent
 src/server.ts          http server, routing, Origin check, errors
 src/tenancy.ts         Host -> brand + salon (and earlier links, suspended salons)
+src/brand.ts           the two apps: icon backgrounds and versions, launch screens, app colours
 src/booking.ts         availability, booking, deposit holds
 src/colors.ts          salon colour maths (night base, readable accent)
 src/auth.ts            passwords, sessions, roles, login rate limit, phone normalising
