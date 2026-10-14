@@ -1,6 +1,6 @@
 // The salon's brand kit as the two installable apps use it: the customers' app on
-// the salon's link and the owner's app on /manage. Icons, launch screens and the
-// colours around them are all derived from the salon's settings.
+// the salon's link and the owner's app on /admin. Icons, launch screens, the picture
+// a shared link shows and the colours around them all come from the salon's settings.
 import { dayBase, nightBase } from './colors.js';
 import type { Salon } from './tenancy.js';
 
@@ -29,6 +29,9 @@ export const pageColor = (s: Salon) => (s.page_theme === 'day' ? dayBase(s.color
 
 /** The owner's dashboard background: the platform's studio, or the salon's night. */
 export const studioColor = (s: Salon) => (s.studio_theme === 'brand' ? nightBase(s.color_primary) : STUDIO_BG);
+
+/** Changes whenever the shared-link picture would: the cover, or the icon on its page colour. */
+export const shareVersion = (s: Salon) => `${s.cover_media_id ?? iconVersion(s)}-${pageColor(s).slice(1)}-${s.color_accent.slice(1)}`;
 
 export const splashVersion = (s: Salon, owner: boolean) => `${iconVersion(s)}-${(owner ? studioColor(s) : pageColor(s)).slice(1)}`;
 

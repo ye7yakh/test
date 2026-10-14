@@ -229,12 +229,71 @@ export async function addOwnerBadge(icon: Buffer, size: number, maskable: boolea
   return sharp(icon).composite([{ input: badge, left, top: left }]).png().toBuffer();
 }
 
+/**
+ * The platform's own mark: the studio's violet-to-blue with the sparkles glyph the
+ * dashboard wears. Paths only, no fonts needed.
+ */
+export function platformMarkSvg(size: number, padding = 0): Buffer {
+  const scale = (1 - padding * 2) * (512 / 24) * 0.56;
+  const offset = (512 - 24 * scale) / 2;
+  return Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 512 512">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset=".52" stop-color="#6366f1"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+      <rect width="512" height="512" fill="url(#g)"/>
+      <g transform="translate(${offset} ${offset}) scale(${scale})" stroke="#ffffff" stroke-width="1.7" stroke-linejoin="round">
+        <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z" fill="none"/>
+        <path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8zM5 2.5l.6 1.6 1.6.6-1.6.6L5 6.9l-.6-1.6-1.6-.6 1.6-.6z" fill="#ffffff" stroke-width="1"/>
+      </g>
+    </svg>`,
+  );
+}
+
+export const renderPlatformIcon = (size: number, padding = 0) => sharp(platformMarkSvg(size, padding)).png().toBuffer();
+
+const roundedMask = (side: number) =>
+  Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${side}" height="${side}"><rect width="${side}" height="${side}" rx="${Math.round(side * 0.225)}" ry="${Math.round(side * 0.225)}"/></svg>`);
+
+export const SHARE_SIZE = { width: 1200, height: 630 };
+
+/**
+ * The picture a shared link shows (WhatsApp, Instagram, Facebook). A salon with a
+ * cover photo shows that photo; otherwise its icon, rounded, on its page colour lit
+ * by two soft glows. The icon sits dead centre, so square crops still show it.
+ */
+export async function renderShareCard(opts: { bg: string; glows: [string, string]; icon: Buffer; cover: Buffer | null }): Promise<Buffer> {
+  const { width, height } = SHARE_SIZE;
+  if (opts.cover) {
+    return sharp(opts.cover)
+      .resize(width, height, { fit: 'cover', position: sharp.strategy.attention })
+      .flatten({ background: opts.bg })
+      .jpeg({ quality: 82, mozjpeg: true })
+      .toBuffer();
+  }
+  const [a, b] = opts.glows;
+  const backdrop = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
+      <defs>
+        <radialGradient id="a" cx="80%" cy="0%" r="75%"><stop offset="0" stop-color="${a}" stop-opacity=".5"/><stop offset="1" stop-color="${a}" stop-opacity="0"/></radialGradient>
+        <radialGradient id="b" cx="10%" cy="100%" r="65%"><stop offset="0" stop-color="${b}" stop-opacity=".38"/><stop offset="1" stop-color="${b}" stop-opacity="0"/></radialGradient>
+      </defs>
+      <rect width="100%" height="100%" fill="${opts.bg}"/>
+      <rect width="100%" height="100%" fill="url(#a)"/>
+      <rect width="100%" height="100%" fill="url(#b)"/>
+    </svg>`,
+  );
+  const side = 300;
+  const mark = await sharp(opts.icon).resize(side, side).composite([{ input: roundedMask(side), blend: 'dest-in' }]).png().toBuffer();
+  return sharp(backdrop)
+    .composite([{ input: mark, left: (width - side) / 2, top: (height - side) / 2 }])
+    .flatten({ background: opts.bg })
+    .jpeg({ quality: 88, mozjpeg: true })
+    .toBuffer();
+}
+
 /** A launch screen: the app's background with its icon, rounded, a little above centre. */
 export async function renderSplash(width: number, height: number, bg: string, icon: Buffer): Promise<Buffer> {
   const side = Math.round(Math.min(width, height) * 0.27);
-  const radius = Math.round(side * 0.225);
-  const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${side}" height="${side}"><rect width="${side}" height="${side}" rx="${radius}" ry="${radius}"/></svg>`);
-  const mark = await sharp(icon).resize(side, side).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+  const mark = await sharp(icon).resize(side, side).composite([{ input: roundedMask(side), blend: 'dest-in' }]).png().toBuffer();
   return sharp({ create: { width, height, channels: 4, background: bg } })
     .composite([{ input: mark, left: Math.round((width - side) / 2), top: Math.round(height * 0.44 - side / 2) }])
     .flatten({ background: bg })

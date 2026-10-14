@@ -34,7 +34,7 @@ export function waNumber(phone) {
 
 // ---------------------------------------------------------------- the booking sheet
 
-export function openBooking(app, data, { serviceId } = {}) {
+export function openBooking(app, data, { serviceId, onClose } = {}) {
   const { salon, services, staff } = data;
   const staffById = new Map(staff.map((m) => [m.id, m]));
   const state = { step: serviceId ? 2 : 1, serviceId, staffId: null, date: null, today: null, slot: null };
@@ -44,7 +44,7 @@ export function openBooking(app, data, { serviceId } = {}) {
   const body = h('div');
   const back = h('button', { class: 'btn btn-secondary', type: 'button', text: t('book.back') });
   const next = h('button', { class: 'btn btn-primary', type: 'button' });
-  const panel = sheet({ title: t('book.title'), body: h('div', null, progress, body), actions: [back, next], tall: true });
+  const panel = sheet({ title: t('book.title'), body: h('div', null, progress, body), actions: [back, next], tall: true, onClose });
   const title = panel.el.querySelector('.sheet-head h2');
 
   const service = () => services.find((s) => s.id === state.serviceId);
@@ -174,7 +174,7 @@ export function openBooking(app, data, { serviceId } = {}) {
         rememberMe(name.value.trim(), phone.value.trim());
         remember(salon.id, { token: res.token, date: res.booking.date, start: res.booking.start, service_ar: s.name_ar, service_en: s.name_en });
         panel.close();
-        app.go(`#/b/${res.token}`);
+        app.go(`/b/${res.token}`);
       } catch (err) {
         if (err.code === 'slot_taken') {
           state.slot = null;
@@ -239,7 +239,7 @@ export function bookingPage(app, token) {
       if (first || changed) render(changed);
       if (first) appReady();
     } catch (err) {
-      clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }), h('a', { class: 'btn btn-secondary btn-block', href: '#/', text: t('bk.back') })));
+      clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }), h('a', { class: 'btn btn-secondary btn-block', href: '/', text: t('bk.back') })));
       appReady();
     }
   }
@@ -295,12 +295,12 @@ export function bookingPage(app, token) {
       });
     });
     const again = ['expired', 'cancelled', 'completed', 'no_show'].includes(b.status)
-      ? h('a', { class: 'btn btn-primary btn-block', href: '#/', text: t('bk.book_again') })
+      ? h('a', { class: 'btn btn-primary btn-block', href: '/', text: t('bk.book_again') })
       : null;
 
     clear(
       el,
-      h('header', { class: 'booking-top' }, h('a', { class: 'icon-btn plain', href: '#/', 'aria-label': t('bk.back') }, icon('arrow', 'flip-rtl')), appIcon(s.logo_url), h('span', { class: 'grow truncate', text: pick(s, 'name') })),
+      h('header', { class: 'booking-top' }, h('a', { class: 'icon-btn plain', href: '/', 'aria-label': t('bk.back') }, icon('arrow', 'flip-rtl')), appIcon(s.logo_url), h('span', { class: 'grow truncate', text: pick(s, 'name') })),
       h('main', { class: 'page stack-lg' }, stagger([hero, cliq, proof, details, contact, again, cancel].filter(Boolean))),
     );
     if (changed && ['confirmed'].includes(b.status)) requestAnimationFrame(() => sparkles(hero.querySelector('.status-icon')));
@@ -408,7 +408,7 @@ export function myBookingsCard(salon) {
         null,
         h(
           'a',
-          { class: 'svc', href: `#/b/${r.token}` },
+          { class: 'svc', href: `/b/${r.token}` },
           h('div', { class: 'tile emoji-tile', text: r.booking.service.icon || '✂️' }),
           h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(r.booking.service, 'name') }), h('div', { class: 'meta', text: `${fmtDate(r.booking.date, { weekday: 'long', day: 'numeric', month: 'short' })} · ${fmtTime(r.booking.start)}` })),
           h('span', { class: `pill status-${r.booking.status}`, text: r.booking.status === 'payment_sent' ? t('bk.payment_sent') : t(`status.${r.booking.status}`) }),

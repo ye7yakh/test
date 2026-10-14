@@ -6,7 +6,7 @@ import { one, query, tx, type Db } from '../db.js';
 import { defaultWeek, saveSalonWeek } from '../hours.js';
 import { HttpError, ok, readJson, requestProto, type Ctx, type Router } from '../http.js';
 import { config } from '../config.js';
-import { RESERVED_SUBDOMAINS, salonUrl } from '../tenancy.js';
+import { clearTenantCache, RESERVED_SUBDOMAINS, salonUrl } from '../tenancy.js';
 import { bool, Input, parseId, text } from '../validate.js';
 
 const subdomain = (v: unknown) => {
@@ -251,7 +251,34 @@ async function resetOwnerPassword(ctx: Ctx) {
   ok(ctx, { password, owner: { name: owner.name, phone: owner.phone } });
 }
 
+/** The platform's own settings: where salon owners reach it from the landing page. */
+function platformBody(ctx: Ctx) {
+  const t = ctx.host.tenant;
+  return { name: t.name, name_ar: t.name_ar, domain: t.domain, contact_phone: t.contact_phone };
+}
+
+async function updatePlatform(ctx: Ctx) {
+  requireSuperAdmin(ctx);
+  const tenant = ctx.host.tenant;
+  const b = new Input(await readJson(ctx));
+  const raw = b.opt('contact_phone', text(30));
+  if (raw !== undefined) {
+    // Empty hides the landing page's WhatsApp buttons.
+    const phone = raw.trim() ? normalizePhone(raw, tenant.default_calling_code) : '';
+    if (phone === null) throw new HttpError(400, 'invalid', 'contact_phone');
+    await query('update tenants set contact_phone = $2 where id = $1', [tenant.id, phone]);
+    tenant.contact_phone = phone;
+    clearTenantCache();
+  }
+  ok(ctx, platformBody(ctx));
+}
+
 export function adminRoutes(r: Router) {
+  r.get('/api/admin/platform', (ctx) => {
+    requireSuperAdmin(ctx);
+    ok(ctx, platformBody(ctx));
+  });
+  r.patch('/api/admin/platform', updatePlatform);
   r.get('/api/admin/salons', listSalons);
   r.post('/api/admin/salons', createSalon);
   r.get('/api/admin/salons/:id', getSalon);

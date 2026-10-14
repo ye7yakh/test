@@ -152,7 +152,8 @@ export async function purgeExpiredSessions(): Promise<void> {
 // ---------------------------------------------------------------- guards
 
 export function requireSuperAdmin(ctx: Ctx): Session {
-  if (ctx.host.salon) throw new HttpError(404, 'not_found');
+  // The platform's tools exist only on its dashboard host (admin.).
+  if (ctx.host.site !== 'admin') throw new HttpError(404, 'not_found');
   if (!ctx.session) throw new HttpError(401, 'login_required');
   if (ctx.session.role !== 'admin') throw new HttpError(403, 'forbidden');
   return ctx.session;

@@ -834,6 +834,13 @@ img { display: block; max-width: 100%; }
 .stats b { display: block; font-size: 26px; line-height: 1.1; }
 .stats span { font-size: 12.5px; color: var(--text-2); }
 .url-preview { font-size: 13px; color: var(--brand); margin-top: 6px; direction: ltr; text-align: end; }
+/* The platform settings sheet: a card that opens the landing page. */
+.platform-link { display: flex; align-items: center; gap: 14px; color: inherit; text-decoration: none; transition: border-color .2s, background .2s; }
+.platform-link:hover { border-color: var(--line-2); background: var(--surface-2); }
+.platform-link .app-icon { --s: 44px; flex: none; border-radius: 14px; }
+.platform-link .name { font-weight: 600; }
+.platform-link .sub { margin-top: 2px; font-size: 13px; color: var(--text-2); }
+.platform-link > .icon { flex: none; width: 18px; height: 18px; }
 [dir='ltr'] .url-preview { text-align: start; }
 
 /* ==========================================================================
@@ -1566,4 +1573,156 @@ button.p-svc:hover .go { background: var(--brand); color: var(--on-brand); trans
 /* ---------------------------------------------------------------- motion preferences */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+}
+
+/* ==========================================================================
+   Landing page: the platform's front door, for salon owners. A phone that
+   cycles through example salons, glass notifications around it, a grid floor.
+   ========================================================================== */
+.land { position: relative; min-height: 100dvh; overflow-x: clip; background: var(--bg); }
+.l-top { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; padding: calc(12px + var(--safe-top)) clamp(16px, 4vw, 40px) 12px;
+  background: color-mix(in srgb, var(--bg) 72%, transparent); -webkit-backdrop-filter: blur(16px) saturate(1.4); backdrop-filter: blur(16px) saturate(1.4); border-bottom: 1px solid var(--line); }
+.l-brand { display: flex; align-items: center; gap: 10px; font-size: 19px; font-weight: 700; }
+.l-brand .app-icon { --s: 34px; border-radius: 11px; }
+.l-brand.small { font-size: 15px; }
+.l-brand.small .app-icon { --s: 26px; border-radius: 9px; }
+
+.l-hero { position: relative; isolation: isolate; overflow: hidden; padding: clamp(28px, 6vw, 72px) clamp(16px, 4vw, 40px) clamp(36px, 6vw, 80px); }
+.l-grid { position: absolute; inset: auto -30% -6% -30%; height: 58%; z-index: -1; opacity: .75; pointer-events: none;
+  background-image: linear-gradient(var(--line-2) 1px, transparent 1px), linear-gradient(90deg, var(--line-2) 1px, transparent 1px); background-size: 56px 56px;
+  transform: perspective(520px) rotateX(64deg); transform-origin: bottom;
+  -webkit-mask-image: linear-gradient(to top, #000 8%, transparent 80%); mask-image: linear-gradient(to top, #000 8%, transparent 80%);
+  animation: l-grid-run 9s linear infinite; }
+@keyframes l-grid-run { to { background-position: 0 56px, 0 0; } }
+.l-hero-inner { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 1.05fr .95fr; align-items: center; gap: clamp(20px, 5vw, 64px); }
+.l-eyebrow { display: inline-flex; align-items: center; gap: 9px; padding: 7px 15px; border-radius: 999px; font-size: 13.5px; color: var(--text-2);
+  background: var(--glass); border: 1px solid var(--line-2); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); }
+.l-eyebrow .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 10px var(--ok); animation: l-pulse 2.2s ease-in-out infinite; }
+@keyframes l-pulse { 50% { opacity: .35; transform: scale(.8); } }
+.l-title { margin: 18px 0 16px; font-size: clamp(40px, 7.4vw, 76px); line-height: 1.12; font-weight: 700; }
+.l-title span { display: block; }
+.l-title .shine { padding-bottom: .06em; color: transparent; -webkit-background-clip: text; background-clip: text;
+  background-image: linear-gradient(100deg, var(--glow-1-soft) 0%, #fff 30%, var(--glow-3-soft) 55%, var(--glow-1-soft) 80%, #fff 100%); background-size: 240% 100%;
+  animation: l-shine 7s linear infinite; }
+@keyframes l-shine { to { background-position: -240% 0; } }
+.l-sub { max-width: 33em; margin: 0; font-size: clamp(15.5px, 1.8vw, 18.5px); line-height: 1.85; color: var(--text-2); }
+.l-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+.l-actions .btn { height: 54px; padding: 0 24px; border-radius: 18px; font-size: 15.5px; }
+.l-cta .icon { width: 20px; height: 20px; }
+
+/* The stage: the phone, its glow and orbit, and the notifications around it. */
+.l-stage { position: relative; display: grid; place-items: center; min-height: 760px; padding-bottom: 56px; }
+.l-stage::before { content: ''; position: absolute; width: 440px; height: 440px; border-radius: 50%; z-index: -1;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--accent) 50%, transparent), transparent); filter: blur(24px); opacity: .8; }
+.l-stage::after { content: ''; position: absolute; width: 560px; height: 560px; border-radius: 50%; z-index: -1; border: 1px dashed var(--line-2);
+  -webkit-mask: linear-gradient(#000, transparent 75%); mask: linear-gradient(#000, transparent 75%); animation: spin 80s linear infinite; }
+.l-phone { position: relative; }
+.l-phone .phone-screen { background: var(--night); }
+.l-phone.tilt { transform: perspective(1200px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .4s var(--ease-out); }
+.l-phone .phone-wrap { animation: l-float 7s ease-in-out infinite; }
+@keyframes l-float { 50% { transform: translateY(-12px); } }
+.l-screen { position: absolute; inset: 0; transition: opacity .38s ease, filter .38s ease, transform .38s var(--ease-out); }
+.l-stage.swap .l-screen { opacity: 0; filter: blur(12px); transform: scale(.97); }
+.l-chip { position: absolute; z-index: 3; display: flex; align-items: center; gap: 11px; padding: 10px 15px 10px 12px; border-radius: 18px; text-align: start;
+  background: rgb(21 18 44 / .68); border: 1px solid var(--line-2); -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: var(--shadow-lg); animation: l-chip-in .8s var(--spring) both, l-bob 6s ease-in-out infinite; transition: opacity .38s; }
+.l-stage.swap .l-chip { opacity: .35; }
+.l-chip b { display: block; font-size: 13.5px; font-weight: 600; }
+.l-chip span { display: block; font-size: 12.5px; color: var(--text-2); white-space: nowrap; }
+.l-chip .tile { flex: none; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--grad); color: #fff; }
+.l-chip .tile .icon { width: 19px; height: 19px; }
+.l-note { top: 86px; inset-inline-start: -150px; animation-delay: .9s, 0s; }
+.l-note.paid { top: 474px; inset-inline-start: auto; inset-inline-end: -150px; animation-delay: 1.6s, 1.4s; }
+.l-note.paid .tile { background: linear-gradient(135deg, #34d399, #059669); }
+.l-url { bottom: -66px; inset-inline: 0; width: max-content; margin-inline: auto; gap: 8px; padding: 9px 15px; border-radius: 999px; font-size: 13.5px; font-weight: 600; animation-delay: .5s, .7s; }
+.l-url .icon { width: 16px; height: 16px; color: var(--glow-1-soft); }
+@keyframes l-chip-in { from { opacity: 0; transform: translateY(14px) scale(.85); } }
+@keyframes l-bob { 50% { translate: 0 -8px; } }
+
+/* Sections */
+.l-section { max-width: 1120px; margin: 0 auto; padding: clamp(56px, 9vw, 120px) clamp(16px, 4vw, 40px) 0; }
+.l-head { max-width: 640px; margin: 0 auto 34px; text-align: center; }
+.l-head h2 { margin: 0 0 10px; font-size: clamp(27px, 4.2vw, 42px); line-height: 1.25; }
+.l-head p { margin: 0; color: var(--text-2); font-size: 16.5px; line-height: 1.8; }
+.l-reveal { opacity: 0; }
+.l-reveal.in { opacity: 1; animation: l-up .9s var(--ease-out) backwards; animation-delay: calc(var(--i, 0) * 110ms); }
+@keyframes l-up { from { opacity: 0; transform: translateY(28px); filter: blur(6px); } }
+
+.l-features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.l-feature { position: relative; isolation: isolate; overflow: hidden; padding: 26px 24px; border-radius: var(--r-xl); border: 1px solid var(--line);
+  background: linear-gradient(180deg, var(--surface), color-mix(in srgb, var(--surface) 55%, var(--bg))); transition: transform .45s var(--ease-out), box-shadow .45s; }
+.l-feature::before { content: ''; position: absolute; inset: 0; z-index: -1; border-radius: inherit; padding: 1px; background: var(--grad); opacity: 0; transition: opacity .45s;
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor; mask-composite: exclude; }
+.l-feature::after { content: ''; position: absolute; inset: -40% -40% auto auto; width: 70%; height: 70%; z-index: -2; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--glow-2) 30%, transparent), transparent); opacity: 0; transition: opacity .45s; }
+.l-feature:hover { transform: translateY(-5px); box-shadow: var(--shadow-lg); }
+.l-feature:hover::before { opacity: .9; }
+.l-feature:hover::after { opacity: 1; }
+.l-feature .tile { display: grid; place-items: center; width: 50px; height: 50px; margin-bottom: 18px; border-radius: 16px; color: var(--glow-1-soft); background: var(--grad-soft); box-shadow: inset 0 0 0 1px var(--line-2); }
+.l-feature .tile .icon { width: 24px; height: 24px; }
+.l-feature h3 { margin: 0 0 8px; font-size: 18.5px; }
+.l-feature p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.8; }
+
+.l-trio { display: flex; justify-content: center; align-items: flex-start; gap: clamp(16px, 3.5vw, 44px); }
+.l-trio figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.l-trio figure:nth-child(2) { margin-top: 36px; }
+.l-trio figcaption { font-size: 14.5px; font-weight: 500; color: var(--text-2); }
+
+.l-bar { display: flex; align-items: center; max-width: 660px; height: 70px; margin: 0 auto; padding: 0 24px; border-radius: 22px; overflow: hidden; white-space: nowrap;
+  font-size: clamp(16px, 2.8vw, 25px); font-weight: 500; background: var(--glass); border: 1px solid var(--line-2);
+  box-shadow: 0 0 0 7px color-mix(in srgb, var(--glow-2) 9%, transparent), var(--shadow-lg); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.l-bar .lock { display: grid; margin-inline-end: 10px; color: var(--ok); }
+.l-bar .lock .icon { width: 19px; height: 19px; }
+.l-bar .scheme { color: var(--text-3); }
+.l-bar .typed { font-weight: 700; color: transparent; -webkit-background-clip: text; background-clip: text; background-image: linear-gradient(90deg, var(--glow-1-soft), var(--glow-3-soft)); }
+.l-bar .caret { width: 2px; height: 1.15em; margin-inline-end: 1px; background: var(--glow-1-soft); animation: l-blink 1s steps(1) infinite; }
+.l-bar .domain { color: var(--text-2); }
+@keyframes l-blink { 50% { opacity: 0; } }
+
+.l-steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin: 0; padding: 0; list-style: none; }
+.l-steps li { position: relative; padding: 26px 24px; border-radius: var(--r-xl); background: var(--surface); border: 1px solid var(--line); }
+.l-steps li:not(:last-child)::after { content: ''; position: absolute; top: 49px; inset-inline-end: -17px; width: 18px; height: 2px; background: var(--grad); opacity: .6; }
+.l-steps .n { display: grid; place-items: center; width: 46px; height: 46px; margin-bottom: 16px; border-radius: 15px; font-size: 19px; font-weight: 700; color: #fff; background: var(--grad); box-shadow: 0 12px 26px -10px var(--glow-2); }
+.l-steps h3 { margin: 0 0 8px; font-size: 18.5px; }
+.l-steps p { margin: 0; color: var(--text-2); font-size: 14.5px; line-height: 1.8; }
+
+.l-final { position: relative; isolation: isolate; overflow: hidden; max-width: 1040px; margin: clamp(64px, 10vw, 128px) clamp(16px, 4vw, 40px) 0; padding: clamp(44px, 7vw, 80px) 24px;
+  text-align: center; border-radius: 34px; border: 1px solid var(--line-2); background: linear-gradient(180deg, var(--surface), var(--bg-2)); }
+@media (min-width: 1121px) { .l-final { margin-inline: auto; } }
+.l-final-glow { position: absolute; inset: -60% -20% auto; height: 160%; z-index: -1; background: radial-gradient(45% 40% at 50% 50%, color-mix(in srgb, var(--glow-2) 50%, transparent), transparent 70%); animation: l-breathe 7s ease-in-out infinite; }
+@keyframes l-breathe { 50% { opacity: .55; transform: scale(1.1); } }
+.l-final h2 { margin: 0 0 12px; font-size: clamp(27px, 4.6vw, 46px); line-height: 1.25; }
+.l-final p { margin: 0 0 28px; color: var(--text-2); font-size: 16.5px; }
+.l-final .btn { height: 56px; padding: 0 28px; border-radius: 18px; font-size: 16px; }
+
+.l-foot { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 60px 20px calc(40px + var(--safe-bottom)); text-align: center; font-size: 13px; }
+.l-foot p { margin: 0; }
+
+@media (max-width: 900px) {
+  .l-hero-inner { grid-template-columns: 1fr; text-align: center; }
+  .l-sub { margin-inline: auto; }
+  .l-actions { justify-content: center; }
+  .l-features { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 760px) {
+  .l-steps { grid-template-columns: 1fr; }
+  .l-steps li::after { display: none; }
+  /* The three phones side by side become a strip to swipe. */
+  .l-trio { justify-content: flex-start; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 6px clamp(16px, 4vw, 40px) 18px; margin-inline: calc(-1 * clamp(16px, 4vw, 40px)); }
+  .l-trio::-webkit-scrollbar { display: none; }
+  .l-trio figure { scroll-snap-align: center; }
+  .l-trio figure:nth-child(2) { margin-top: 0; }
+}
+@media (max-width: 560px) {
+  .l-top .link-btn span, .l-top .btn-sm { display: none; }
+  .l-features { grid-template-columns: 1fr; }
+  .l-stage { min-height: 600px; margin: -40px 0 -30px; padding-bottom: 0; }
+  .l-phone { scale: .78; }
+  .l-stage::before { width: 320px; height: 320px; }
+  .l-stage::after { width: 400px; height: 400px; }
+  .l-note { inset-inline-start: -58px; }
+  .l-note.paid { inset-inline-end: -58px; }
+  .l-chip { padding: 9px 14px 9px 10px; }
+  .l-bar { height: 60px; padding: 0 18px; }
+  .l-bar .scheme { display: none; }
 }

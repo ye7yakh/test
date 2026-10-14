@@ -1,5 +1,5 @@
-// Boot and hash routing. The server tells us which host we are on (a salon or the
-// platform) and who is logged in; everything else follows from that.
+// Boot and routing. The server tells us which host we are on (a salon, the platform's
+// landing page or its dashboard) and who is logged in; the path picks the screen.
 import { api } from './api.js';
 import { h, clear } from './dom.js';
 import { applyLang, setLang, getLang, t } from './i18n.js';
@@ -9,11 +9,16 @@ import { salonPage } from './views/salon-page.js';
 import { bookingPage } from './views/booking.js';
 import { clearManageCache, manageView, PAGES } from './views/manage.js';
 import { adminView } from './views/admin.js';
+import { landingView } from './views/landing.js';
 
 const root = document.getElementById('app');
 let unmount = [];
-// /manage is the owner's installable app; everything else is the customers' app.
-const ownerApp = location.pathname === '/manage';
+// /admin is the salon owner's installable app; the rest of a salon's link is the
+// customers' app. Each is its own install, so moving between them loads the page.
+const isOwnerPath = (path) => path === '/admin' || path.startsWith('/admin/');
+const ownerApp = isOwnerPath(location.pathname);
+// The screens of both apps: /, /book, /b/<token>; /admin and /admin/<tab>.
+const APP_PATH = /^\/(?:book|b\/[\w-]+|admin(?:\/[a-z]+)?)?\/?$/;
 
 // Android and desktop Chrome offer to install; the offer is kept for our own buttons.
 let installOffer = null;
@@ -44,9 +49,10 @@ const app = {
     app.ctx = await api('GET', '/api/context');
     render();
   },
-  go(hash) {
-    if (location.hash === hash) render();
-    else location.hash = hash;
+  /** Shows the screen at a path; replace keeps the current entry out of the back stack. */
+  go(path, { replace = false } = {}) {
+    if (path !== location.pathname + location.search) history[replace ? 'replaceState' : 'pushState'](null, '', path);
+    render();
   },
   toggleLang() {
     setLang(getLang() === 'ar' ? 'en' : 'ar');
@@ -56,7 +62,7 @@ const app = {
     await api('POST', '/api/auth/logout').catch(() => {});
     clearManageCache();
     app.ctx.user = null;
-    app.go(app.ctx.kind === 'salon' && !ownerApp ? '#/' : '#/login');
+    app.go(ownerApp ? '/admin/login' : '/');
   },
   /** Views register cleanup (floating bars, listeners) for when they are replaced. */
   onUnmount(fn) {
@@ -69,31 +75,32 @@ const app = {
 };
 
 function route() {
-  const [name = '', ...rest] = location.hash.replace(/^#\/?/, '').split('/');
+  const [name = '', ...rest] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
   return { name, rest };
 }
 
 function build() {
   const { name, rest } = route();
   const ctx = app.ctx;
+  if (ctx.kind === 'landing') return { theme: 'studio', view: () => landingView(app) };
   if (ctx.kind === 'platform') return { theme: 'studio', view: () => (ctx.user ? adminView(app) : loginView(app)) };
-  if (name === 'login') return { theme: 'studio', view: () => loginView(app) };
-  // The owner's app only shows the studio (and its login).
-  if (ownerApp && name !== 'manage') return { redirect: '#/manage' };
-  if (name === 'b' && rest[0]) return { theme: 'public', view: () => bookingPage(app, rest[0]) };
-  if (name === 'manage') {
-    if (!app.canManage) return { redirect: '#/login' };
-    return { theme: 'studio', view: () => manageView(app, rest[0] || 'home') };
+  if (ownerApp) {
+    const tab = rest[0] || 'home';
+    if (tab === 'login') return app.canManage ? { redirect: '/admin' } : { theme: 'studio', view: () => loginView(app) };
+    if (!app.canManage) return { redirect: '/admin/login' };
+    if (!PAGES.some((p) => p.id === tab)) return { redirect: '/admin' };
+    return { theme: 'studio', view: () => manageView(app, tab) };
   }
-  return { theme: 'public', view: () => salonPage(app) };
+  if (name === 'b' && rest[0]) return { theme: 'public', view: () => bookingPage(app, rest[0]) };
+  return { theme: 'public', view: () => salonPage(app, { book: name === 'book' }) };
 }
 
 // Which studio tab was shown last, so a tab change can slide the right way.
 const TAB_ORDER = PAGES.map((p) => p.id);
 let lastTab = null;
 function navDirection() {
-  const { name, rest } = route();
-  const tab = name === 'manage' && app.ctx.kind === 'salon' ? rest[0] || 'home' : null;
+  const { rest } = route();
+  const tab = ownerApp && app.ctx.kind === 'salon' ? rest[0] || 'home' : null;
   const from = TAB_ORDER.indexOf(lastTab);
   const to = TAB_ORDER.indexOf(tab);
   lastTab = tab;
@@ -102,7 +109,7 @@ function navDirection() {
 
 function render() {
   const next = build();
-  if (next.redirect) return app.go(next.redirect);
+  if (next.redirect) return app.go(next.redirect, { replace: true });
   document.documentElement.dataset.nav = navDirection();
   const swap = () => {
     for (const fn of unmount) fn();
@@ -148,7 +155,6 @@ function holdSplash() {
 
 async function boot() {
   applyLang();
-  if (ownerApp && !/^#\/(manage|login)/.test(location.hash)) history.replaceState(null, '', '/manage#/manage');
   const releaseSplash = holdSplash();
   try {
     app.ctx = await api('GET', '/api/context');
@@ -164,11 +170,22 @@ async function boot() {
     return;
   }
   if (app.ctx.salon) applyLooks(app.ctx.salon);
-  window.addEventListener('hashchange', render);
+  window.addEventListener('popstate', render);
+  // Links within the app change screens without a page load. Links to the other app,
+  // other sites, new tabs and downloads are left to the browser.
+  document.addEventListener('click', (e) => {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    const a = e.target.closest?.('a[href]');
+    if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
+    const url = new URL(a.href, location.href);
+    if (url.origin !== location.origin || !APP_PATH.test(url.pathname) || isOwnerPath(url.pathname) !== ownerApp) return;
+    e.preventDefault();
+    app.go(url.pathname + url.search);
+  });
   window.addEventListener('session-expired', () => {
     app.ctx.user = null;
     clearManageCache();
-    app.go('#/login');
+    app.go(ownerApp ? '/admin/login' : '/', { replace: true });
   });
   render();
   if ('serviceWorker' in navigator && app.ctx.kind === 'salon') {

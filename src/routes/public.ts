@@ -1,10 +1,12 @@
 // What customers (and anyone) can see on a salon's subdomain: the salon page data,
-// the per-salon PWA manifest and icons, and the salon's images.
-import { iconBackground, iconVersion, pageColor, SPLASH_SIZES, splashVersion, studioColor } from '../brand.js';
+// the per-salon PWA manifest and icons, the salon's images, the picture its shared
+// link shows, and what search engines may read.
+import { iconBackground, iconVersion, pageColor, shareVersion, SPLASH_SIZES, splashVersion, STUDIO_BG, studioColor } from '../brand.js';
+import { accentForDark } from '../colors.js';
 import { loadSalonWeek } from '../hours.js';
 import { one, query, pool } from '../db.js';
 import { HttpError, ok, type Ctx, type Router } from '../http.js';
-import { addOwnerBadge, loadMediaBytes, mediaUrl, renderIcon, renderSplash } from '../media.js';
+import { addOwnerBadge, loadMediaBytes, mediaUrl, renderIcon, renderPlatformIcon, renderShareCard, renderSplash } from '../media.js';
 import type { Salon } from '../tenancy.js';
 
 export function salonSummary(s: Salon) {
@@ -75,7 +77,7 @@ async function publicSalon(ctx: Ctx) {
 
 /**
  * Two installable apps per salon: the customers' (the salon's link) and the owner's
- * (/manage, its own name, icon badge and colours), so both can sit on one phone.
+ * (/admin, its own name, icon badge and colours), so both can sit on one phone.
  */
 function manifest(ctx: Ctx, owner: boolean) {
   const salon = requireSalon(ctx);
@@ -84,14 +86,14 @@ function manifest(ctx: Ctx, owner: boolean) {
   const color = owner ? studioColor(salon) : pageColor(salon);
   const short = salon.name_ar.length > 12 && salon.name_en ? salon.name_en : salon.name_ar;
   const body = {
-    id: owner ? '/manage' : '/',
+    id: owner ? '/admin' : '/',
     name: owner ? `إدارة ${salon.name_ar}` : salon.name_ar,
     short_name: owner ? (salon.name_ar.length <= 8 ? `إدارة ${salon.name_ar}` : 'إدارة الصالون') : short,
     description: owner ? 'لوحة تحكم الصالون: المواعيد والخدمات والفريق.' : `احجز موعدك في ${salon.name_ar}`,
     lang: 'ar',
     dir: 'rtl',
-    start_url: owner ? '/manage' : '/',
-    scope: owner ? '/manage' : '/',
+    start_url: owner ? '/admin' : '/',
+    scope: owner ? '/admin' : '/',
     display: 'standalone',
     orientation: 'portrait',
     // The launch screen and bars match the page the app opens on.
@@ -131,8 +133,6 @@ async function cached(key: string, make: () => Promise<Buffer>): Promise<Buffer>
   return png;
 }
 
-const PLATFORM_COLOR = '#1f2a37';
-
 /** The salon's icon at a size, with the dashboard badge for the owner's app. */
 async function salonIcon(salon: Salon, name: string, owner: boolean): Promise<Buffer> {
   const spec = ICONS[name]!;
@@ -144,21 +144,48 @@ async function salonIcon(salon: Salon, name: string, owner: boolean): Promise<Bu
   });
 }
 
-function sendPng(ctx: Ctx, png: Buffer, maxAge: number) {
-  ctx.res.writeHead(200, { 'Content-Type': 'image/png', 'Content-Length': png.length, 'Cache-Control': `public, max-age=${maxAge}` });
-  ctx.res.end(png);
+function sendImage(ctx: Ctx, bytes: Buffer, maxAge: number, type = 'image/png') {
+  ctx.res.writeHead(200, { 'Content-Type': type, 'Content-Length': bytes.length, 'Cache-Control': `public, max-age=${maxAge}` });
+  ctx.res.end(bytes);
 }
 
-// The salon's icon; the platform host (no salon) gets the default mark.
+// The salon's icon; the platform's own hosts get the platform's mark.
 async function icon(ctx: Ctx, file = ctx.params.name ?? '') {
   const owner = file.startsWith('owner-');
   const name = owner ? file.slice(6) : file;
   const salon = ctx.host.salon;
-  if (!ICONS[name] || (!salon && name !== 'favicon.ico') || (owner && name === 'favicon.ico')) throw new HttpError(404, 'not_found');
+  if (!ICONS[name] || (owner && (!salon || name === 'favicon.ico'))) throw new HttpError(404, 'not_found');
   const png = salon
     ? await salonIcon(salon, name, owner)
-    : await cached(`platform:${name}`, () => renderIcon(ICONS[name]!.size, { bg: PLATFORM_COLOR, art: null, fill: false, padding: 0 }));
-  sendPng(ctx, png, 86400);
+    : await cached(`platform:${name}`, () => renderPlatformIcon(ICONS[name]!.size, name.startsWith('maskable') ? 0.1 : 0));
+  sendImage(ctx, png, 86400);
+}
+
+/** The picture a shared link shows: the salon's (cover or icon), or the platform's. */
+async function shareImage(ctx: Ctx) {
+  const salon = ctx.host.salon;
+  const jpg = salon
+    ? await cached(`share:${salon.id}:${shareVersion(salon)}`, async () => {
+        const night = salon.page_theme !== 'day';
+        return renderShareCard({
+          bg: pageColor(salon),
+          glows: night ? [accentForDark(salon.color_accent), accentForDark(salon.color_primary)] : [salon.color_accent, salon.color_primary],
+          icon: await salonIcon(salon, 'icon-512.png', false),
+          cover: salon.cover_media_id ? await loadMediaBytes(pool, salon.id, salon.cover_media_id) : null,
+        });
+      })
+    : await cached('share:platform', async () => renderShareCard({ bg: STUDIO_BG, glows: ['#8b5cf6', '#3b82f6'], icon: await renderPlatformIcon(512), cover: null }));
+  sendImage(ctx, jpg, 86400, 'image/jpeg');
+}
+
+/** Salon pages and the landing page are for search engines; dashboards and bookings are not. */
+function robots(ctx: Ctx) {
+  const rules =
+    ctx.host.site === 'admin' ? ['Disallow: /']
+    : ctx.host.salon ? ['Disallow: /admin', 'Disallow: /b/', 'Disallow: /api/']
+    : ['Disallow: /api/'];
+  ctx.res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
+  ctx.res.end(['User-agent: *', ...rules, ''].join('\n'));
 }
 
 /** iOS launch screens: the app's background with its icon. */
@@ -172,7 +199,7 @@ async function splash(ctx: Ctx) {
     renderSplash(width, height, owner ? studioColor(salon) : pageColor(salon), await salonIcon(salon, 'icon-512.png', false)),
   );
   // The URL carries a version of everything in the picture.
-  sendPng(ctx, png, 31536000);
+  sendImage(ctx, png, 31536000);
 }
 
 async function media(ctx: Ctx) {
@@ -198,7 +225,9 @@ async function media(ctx: Ctx) {
 export function publicRoutes(r: Router) {
   r.get('/api/public/salon', publicSalon);
   r.get('/manifest.webmanifest', (ctx) => manifest(ctx, false));
-  r.get('/manage.webmanifest', (ctx) => manifest(ctx, true));
+  r.get('/admin.webmanifest', (ctx) => manifest(ctx, true));
+  r.get('/share.jpg', shareImage);
+  r.get('/robots.txt', robots);
   r.get('/icons/:name', (ctx) => icon(ctx));
   r.get('/splash/:name', splash);
   r.get('/favicon.ico', (ctx) => icon(ctx, 'favicon.ico'));

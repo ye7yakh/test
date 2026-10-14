@@ -3,8 +3,9 @@ import { config } from './config.js';
 import { loadSession, purgeExpiredSessions } from './auth.js';
 import { pool } from './db.js';
 import { baseSecurityHeaders, clientIp, HttpError, requestProto, Router, sendJson, type Ctx } from './http.js';
-import { serveAsset, serveIndex } from './static.js';
-import { offlineHost, resolveHost, type OfflineHost } from './tenancy.js';
+import { notFoundPage, unavailablePage } from './pages.js';
+import { hostOrigin, pageFor, serveAsset, serveIndex } from './static.js';
+import { offlineHost, resolveHost } from './tenancy.js';
 import { adminRoutes } from './routes/admin.js';
 import { bookingRoutes } from './routes/bookings.js';
 import { expireHolds, purgeProofs } from './booking.js';
@@ -24,34 +25,6 @@ staffRoutes(router);
 bookingRoutes(router);
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
-
-const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
-
-/** What customers see while the platform has a salon suspended: calm, not a bare error. */
-function unavailablePage(res: http.ServerResponse, salon: Extract<OfflineHost, { kind: 'suspended' }>): void {
-  const name = escapeHtml(salon.name_ar);
-  const nameEn = salon.name_en ? escapeHtml(salon.name_en) : '';
-  const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex">
-<meta name="theme-color" content="#0a0918"><title>${name}</title><style>
-*{box-sizing:border-box}html,body{margin:0;height:100%}
-body{display:grid;place-items:center;padding:24px;background:radial-gradient(120% 80% at 80% 0%,#2a1b5c 0%,transparent 60%),radial-gradient(90% 70% at 0% 100%,#0f2b5c 0%,transparent 55%),#0a0918;color:#f4f2ff;font:16px/1.6 system-ui,-apple-system,'Segoe UI',Tahoma,sans-serif;text-align:center}
-.card{max-width:380px;width:100%;padding:36px 26px;border-radius:28px;background:rgb(21 18 44/.6);border:1px solid rgb(167 139 250/.18);box-shadow:0 30px 60px -24px #000}
-.mark{width:72px;height:72px;margin:0 auto 20px;border-radius:22px;display:grid;place-items:center;background:linear-gradient(135deg,#a855f7,#6366f1 52%,#3b82f6)}
-h1{margin:0 0 8px;font-size:22px}p{margin:0;color:rgb(228 224 255/.66)}.en{margin-top:18px;padding-top:18px;border-top:1px solid rgb(167 139 250/.14);font-size:14px;direction:ltr}
-</style></head><body><main class="card">
-<div class="mark"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/></svg></div>
-<h1>${name}</h1><p>صفحة الحجز غير متاحة حاليًا. يرجى المحاولة لاحقًا.</p>
-<p class="en">${nameEn ? `${nameEn}: ` : ''}booking is not available right now. Please try again later.</p>
-</main></body></html>`;
-  res.writeHead(503, {
-    'Content-Type': 'text/html; charset=utf-8',
-    'Cache-Control': 'no-store',
-    'Retry-After': '3600',
-    'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
-  });
-  res.end(html);
-}
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   baseSecurityHeaders(res, config.isProd);
@@ -88,6 +61,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   }
 
   const ctx: Ctx = { req, res, url, params: {}, host, ip: clientIp(req, config.trustProxy), session: null };
+  if (host.site === 'www') {
+    // One address for the platform: www. goes to the bare domain, same path.
+    res.writeHead(308, { Location: `${hostOrigin(ctx, host.tenant.domain)}${url.pathname}${url.search}` });
+    res.end();
+    return;
+  }
   try {
     if (await serveAsset(ctx)) return;
 
@@ -113,8 +92,18 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       await match.handler(ctx);
       return;
     }
-    // The salon's link is the customers' app; /manage is the owner's (salons only).
-    if ((url.pathname === '/' || (url.pathname === '/manage' && host.salon)) && SAFE_METHODS.has(method)) return await serveIndex(ctx);
+    const page = SAFE_METHODS.has(method) ? pageFor(ctx) : null;
+    if (page && 'redirect' in page) {
+      res.writeHead(302, { Location: page.redirect, 'Cache-Control': 'no-store' });
+      res.end();
+      return;
+    }
+    if (page) return await serveIndex(ctx, page.page);
+    // A mistyped address in a browser gets a page with the way home, not raw JSON.
+    if (SAFE_METHODS.has(method) && !url.pathname.startsWith('/api/') && req.headers.accept?.includes('text/html')) {
+      notFoundPage(res);
+      return;
+    }
     throw new HttpError(404, 'not_found');
   } catch (err) {
     sendError(ctx, err);

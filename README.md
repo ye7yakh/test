@@ -1,20 +1,23 @@
-# Salon booking platform
+# Salonak (صالونك)
 
 One codebase, many salons. Each salon gets its own branded app on a subdomain
-(`elite.brand.com`), installable on customers' phones with the salon's own name,
-icon and colours.
+(`elite.salonak.app`), installable on customers' phones with the salon's own name,
+icon and colours. The domain is a setting: any brand domain works the same way.
 
-Three kinds of users:
-
-| Who | Where | What they do today |
+| Address | Who | What it is |
 | --- | --- | --- |
-| Platform owner (super admin) | `brand.com` / `admin.brand.com` | See every salon's activity and setup, create salons and hand them over, rename them or move them to a new link, suspend them, reset owners' passwords |
-| Salon owner | `salon.brand.com/manage` (its own installable app) | Set up the salon (details, logo, app icon, cover photo, colours, how their page and their dashboard look, services and prices, team with photos, opening hours), run the day's bookings, check CliQ deposits |
-| Customer | `salon.brand.com` | See the salon's page, book a service with anyone or a chosen barber, pay a CliQ deposit when the salon asks for one, follow or cancel the booking |
+| `salonak.app` | Salon owners we sell to | The landing page: what a salon gets, on a live phone, and a WhatsApp button |
+| `admin.salonak.app` | Platform owner (super admin) | See every salon's activity and setup, create salons and hand them over, rename them or move them to a new link, suspend them, reset owners' passwords, set the landing page's WhatsApp number |
+| `elite.salonak.app` | Customers | The salon's own website and app: its page, booking a service with anyone or a chosen barber, a CliQ deposit when the salon asks for one, following or cancelling the booking |
+| `elite.salonak.app/book` | Customers | Straight into booking (for the salon's Instagram bio and WhatsApp) |
+| `elite.salonak.app/admin` | Salon owner | Its own installable app: set up the salon (details, logo, app icon, cover photo, colours, how their page and their dashboard look, services and prices, team with photos, opening hours), run the day's bookings, check CliQ deposits |
+
+`www.salonak.app` goes to `salonak.app`, and `salonak.app/admin` to `admin.salonak.app`.
+Each customer's booking has its own page at `elite.salonak.app/b/<token>`.
 
 ## The owner studio
 
-The salon owner's workspace (`salon.brand.com/manage`) is designed to impress
+The salon owner's workspace (`elite.salonak.app/admin`) is designed to impress
 on first open. It's a deep indigo studio lit in violet and blue, with glass
 surfaces, a floating tab bar and plenty of motion: drifting background light, a
 light circling the main card, a tab highlight that slides between tabs, gradient
@@ -62,8 +65,8 @@ Arabic first and fully mirrored in English. The typeface is Readex Pro
 
 Each salon has two installable apps (PWAs) on its own link:
 
-- **The customers' app** at `salon.brand.com`: the salon's name, its icon, and its page.
-- **The owner's app** at `salon.brand.com/manage`: named "إدارة …", opening straight on the
+- **The customers' app** at `elite.salonak.app`: the salon's name, its icon, and its page.
+- **The owner's app** at `elite.salonak.app/admin`: named "إدارة …", opening straight on the
   dashboard, with the salon's icon wearing a small dashboard badge so the two apps are
   told apart on a phone. Owners are sent there when they sign in, and Home offers
   one-tap install where the phone allows it (Android, desktop Chrome) or the "Add to
@@ -104,6 +107,24 @@ bank app, looks at the screenshot and confirms or rejects. Screenshots are priva
 (only the salon's owner and the customer's own booking link can open them) and are
 deleted a week after the booking is decided. Two bookings for the same barber can
 never overlap: the database refuses it.
+
+## The landing page
+
+`salonak.app` sells the platform to salon owners, in Arabic and English. A phone in
+the hero cycles through three made-up salons (a ladies' salon, a barber, a nail
+studio), each in its own colours, with a "new booking" and a "deposit received"
+notification floating over it and the salon's link beneath. Then what a salon gets,
+the app on a customer's phone (home-screen icon, launch screen, booking page), its
+link being typed out, three steps to start, and a WhatsApp button that opens a chat
+with the platform's number (set in the dashboard; empty hides the buttons).
+
+## Link previews and search
+
+A salon's link shared on WhatsApp, Instagram or Facebook shows its name, its about
+text and a 1200×630 picture (`/share.jpg`): its cover photo, or its icon on its page
+colour. Search engines get the salon as a local business (name, address, phone,
+opening hours) in JSON-LD. Dashboards and customers' booking pages carry `noindex`
+and each host serves its own `robots.txt`. The landing page has its own preview.
 
 ## The platform dashboard (admin)
 
@@ -148,8 +169,10 @@ brand (the `tenants` defaults), but owners never have to choose them.
 
 The `Host` header decides everything (`src/tenancy.ts`):
 
-- `brand.com`, `www.brand.com`, `admin.brand.com` → the platform host (super admin).
-- `<sub>.brand.com` → that salon. A salon's earlier links (after the admin moves it)
+- `brand.com` → the platform's landing page; `admin.brand.com` → its dashboard (the
+  super admin signs in and works only there); `www.brand.com` → redirects to `brand.com`.
+- `<sub>.brand.com` → that salon: the customers' app at `/` (with `/book` and
+  `/b/<token>`), the owner's app at `/admin`. A salon's earlier links (after the admin moves it)
   redirect to its current one; a suspended salon shows an "unavailable" page; unknown
   subdomains get a 404.
 - Several brands can share the deployment: each row in `tenants` is a brand domain.
@@ -178,12 +201,13 @@ salon's barber, or a photo from another salon.
 npm install
 docker compose up -d          # Postgres 16 on :5432 (or use your own; see .env.example)
 npm run migrate
-npm run seed                  # brand "localhost", super admin, and a demo salon
+npm run seed                  # brand "localhost" (Salonak), super admin, and a demo salon
 npm run dev                   # http://localhost:3000
 ```
 
-- Salon page: http://demo.localhost:3000. Owner login: `0790000001` / `owner-pass-123`.
-- Platform admin: http://localhost:3000. Login: `0790000000` / `admin-pass-123`.
+- Landing page: http://localhost:3000.
+- Salon page: http://demo.localhost:3000. Owner: http://demo.localhost:3000/admin, `0790000001` / `owner-pass-123`.
+- Platform admin: http://admin.localhost:3000. Login: `0790000000` / `admin-pass-123`.
 
 Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work with no setup.
 
@@ -191,18 +215,19 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 234 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 263 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
-`test:api` covers the setup flow, booking and deposits, the admin tools and the security
-edges: tenant isolation, CSRF, upload validation, private payment screenshots, rate limits
-and session revocation. `screenshots` drives Chrome through a brand-new salon's whole
-journey: the admin creating and handing it over and resetting the owner's password, the
+`test:api` covers the setup flow, booking and deposits, the admin tools, the addresses
+(landing, dashboard, `www.`, `/admin`, `/book`, redirects, 404s), link previews and the
+security edges: tenant isolation, CSRF, upload validation, private payment screenshots, rate
+limits and session revocation. `screenshots` drives Chrome through the landing page and a
+brand-new salon's whole journey: the admin creating and handing it over and resetting the owner's password, the
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
 English and desktop, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 53 PNGs to `screenshots/` and fails on any page error,
+colours, and the launch splash. It writes 57 PNGs to `screenshots/` and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
@@ -217,25 +242,30 @@ docker run -p 3000:3000 salon-api           # api
 
 In production set `NODE_ENV=production` (Secure cookies, HSTS, trust Caddy's
 `X-Forwarded-*`, serve `dist/web`) and `DATABASE_URL`. `/healthz` is the health check.
-Seed a production brand with `SEED_DOMAIN`, `SEED_ADMIN_PHONE` and
-`SEED_ADMIN_PASSWORD`; the demo salon is off by default in production.
+Seed a production brand with `SEED_DOMAIN=salonak.app`, `SEED_ADMIN_PHONE` and
+`SEED_ADMIN_PASSWORD` (the brand's names default to Salonak and صالونك; the landing
+page's WhatsApp number defaults to the admin's phone); the demo salon is off by default
+in production. DNS needs the bare domain and a wildcard (`*.salonak.app`) pointing at
+the server, and a wildcard certificate.
 
 ## Layout
 
 ```
 migrations/            numbered SQL, idempotent
 src/server.ts          http server, routing, Origin check, errors
-src/tenancy.ts         Host -> brand + salon (and earlier links, suspended salons)
+src/static.ts          index.html per host and path: which app, theme, manifest, link preview, JSON-LD
+src/pages.ts           the small server pages: salon unavailable, page not found
+src/tenancy.ts         Host -> brand + site (landing, admin, salon) + salon (and earlier links, suspended salons)
 src/brand.ts           the two apps: icon backgrounds and versions, launch screens, app colours
 src/booking.ts         availability, booking, deposit holds
 src/colors.ts          salon colour maths (night base, readable accent)
 src/auth.ts            passwords, sessions, roles, login rate limit, phone normalising
-src/media.ts           upload validation, photo styles, app icons
+src/media.ts           upload validation, photo styles, app icons, the shared-link picture
 src/hours.ts           weekly hours parsing/validation
 src/routes/            auth, admin, public (page data, manifest, icons, media), salon, services, staff, bookings
-web/index.html         rendered per host (title, theme, manifest, CSS colours)
+web/index.html         rendered per host and path (title, theme, manifest, CSS colours, previews)
 web/assets/app.css     the design system (tokens, components, studio and public themes)
-web/assets/js/         app.js (routes), i18n.js (all text), dom.js (toolkit), preview.js (phone
+web/assets/js/         app.js (path routes), i18n.js (all text), dom.js (toolkit), preview.js (phone
                        previews), chart.js, slots.js, hours-editor.js, templates.js (palettes,
                        ready menus), views/
 scripts/               build-web.mjs, test-api.ts, screenshots.ts
@@ -243,11 +273,11 @@ scripts/               build-web.mjs, test-api.ts, screenshots.ts
 
 ## Next steps
 
-1. **Launch on AWS**: Terraform for ECR, ECS on one EC2 host, RDS (with automated
-   backups), Route 53 for the domain, and Caddy with a wildcard certificate (DNS
-   challenge) so every salon's subdomain has HTTPS, plus the build → migrate → roll
-   deploy script. Run one api task at first: live updates and rate limits are kept in
-   memory.
+1. **Launch on AWS** at `salonak.app` (bought): Terraform for ECR, ECS on one EC2
+   host, RDS (with automated backups), Route 53 for the domain (the bare domain and
+   `*.salonak.app`), and Caddy with a wildcard certificate (DNS challenge) so every
+   salon's subdomain has HTTPS, plus the build → migrate → roll deploy script. Run one
+   api task at first: live updates and rate limits are kept in memory.
 2. **Notifications**: Web Push (VAPID) so owners hear about new bookings and sent
    deposits with the studio closed. The service worker is already registered.
 3. **Privacy policy and terms**, linked from the salon page and the booking flow.

@@ -8,12 +8,19 @@ import { DAY_ORDER, dayName, errorText, fmtDuration, fmtPrice, fmtTime, pick, t 
 import { applyColors, reducedMotion } from '../theme.js';
 import { nowIn, openStatus, toMin } from '../time.js';
 
-export function salonPage(app) {
+export function salonPage(app, { book = false } = {}) {
   const el = h('div', { class: 'p-page' }, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
   api('GET', '/api/public/salon')
     .then((data) => {
       clear(el, render(app, data));
       requestAnimationFrame(() => watchScroll(app, el));
+      // The salon's booking link (/book) opens the booking sheet over its page; the
+      // address goes back to the page itself once the sheet closes.
+      if (book) {
+        const leave = () => history.replaceState(null, '', '/');
+        if (data.salon.booking_enabled && data.services.length) openBooking(app, data, { onClose: leave });
+        else leave();
+      }
     })
     .catch((err) => clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }))))
     .finally(appReady);
@@ -129,7 +136,7 @@ function render(app, data) {
     h(
       'div',
       { class: 'p-top' },
-      app.canManage ? h('a', { class: 'p-glass-btn', href: '/manage' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
+      app.canManage ? h('a', { class: 'p-glass-btn', href: '/admin' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
       h('div', { class: 'row', style: { gap: '8px' } }, installButton(app), h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe'))),
     ),
     h(
@@ -259,8 +266,8 @@ function render(app, data) {
       h(
         'footer',
         { class: 'p-foot' },
-        app.canManage ? null : h('a', { href: '/manage', text: t('pub.owner_login') }),
-        h('div', { class: 'faint', text: t('pub.powered', { brand: app.ctx.tenant.name }) }),
+        app.canManage ? null : h('a', { href: '/admin', text: t('pub.owner_login') }),
+        h('div', { class: 'faint', text: t('pub.powered', { brand: pick(app.ctx.tenant, 'name') }) }),
       ),
     ),
     cta,

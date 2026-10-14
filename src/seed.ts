@@ -16,18 +16,22 @@ if (isProd && (!env.SEED_DOMAIN || !env.SEED_ADMIN_PHONE || !env.SEED_ADMIN_PASS
   process.exit(1);
 }
 const domain = (env.SEED_DOMAIN ?? 'localhost').toLowerCase();
-const brandName = env.SEED_BRAND_NAME ?? 'Salon Platform';
+const brandName = env.SEED_BRAND_NAME ?? 'Salonak';
+const brandNameAr = env.SEED_BRAND_NAME_AR ?? 'صالونك';
 const adminPhone = env.SEED_ADMIN_PHONE ?? '+962790000000';
+// The landing page's WhatsApp button; the admin can change it later in the dashboard.
+const contactPhone = env.SEED_CONTACT_PHONE ?? adminPhone;
 const adminPassword = env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123';
 const demo = (env.SEED_DEMO ?? (isProd ? 'false' : 'true')) === 'true';
 
 async function main() {
   const tenant = await one<{ id: number; default_timezone: string; default_currency: string }>(
-    `insert into tenants (domain, name, default_calling_code, default_timezone, default_currency)
-     values ($1, $2, $3, $4, $5)
-     on conflict (domain) do update set name = excluded.name
+    `insert into tenants (domain, name, name_ar, contact_phone, default_calling_code, default_timezone, default_currency)
+     values ($1, $2, $3, $4, $5, $6, $7)
+     on conflict (domain) do update set name = excluded.name, name_ar = excluded.name_ar,
+       contact_phone = case when tenants.contact_phone = '' then excluded.contact_phone else tenants.contact_phone end
      returning id, default_timezone, default_currency`,
-    [domain, brandName, env.SEED_CALLING_CODE ?? '962', env.SEED_TIMEZONE ?? 'Asia/Amman', env.SEED_CURRENCY ?? 'JOD'],
+    [domain, brandName, brandNameAr, contactPhone, env.SEED_CALLING_CODE ?? '962', env.SEED_TIMEZONE ?? 'Asia/Amman', env.SEED_CURRENCY ?? 'JOD'],
   );
   await query(
     `insert into users (tenant_id, phone, name, password_hash, is_super_admin)

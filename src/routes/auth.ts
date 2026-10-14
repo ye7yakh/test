@@ -16,15 +16,26 @@ import { salonSummary } from './public.js';
 
 function contextBody(ctx: Ctx) {
   const s = ctx.session;
+  const tenant = ctx.host.tenant;
   return {
-    kind: ctx.host.salon ? 'salon' : 'platform',
-    tenant: { name: ctx.host.tenant.name, calling_code: ctx.host.tenant.default_calling_code },
+    // The platform's bare domain is its landing page; admin. is its dashboard.
+    kind: ctx.host.salon ? 'salon' : ctx.host.site === 'admin' ? 'platform' : 'landing',
+    tenant: {
+      name: tenant.name,
+      name_ar: tenant.name_ar || tenant.name,
+      name_en: tenant.name,
+      domain: tenant.domain,
+      calling_code: tenant.default_calling_code,
+      contact_phone: tenant.contact_phone,
+    },
     salon: ctx.host.salon ? salonSummary(ctx.host.salon) : null,
     user: s ? { id: s.user.id, name: s.user.name, phone: s.user.phone, role: s.role, must_change_password: s.user.must_change_password } : null,
   };
 }
 
 async function login(ctx: Ctx) {
+  // The landing page has nobody to sign in; the platform's dashboard is on admin.
+  if (ctx.host.site === 'landing') throw new HttpError(404, 'not_found');
   const body = await readJson(ctx);
   const tenant = ctx.host.tenant;
   const phone = normalizePhone(body.phone, tenant.default_calling_code);

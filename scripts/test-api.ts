@@ -13,7 +13,9 @@ import { pool, query } from '../src/db.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
 const DOMAIN = 'test.localhost';
-const PLATFORM = `${DOMAIN}:${PORT}`;
+// The bare domain is the platform's landing page; its dashboard lives on admin.
+const LANDING = `${DOMAIN}:${PORT}`;
+const PLATFORM = `admin.${DOMAIN}:${PORT}`;
 const run = Date.now().toString(36).slice(-5);
 const hostOf = (sub: string) => `${sub}.${DOMAIN}:${PORT}`;
 
@@ -63,7 +65,7 @@ class Client {
     });
   }
 
-  get = (host: string, path: string) => this.request(host, 'GET', path);
+  get = (host: string, path: string, headers?: Record<string, string>) => this.request(host, 'GET', path, { headers });
   post = (host: string, path: string, json?: unknown) => this.request(host, 'POST', path, { json: json ?? {} });
   patch = (host: string, path: string, json: unknown) => this.request(host, 'PATCH', path, { json });
   put = (host: string, path: string, json: unknown) => this.request(host, 'PUT', path, { json });
@@ -130,8 +132,8 @@ async function startServer(): Promise<() => void> {
 async function setupTenant() {
   await cleanup();
   const tenant = (await query<{ id: number }>(
-    `insert into tenants (domain, name, default_calling_code, default_timezone, default_currency)
-     values ($1, 'Test Brand', '962', 'Asia/Amman', 'JOD') returning id`,
+    `insert into tenants (domain, name, name_ar, contact_phone, default_calling_code, default_timezone, default_currency)
+     values ($1, 'Test Brand', 'علامة تجربة', '+962790001122', '962', 'Asia/Amman', 'JOD') returning id`,
     [DOMAIN],
   ))[0]!;
   const admin = { phone: '+962791111111', password: 'admin-test-pass' };
@@ -185,7 +187,12 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await anon.get(hostOf('nosuchsalon'), '/api/context'), 404, 'unknown salon subdomain');
   expectStatus(await anon.get(`x.y.${DOMAIN}`, '/api/context'), 404, 'nested subdomain');
   const pctx = await anon.get(PLATFORM, '/api/context');
-  expect(pctx.json?.kind === 'platform' && pctx.json.user === null, 'bare domain is the platform host', pctx.json);
+  expect(pctx.json?.kind === 'platform' && pctx.json.user === null, 'admin. is the platform dashboard', pctx.json);
+  const lctx = await anon.get(LANDING, '/api/context');
+  expect(lctx.json?.kind === 'landing' && lctx.json.tenant.name_ar === 'علامة تجربة' && lctx.json.tenant.contact_phone === '+962790001122', "the bare domain is the platform's landing page, with its name and contact", lctx.json);
+  const www = await anon.get(`www.${DOMAIN}:${PORT}`, '/x?y=1');
+  expect(www.status === 308 && www.headers.location === `http://${LANDING}/x?y=1`, 'www. goes to the bare domain, same path', www.headers.location);
+  expectStatus(await anon.post(LANDING, '/api/auth/login', { phone: '+962791111111', password: 'admin-test-pass' }), 404, 'nobody signs in on the landing page', 'not_found');
 
   section('Super admin');
   expectStatus(await admin.login(PLATFORM, adminCreds.phone, 'wrong'), 401, 'wrong password', 'bad_credentials');
@@ -250,8 +257,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const html = index.body.toString('utf8');
   const csp = String(index.headers['content-security-policy']);
   const nonce = /nonce-([^']+)'/.exec(csp)?.[1];
-  expect(html.includes('<title>صالون أ</title>') && html.includes('--primary:#0f3d3e') && !!nonce && html.includes(`<style nonce="${nonce}">`) && html.includes(`<script nonce="${nonce}">`), 'index.html carries salon title, colours and a CSP nonce');
-  expect(html.includes('data-theme="public"') && csp.includes(`script-src 'self' 'nonce-${nonce}'`), 'salon host starts on the public theme; owner screens switch before first paint');
+  expect(html.includes('<title>صالون أ</title>') && html.includes('--primary:#0f3d3e') && !!nonce && html.includes(`<style nonce="${nonce}">`) && html.includes(`<script type="application/ld+json" nonce="${nonce}">`), 'index.html carries salon title, colours and a CSP nonce');
+  expect(html.includes('data-theme="public"') && csp.includes(`script-src 'self' 'nonce-${nonce}'`), "the salon's link opens the customers' app on the public theme");
   const platformIndex = await anon.get(PLATFORM, '/');
   const platformCsp = String(platformIndex.headers['content-security-policy']);
   expect(platformIndex.body.toString('utf8').includes('data-theme="studio" data-platform="1"') && platformCsp.includes(`img-src 'self' blob: data: http://*.${DOMAIN}:${PORT}`), 'platform host is the studio and may show salon icons');
@@ -281,23 +288,23 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(brandPub?.page_theme === 'day' && brandPub.cover_url === cover.json?.salon.cover_url && brandPub.icon_v === ownIcon.json?.salon.icon_v, 'customers get the look, the banner and the icon version', brandPub);
   const dayManifest = JSON.parse((await anon.get(A, '/manifest.webmanifest')).body.toString('utf8'));
   expect(dayManifest.background_color === dayBase('#0f3d3e') && dayManifest.icons[0].src.includes(`v=${brandPub?.icon_v}`), "the customers' app launches on the day page", dayManifest);
-  const ownerManifest = JSON.parse((await anon.get(A, '/manage.webmanifest')).body.toString('utf8'));
-  expect(ownerManifest.id === '/manage' && ownerManifest.start_url === '/manage' && ownerManifest.scope === '/manage' && ownerManifest.name === 'إدارة صالون أ' && ownerManifest.background_color === nightBase('#0f3d3e') && ownerManifest.icons.every((i: any) => i.src.startsWith('/icons/owner-')), "the owner's app: its own id, name, scope, colours and icons", ownerManifest);
+  const ownerManifest = JSON.parse((await anon.get(A, '/admin.webmanifest')).body.toString('utf8'));
+  expect(ownerManifest.id === '/admin' && ownerManifest.start_url === '/admin' && ownerManifest.scope === '/admin' && ownerManifest.name === 'إدارة صالون أ' && ownerManifest.background_color === nightBase('#0f3d3e') && ownerManifest.icons.every((i: any) => i.src.startsWith('/icons/owner-')), "the owner's app: its own id, name, scope, colours and icons", ownerManifest);
   const plainIcon = await anon.get(A, '/icons/icon-512.png');
   const ownerIcon = await anon.get(A, '/icons/owner-icon-512.png');
   expect((await pngSize(plainIcon)) === '512x512' && (await pngSize(ownerIcon)) === '512x512' && !plainIcon.body.equals(ownerIcon.body), "the owner's icon carries a badge so the two apps are told apart");
   expect((await pngSize(await anon.get(A, '/icons/owner-apple-touch-icon.png'))) === '180x180', 'owner icon for iPhone home screens');
   expectStatus(await anon.get(A, '/icons/owner-favicon.ico'), 404, 'no owner favicon');
-  const ownerIndex = await anon.get(A, '/manage');
+  const ownerIndex = await anon.get(A, '/admin');
   const ownerHtml = ownerIndex.body.toString('utf8');
-  expect(ownerIndex.status === 200 && ownerHtml.includes('data-theme="studio"') && ownerHtml.includes('data-app="owner"') && ownerHtml.includes('href="/manage.webmanifest"') && ownerHtml.includes('/icons/owner-apple-touch-icon.png') && ownerHtml.includes('/splash/owner-1290x2796.png'), "/manage opens the owner's app on the studio theme, with its manifest, icon and launch screens");
+  expect(ownerIndex.status === 200 && ownerHtml.includes('data-theme="studio"') && ownerHtml.includes('data-app="owner"') && ownerHtml.includes('href="/admin.webmanifest"') && ownerHtml.includes('/icons/owner-apple-touch-icon.png') && ownerHtml.includes('/splash/owner-1290x2796.png') && ownerHtml.includes('content="noindex"'), "/admin opens the owner's app on the studio theme, with its manifest, icon and launch screens, out of search results");
   const customerHtml = (await anon.get(A, '/')).body.toString('utf8');
   expect(customerHtml.includes('data-page="day"') && customerHtml.includes('class="boot splash"') && customerHtml.includes('apple-touch-startup-image') && customerHtml.includes('--accent-ink:'), "the customers' app: day page, a splash with the salon's icon, iOS launch screens");
   const launch = await anon.get(A, `/splash/1179x2556.png?v=${brandPub?.icon_v}`);
   expect((await pngSize(launch)) === '1179x2556' && /max-age=31536000/.test(String(launch.headers['cache-control'])), 'an iPhone launch screen at the exact size');
   expect((await pngSize(await anon.get(A, '/splash/owner-2048x2732.png'))) === '2048x2732', "an iPad launch screen for the owner's app");
   expectStatus(await anon.get(A, '/splash/1000x1000.png'), 404, 'only real screen sizes');
-  expectStatus(await anon.get(PLATFORM, '/manage'), 404, 'no owner app on the platform host');
+  expectStatus(await anon.get(PLATFORM, '/admin'), 404, 'no owner app on the platform dashboard');
   const noIcon = await ownerA.del(A, '/api/manage/salon/icon');
   const noCover = await ownerA.del(A, '/api/manage/salon/cover');
   expect(noIcon.json?.salon.icon_url === null && noCover.json?.salon.cover_url === null && noCover.json.salon.logo_url, 'icon and banner can be removed; the logo stays', noCover.json?.salon);
@@ -419,6 +426,52 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(pub.json?.staff.length === 1 && pub.json.staff[0].id === ahmadId, 'paused members left out', pub.json?.staff);
   expect(pub.json?.services.find((s: any) => s.id === cutId)?.staff_ids.join() === String(ahmadId), "paused members left out of a service's team");
   expect(!('tenant_id' in (pub.json?.salon ?? {})), 'no internal fields in public data');
+
+  section('Addresses and link previews');
+  const someToken = 'x'.repeat(24);
+  for (const path of ['/book', '/book/', `/b/${someToken}`, '/admin/', '/admin/login', '/admin/bookings']) {
+    expectStatus(await anon.get(A, path), 200, `${path} opens the app`);
+  }
+  const bookingIndex = (await anon.get(A, `/b/${someToken}`)).body.toString('utf8');
+  expect(bookingIndex.includes('content="noindex"') && !bookingIndex.includes('og:title'), "a customer's own booking stays out of search results and link previews");
+  const oldOwner = await anon.get(A, '/manage');
+  expect(oldOwner.status === 302 && oldOwner.headers.location === '/admin', "the owner's app moved from /manage to /admin", oldOwner.headers.location);
+  const oldLogin = await anon.get(A, '/login');
+  expect(oldLogin.status === 302 && oldLogin.headers.location === '/admin/login', 'owners sign in at /admin/login', oldLogin.headers.location);
+  const missing = await anon.get(A, '/no-such-page', { Accept: 'text/html' });
+  expect(missing.status === 404 && String(missing.headers['content-type']).startsWith('text/html') && missing.body.toString('utf8').includes('href="/"'), 'a mistyped address in a browser gets a page with the way home');
+  expectStatus(await anon.get(A, '/no-such-page'), 404, 'other clients get JSON', 'not_found');
+  const salonHtml = (await anon.get(A, '/')).body.toString('utf8');
+  const og = (prop: string) => new RegExp(`<meta property="og:${prop}" content="([^"]*)">`).exec(salonHtml)?.[1];
+  const shareUrl = og('image') ?? '';
+  expect(og('title') === 'صالون أ' && og('url') === `http://${A}/` && shareUrl.startsWith(`http://${A}/share.jpg?v=`) && salonHtml.includes('<meta name="description"') && salonHtml.includes(`<link rel="canonical" href="http://${A}/">`), "a shared salon link shows the salon's name, a description and a picture", { title: og('title'), image: shareUrl });
+  const ld = JSON.parse(/<script type="application\/ld\+json" nonce="[^"]+">(.*?)<\/script>/s.exec(salonHtml)?.[1] ?? 'null');
+  expect(ld?.['@type'] === 'HealthAndBeautyBusiness' && ld.name === 'صالون أ' && ld.url === `http://${A}/` && ld.openingHoursSpecification?.length > 0, 'search engines get the salon as a local business with its opening hours', ld);
+  const shareLink = new URL(shareUrl || 'http://x/');
+  const share = await anon.get(A, shareLink.pathname + shareLink.search);
+  const shareMeta = share.status === 200 ? await sharp(share.body).metadata() : null;
+  expect(share.headers['content-type'] === 'image/jpeg' && shareMeta?.width === 1200 && shareMeta.height === 630, 'the shared-link picture is a 1200x630 JPEG', { status: share.status, size: shareMeta && `${shareMeta.width}x${shareMeta.height}` });
+  const robots = async (host: string) => (await anon.get(host, '/robots.txt')).body.toString('utf8');
+  const salonRobots = await robots(A);
+  expect(salonRobots.includes('Disallow: /admin') && salonRobots.includes('Disallow: /b/'), "search engines skip a salon's dashboard and its customers' bookings", salonRobots);
+  expect((await robots(PLATFORM)).includes('Disallow: /\n') && !(await robots(LANDING)).includes('Disallow: /\n'), 'and the whole platform dashboard, but not the landing page');
+  const landing = await anon.get(LANDING, '/');
+  const landingHtml = landing.body.toString('utf8');
+  expect(landing.status === 200 && landingHtml.includes('data-site="landing"') && landingHtml.includes('og:title') && landingHtml.includes(`content="http://${LANDING}/share.jpg"`), 'the landing page, with its own link preview');
+  const platformShare = await anon.get(LANDING, '/share.jpg');
+  expect(platformShare.status === 200 && (await sharp(platformShare.body).metadata()).width === 1200, "the platform's own shared-link picture");
+  const toDashboard = await anon.get(LANDING, '/admin');
+  expect(toDashboard.status === 302 && toDashboard.headers.location === `http://${PLATFORM}/`, "the landing page's /admin leads to the dashboard", toDashboard.headers.location);
+  const dashboardHtml = (await anon.get(PLATFORM, '/')).body.toString('utf8');
+  expect(dashboardHtml.includes('data-site="admin"') && dashboardHtml.includes('content="noindex"'), 'the dashboard stays out of search results');
+  const settings = await admin.get(PLATFORM, '/api/admin/platform');
+  expect(settings.status === 200 && settings.json.contact_phone === '+962790001122' && settings.json.domain === DOMAIN, 'the admin sees the platform settings', settings.json);
+  expectStatus(await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '12' }), 400, 'the contact must be a phone number', 'invalid');
+  const contact = await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '0795551234' });
+  expect(contact.json?.contact_phone === '+962795551234' && (await anon.get(LANDING, '/api/context')).json?.tenant.contact_phone === '+962795551234', 'a local number is stored in full, and the landing page uses it at once', contact.json);
+  expectStatus(await anon.patch(PLATFORM, '/api/admin/platform', { contact_phone: '' }), 401, 'only the admin changes it');
+  expectStatus(await ownerA.patch(A, '/api/admin/platform', { contact_phone: '' }), 404, "no platform settings on a salon's link", 'not_found');
+  expectStatus(await anon.get(LANDING, '/api/admin/salons'), 404, 'nor any admin tools on the landing page', 'not_found');
 
   section('Deleting');
   expectStatus(await ownerA.del(A, `/api/manage/services/${beardId}`), 200, 'delete a service');

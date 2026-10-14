@@ -1,12 +1,17 @@
 // The Host header decides everything: which brand (tenant) and which salon a
-// request belongs to. salonname.brand.com is a salon; brand.com, www. and admin.
-// are the platform host where the super admin works.
+// request belongs to. salonname.brand.com is a salon; brand.com is the platform's
+// front door (its landing page), admin.brand.com is where the super admin works, and
+// www. sends people to the bare domain.
 import { query, one } from './db.js';
 
 export interface Tenant {
   id: number;
   domain: string;
+  /** The brand in Latin letters (Salonak) and in Arabic (صالونك). */
   name: string;
+  name_ar: string;
+  /** Where salon owners reach the platform from its landing page (WhatsApp). */
+  contact_phone: string;
   default_calling_code: string;
   default_timezone: string;
   default_currency: string;
@@ -48,17 +53,19 @@ export type IconBg = 'auto' | 'white' | 'primary' | 'night';
 
 export type PhotoStyle = 'natural' | 'warm' | 'mono' | 'brand';
 
+/** Which site a host is: a salon's, or one of the platform's own. */
+export type Site = 'salon' | 'landing' | 'admin' | 'www';
+
 export interface HostContext {
   tenant: Tenant;
   salon: Salon | null;
+  site: Site;
   /** Port from the Host header, kept so links to other subdomains work in dev. */
   port: string;
 }
 
-const PLATFORM_PREFIXES = new Set(['www', 'admin']);
 export const RESERVED_SUBDOMAINS = new Set([
-  ...PLATFORM_PREFIXES,
-  'api', 'app', 'mail', 'static', 'cdn', 'assets', 'help', 'support', 'status', 'dashboard', 'login', 'platform',
+  'www', 'admin', 'api', 'app', 'mail', 'static', 'cdn', 'assets', 'help', 'support', 'status', 'dashboard', 'login', 'platform',
 ]);
 
 let tenantCache: { at: number; tenants: Tenant[] } | null = null;
@@ -66,7 +73,7 @@ let tenantCache: { at: number; tenants: Tenant[] } | null = null;
 async function tenants(): Promise<Tenant[]> {
   if (!tenantCache || Date.now() - tenantCache.at > 60_000) {
     const rows = await query<Tenant>(
-      'select id, domain, name, default_calling_code, default_timezone, default_currency from tenants',
+      'select id, domain, name, name_ar, contact_phone, default_calling_code, default_timezone, default_currency from tenants',
     );
     // Longest domain first so a.brand.com wins over brand.com if both are tenants.
     rows.sort((a, b) => b.domain.length - a.domain.length);
@@ -86,8 +93,9 @@ export const SALON_COLUMNS = `id, tenant_id, subdomain, name_ar, name_en, about_
 
 interface ParsedHost {
   tenant: Tenant;
-  /** null on the platform host (bare domain, www., admin.). */
+  /** The salon's subdomain; null on the platform's own hosts. */
   sub: string | null;
+  site: Site;
   port: string;
 }
 
@@ -99,12 +107,12 @@ async function parseHost(hostHeader: string | undefined): Promise<ParsedHost | n
   const port = m[2] ?? '';
 
   for (const tenant of await tenants()) {
-    if (hostname === tenant.domain) return { tenant, sub: null, port };
+    if (hostname === tenant.domain) return { tenant, sub: null, site: 'landing', port };
     if (!hostname.endsWith(`.${tenant.domain}`)) continue;
     const sub = hostname.slice(0, -(tenant.domain.length + 1));
-    if (PLATFORM_PREFIXES.has(sub)) return { tenant, sub: null, port };
+    if (sub === 'admin' || sub === 'www') return { tenant, sub: null, site: sub, port };
     if (sub.includes('.')) return null;
-    return { tenant, sub, port };
+    return { tenant, sub, site: 'salon', port };
   }
   return null;
 }
@@ -112,13 +120,13 @@ async function parseHost(hostHeader: string | undefined): Promise<ParsedHost | n
 export async function resolveHost(hostHeader: string | undefined): Promise<HostContext | null> {
   const parsed = await parseHost(hostHeader);
   if (!parsed) return null;
-  const { tenant, sub, port } = parsed;
-  if (sub === null) return { tenant, salon: null, port };
+  const { tenant, sub, site, port } = parsed;
+  if (sub === null) return { tenant, salon: null, site, port };
   const salon = await one<Salon>(
     `select ${SALON_COLUMNS} from salons where tenant_id = $1 and subdomain = $2 and active`,
     [tenant.id, sub],
   );
-  return salon ? { tenant, salon, port } : null;
+  return salon ? { tenant, salon, site, port } : null;
 }
 
 export type OfflineHost =

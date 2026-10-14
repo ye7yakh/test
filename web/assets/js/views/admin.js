@@ -217,6 +217,44 @@ function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = fal
   if (celebrate) setTimeout(() => confetti(['#a855f7', '#6366f1', '#3b82f6', '#ffffff', '#f5d06f']), 250);
 }
 
+/** The platform's own settings: its landing page, and the WhatsApp number salons reach it on. */
+async function openPlatform(app) {
+  let res;
+  try {
+    res = await api('GET', '/api/admin/platform');
+  } catch (err) {
+    toastError(err);
+    return;
+  }
+  const landing = `${location.protocol}//${baseHost()}`;
+  const phone = input({ name: 'contact_phone', type: 'tel', inputmode: 'tel', value: res.contact_phone, autocomplete: 'off' });
+  const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
+  const form = h(
+    'form',
+    { novalidate: true },
+    h(
+      'a',
+      { class: 'card platform-link', href: landing, target: '_blank', rel: 'noopener' },
+      h('div', { class: 'app-icon studio-mark', style: { '--s': '44px' } }, icon('sparkles')),
+      h('div', { class: 'grow' }, h('div', { class: 'name', text: t('admin.landing') }), h('div', { class: 'sub', text: isolate(bare(landing)) })),
+      icon('external', 'faint'),
+    ),
+    h('div', { style: { marginTop: '16px' } }, field(t('admin.contact_phone'), phone, { hint: t('admin.contact_phone_hint') })),
+  );
+  const panel = sheet({ title: t('admin.platform'), body: form, actions: [save] });
+  save.addEventListener('click', () => busy(save, async () => {
+    try {
+      const out = await api('PATCH', '/api/admin/platform', { contact_phone: phone.value });
+      app.ctx.tenant.contact_phone = out.contact_phone;
+      toast(t('saved'));
+      panel.close();
+    } catch (err) {
+      markInvalid(form, err);
+      throw err;
+    }
+  }));
+}
+
 function openCreate(onCreated) {
   const f = {
     name_ar: input({ name: 'name_ar', maxlength: 80 }),
@@ -248,7 +286,7 @@ function openCreate(onCreated) {
       const res = await api('POST', '/api/admin/salons', Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value])));
       panel.close();
       onCreated();
-      const link = `${res.url}/manage`;
+      const link = `${res.url}/admin`;
       const name = f.owner_name.value.trim();
       credentialsSheet({
         title: t('admin.handover'),
@@ -306,7 +344,7 @@ async function openSalon(id, onChange) {
       'div',
       { class: 'sd-links' },
       h('a', { class: 'btn btn-secondary btn-sm', href: salon.url, target: '_blank', rel: 'noopener' }, icon('external'), t('admin.open_page')),
-      h('a', { class: 'btn btn-secondary btn-sm', href: `${salon.url}/manage`, target: '_blank', rel: 'noopener' }, icon('sliders'), t('admin.open_studio')),
+      h('a', { class: 'btn btn-secondary btn-sm', href: `${salon.url}/admin`, target: '_blank', rel: 'noopener' }, icon('sliders'), t('admin.open_studio')),
     );
 
     const live = switchRow(t('admin.live'), t('admin.live_sub'), salon.active);
@@ -353,7 +391,7 @@ async function openSalon(id, onChange) {
         if (!(await confirmDelete({ title: t('admin.reset'), message: t('admin.reset_confirm'), yesText: t('admin.reset_yes') }))) return;
         busy(reset, async () => {
           const res = await api('POST', `/api/admin/salons/${salon.id}/reset-password`);
-          const link = `${salon.url}/manage`;
+          const link = `${salon.url}/admin`;
           credentialsSheet({
             title: t('admin.reset_done'),
             intro: t('admin.reset_once'),
@@ -470,7 +508,8 @@ export function adminView(app) {
       h(
         'header',
         { class: 's-header' },
-        h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: app.ctx.tenant.name }), h('div', { class: 'sub', text: t('login.platform') }))),
+        h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(app.ctx.tenant, 'name') }), h('div', { class: 'sub', text: t('login.platform') }))),
+        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('admin.platform'), title: t('admin.platform'), onclick: () => openPlatform(app) }, icon('gear')),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('logout'), title: t('logout'), onclick: () => app.logout() }, icon('logout', 'flip-rtl')),
       ),

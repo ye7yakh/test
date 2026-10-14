@@ -58,7 +58,7 @@ function heroCard(store, app, steps) {
         ring(done / steps.length, { size: 84 }),
         h('h2', { text: t('home.progress') }),
         h('p', { text: t('home.left', { n: steps.length - done }) }),
-        h('div', { class: 'actions' }, h('a', { class: 'btn btn-primary btn-sm sheen', href: `#/manage/${next.page}` }, t('home.continue'), icon('arrow', 'flip-ltr'))),
+        h('div', { class: 'actions' }, h('a', { class: 'btn btn-primary btn-sm sheen', href: `/admin/${next.page}` }, t('home.continue'), icon('arrow', 'flip-ltr'))),
       );
   return h(
     'section',
@@ -75,7 +75,7 @@ function stepsCard(steps) {
     h('div', { class: 'section-head' }, h('h2', { text: t('home.steps') }), h('span', { class: 'count', text: `${steps.filter((s) => s.done).length}/${steps.length}` })),
     h('div', { class: 'card flush steps' }, stagger(steps.map((s) => h(
       'a',
-      { class: `step ${s.done ? 'done' : ''}`, href: `#/manage/${s.page}` },
+      { class: `step ${s.done ? 'done' : ''}`, href: `/admin/${s.page}` },
       h('div', { class: 'tile' }, icon(s.done ? 'check' : s.icon)),
       h('div', { class: 'grow' }, h('div', { class: 'title', text: t(`step.${s.id}`) }), h('div', { class: 'sub', text: t(`step.${s.id}_sub`) })),
       h('span', { class: 'state' }, icon(s.done ? 'checkCircle' : 'chevron', s.done ? '' : 'flip-ltr')),
@@ -83,13 +83,11 @@ function stepsCard(steps) {
   );
 }
 
-function glance(store) {
+function glance(store, app) {
   const services = store.services.filter((s) => s.active);
   const team = store.staff.filter((m) => m.active);
   const status = openStatus(store.hours, nowIn(store.salon.timezone));
-  const go = (page) => () => {
-    location.hash = `#/manage/${page}`;
-  };
+  const go = (page) => () => app.go(`/admin/${page}`);
   return h(
     'section',
     { class: 'section' },
@@ -124,8 +122,8 @@ function glance(store) {
 
 /** Today's visits, the next one, and deposits waiting for a check. Filled in once loaded. */
 function todayCard(store) {
-  const card = h('a', { class: 'card today-card', href: '#/manage/bookings' }, h('div', { class: 'skel', style: { height: '52px' } }));
-  const section = h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: t('home.today') }), h('a', { class: 'link-btn', href: '#/manage/bookings', text: t('home.open_schedule') })), card);
+  const card = h('a', { class: 'card today-card', href: '/admin/bookings' }, h('div', { class: 'skel', style: { height: '52px' } }));
+  const section = h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: t('home.today') }), h('a', { class: 'link-btn', href: '/admin/bookings', text: t('home.open_schedule') })), card);
   Promise.all([api('GET', '/api/manage/bookings'), api('GET', '/api/manage/bookings/overview?days=1')])
     .then(([day, overview]) => {
       const live = day.bookings.filter((b) => ['pending_payment', 'payment_sent', 'confirmed', 'completed'].includes(b.status));
@@ -241,7 +239,7 @@ export function homePage(store, app) {
     installCard(store, app),
     store.services.some((s) => s.active) ? todayCard(store) : null,
     ready ? linkCard(store) : stepsCard(steps),
-    glance(store),
+    glance(store, app),
     ready ? stepsCard(steps) : linkCard(store),
   );
 }

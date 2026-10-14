@@ -167,7 +167,7 @@ export function manageView(app, pageId) {
   const navLink = (p, cls) => {
     const a = h(
       'a',
-      { class: `${cls} ${p.id === page.id ? 'active' : ''}`, href: `#/manage/${p.id === 'home' ? '' : p.id}`, 'aria-current': p.id === page.id ? 'page' : null, 'data-page': p.id },
+      { class: `${cls} ${p.id === page.id ? 'active' : ''}`, href: p.id === 'home' ? '/admin' : `/admin/${p.id}`, 'aria-current': p.id === page.id ? 'page' : null, 'data-page': p.id },
       p.id === page.id ? h('span', { class: 'nav-pill', 'aria-hidden': 'true' }) : null,
       icon(p.icon),
       h('span', { text: t(`nav.${p.id}`) }),

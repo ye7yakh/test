@@ -39,9 +39,9 @@ export function loginView(app) {
     try {
       await api('POST', '/api/auth/login', { phone: phone.value, password: password.value });
       await app.reload();
-      // Owners land in their own app (/manage), so adding it to the home screen installs the dashboard.
-      if (ctx.kind === 'salon' && app.canManage && !app.ownerApp) location.assign('/manage');
-      else if (ctx.kind === 'salon') app.go(app.canManage ? '#/manage' : '#/');
+      // Owners land on their dashboard (/admin), the app their phone installs.
+      if (ctx.kind === 'salon' && app.canManage) app.go('/admin', { replace: true });
+      else if (ctx.kind === 'salon') location.assign('/');
     } catch (err) {
       error.textContent = errorText(err);
       error.hidden = false;
@@ -52,7 +52,7 @@ export function loginView(app) {
     }
   });
 
-  const name = salon ? pick(salon, 'name') : ctx.tenant.name;
+  const name = pick(salon ?? ctx.tenant, 'name');
   return h(
     'div',
     { class: 'login' },
@@ -71,7 +71,7 @@ export function loginView(app) {
       h(
         'div',
         { class: 'login-foot rise', style: { '--i': '2' } },
-        salon ? h('a', { class: 'link-btn', href: app.ownerApp ? '/' : '#/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
+        salon ? h('a', { class: 'link-btn', href: '/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
         h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
       ),
     ),

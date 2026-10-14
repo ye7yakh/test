@@ -118,6 +118,7 @@ const ICONS = {
   key: [['circle', { cx: 7.5, cy: 15.5, r: 4.5 }], ['path', { d: 'm10.7 12.3 9.8-9.8M17 6l3 3M14.5 8.5l2 2' }]],
   power: [['path', { d: 'M12 2.5v9' }], ['path', { d: 'M6.2 6.3a8 8 0 1 0 11.6 0' }]],
   trend: [['path', { d: 'M3 17l6-6 4 4 8-8M15 7h6v6' }]],
+  wallet: [['path', { d: 'M19 7V4a1 1 0 0 0-1-1H5a2 2 0 0 0 0 4h15a1 1 0 0 1 1 1v4h-3a2 2 0 0 0 0 4h3a1 1 0 0 0 1-1v-2a1 1 0 0 0-1-1' }], ['path', { d: 'M3 5v14a2 2 0 0 0 2 2h15a1 1 0 0 0 1-1v-4' }]],
 };
 
 const SVG_NS = 'http://www.w3.org/2000/svg';

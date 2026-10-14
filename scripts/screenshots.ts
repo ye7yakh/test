@@ -11,7 +11,9 @@ import sharp from 'sharp';
 import puppeteer, { type Browser, type BrowserContext, type ElementHandle, type Page } from 'puppeteer-core';
 
 const BASE_HOST = process.env.BASE_HOST ?? 'localhost:3000';
-const PLATFORM = `http://${BASE_HOST}`;
+// The platform's landing page is the bare domain; its dashboard is admin.
+const LANDING = `http://${BASE_HOST}`;
+const PLATFORM = `http://admin.${BASE_HOST}`;
 const OUT = path.resolve('screenshots');
 const ADMIN = { phone: process.env.SEED_ADMIN_PHONE ?? '+962790000000', password: process.env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123' };
 const PHONE = { width: 400, height: 860, deviceScaleFactor: 1, isMobile: true, hasTouch: true };
@@ -75,12 +77,17 @@ async function upload(page: Page, trigger: string, file: string) {
   await chooser.accept([file]);
 }
 
+const ownerPath = (p: string) => p === '/admin' || p.startsWith('/admin/');
+
 async function go(page: Page, url: string, selector: string) {
   const from = new URL(page.url());
   const to = new URL(url);
-  if (from.origin === to.origin && from.pathname === to.pathname && from.hash !== to.hash) {
-    // Same app, another screen: a hash change, like a tap on a link.
-    await page.evaluate((hash) => { location.hash = hash; }, to.hash);
+  if (from.origin === to.origin && ownerPath(from.pathname) === ownerPath(to.pathname) && from.pathname !== to.pathname) {
+    // Same app, another screen: what a tap on one of its links does.
+    await page.evaluate((path) => {
+      history.pushState(null, '', path);
+      dispatchEvent(new PopStateEvent('popstate'));
+    }, to.pathname);
   } else {
     // The studio keeps one live stream open, so wait for "almost" idle.
     await page.goto(url, { waitUntil: 'networkidle2' });
@@ -107,7 +114,7 @@ async function newPage(browser: Browser | BrowserContext, viewport: typeof PHONE
   return page;
 }
 
-async function login(page: Page, base: string, phone: string, password: string, path = '/#/login') {
+async function login(page: Page, base: string, phone: string, password: string, path = '/') {
   await go(page, `${base}${path}`, 'input[name=phone]');
   await page.type('input[name=phone]', phone);
   await page.type('input[name=password]', password);
@@ -164,8 +171,18 @@ async function main() {
   const owner = { phone: `07${String(Date.now()).slice(-8)}`, password: 'owner-pass-777' };
   const SALON = `http://${sub}.${BASE_HOST}`;
   // The owner's own installable app.
-  const STUDIO = `${SALON}/manage`;
+  const STUDIO = `${SALON}/admin`;
   try {
+    // ---- the platform's landing page, for salon owners
+    const landDesk = await newPage(browser, DESKTOP);
+    await go(landDesk, `${LANDING}/`, '.l-title');
+    await snap(landDesk, 'landing-desktop', { wait: 2600 });
+    await landDesk.close();
+    const land = await newPage(browser);
+    await go(land, `${LANDING}/`, '.l-title');
+    await snap(land, 'landing', { full: true, wait: 2600 });
+    await land.close();
+
     // ---- the platform owner creates a salon
     const admin = await newPage(browser);
     await login(admin, PLATFORM, ADMIN.phone, 'wrong-password');
@@ -175,6 +192,12 @@ async function main() {
     await admin.click('button[type=submit]');
     await admin.waitForSelector('.trend-card svg .line');
     await snap(admin, 'admin', { full: true, wait: 2400 });
+    // The platform's own settings: its landing page and contact number.
+    await admin.click('.s-header .icon-btn[aria-label="إعدادات المنصة"]');
+    await admin.waitForSelector('.sheet input[name=contact_phone]');
+    await snap(admin, 'admin-platform');
+    await admin.click('.sheet .sheet-head .icon-btn');
+    await admin.waitForFunction(() => !document.querySelector('.sheet'));
     await clickText(admin, 'button', 'صالون جديد');
     await admin.waitForSelector('.sheet input[name=subdomain]');
     await admin.type('.sheet input[name=name_ar]', 'صالون لوكس');
@@ -204,7 +227,7 @@ async function main() {
 
     // ---- the salon owner's first visit
     const page = await newPage(browser);
-    await login(page, SALON, owner.phone, owner.password, '/manage#/login');
+    await login(page, SALON, owner.phone, owner.password, '/admin/login');
     await page.waitForSelector('.hero-card');
     await snap(page, 'home-empty', { full: true, wait: 1500 });
     // First thing: their own password instead of the temporary one.
@@ -220,7 +243,7 @@ async function main() {
     await settle(page, 400);
 
     // Services: a ready menu for a barbershop, priced in one sheet.
-    await go(page, `${STUDIO}#/manage/services`, '.type-card');
+    await go(page, `${STUDIO}/services`, '.type-card');
     await snap(page, 'services-empty');
     await page.click('.type-card');
     await page.waitForSelector('.sheet .tpl-row');
@@ -241,7 +264,7 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.sheet'));
 
     // Team: a new barber with a photo, then a new photo with the studio touch.
-    await go(page, `${STUDIO}#/manage/team`, '.add-member');
+    await go(page, `${STUDIO}/team`, '.add-member');
     await page.click('.add-member');
     await page.waitForSelector('.sheet .drop');
     await settle(page, 400);
@@ -267,7 +290,7 @@ async function main() {
     await settle(page, 400);
 
     // Brand: logo, a palette; the save bar and live preview follow.
-    await go(page, `${STUDIO}#/manage/brand`, '.logo-drop');
+    await go(page, `${STUDIO}/brand`, '.logo-drop');
     await upload(page, '.logo-drop .btn-secondary', files.logo);
     await page.waitForSelector('.logo-drop .app-icon.logo');
     await page.$eval('.palette[data-id="emerald"]', (el) => el.scrollIntoView({ block: 'center' }));
@@ -281,7 +304,7 @@ async function main() {
     await page.waitForFunction(() => !document.querySelector('.savebar'));
 
     // Hours: a preset, one day opened, saved.
-    await go(page, `${STUDIO}#/manage/hours`, '.day-row');
+    await go(page, `${STUDIO}/hours`, '.day-row');
     await clickText(page, '.chip-btn', 'فترتين');
     await page.waitForSelector('.savebar');
     await page.click('.day-row[data-day="6"] .day-line');
@@ -292,7 +315,7 @@ async function main() {
     await snap(page, 'hours', { full: true });
 
     // Home when everything is done: the celebration, then the settled page.
-    await go(page, `${STUDIO}#/manage`, '.hero-card');
+    await go(page, STUDIO, '.hero-card');
     await snap(page, 'home-ready-celebration', { wait: 300 });
     await snap(page, 'home-ready', { full: true, wait: 2600 });
 
@@ -310,19 +333,20 @@ async function main() {
     await page.evaluate(() => ([...document.querySelectorAll<HTMLInputElement>('.sheet .segmented input')].find((i) => i.value === 'en')!).click());
     await page.waitForFunction(() => document.documentElement.dir === 'ltr');
     await snap(page, 'home-english', { full: true, wait: 1200 });
-    await go(page, `${STUDIO}#/manage/hours`, '.day-row');
+    await go(page, `${STUDIO}/hours`, '.day-row');
     await snap(page, 'hours-english');
     await page.evaluate(() => { try { localStorage.setItem('lang', 'ar'); } catch {} });
 
     // Desktop: sidebar, page and live preview side by side.
+    // Same browser, so the owner is still signed in: the sign-in address goes straight to the dashboard.
     const desk = await newPage(browser, DESKTOP);
-    await login(desk, SALON, owner.phone, owner.password, '/manage#/login');
-    await desk.waitForSelector('.hero-card');
+    await go(desk, `${STUDIO}/login`, '.hero-card');
+    if (new URL(desk.url()).pathname !== '/admin') problems.push(`signed-in owner at /admin/login stayed on ${desk.url()}`);
     await snap(desk, 'desktop-home', { wait: 1500 });
-    await go(desk, `${STUDIO}#/manage/brand`, '.palette');
+    await go(desk, `${STUDIO}/brand`, '.palette');
     await desk.click('.palette[data-id="rose"]');
     await snap(desk, 'desktop-brand-live-preview', { wait: 900 });
-    await go(desk, `${STUDIO}#/manage/team`, '.member');
+    await go(desk, `${STUDIO}/team`, '.member');
     await snap(desk, 'desktop-team');
 
     // The salon's public page still renders in its own light theme.
@@ -332,7 +356,7 @@ async function main() {
 
     // ---- bookings: the owner asks for a CliQ deposit
     await page.bringToFront();
-    await go(page, `${STUDIO}#/manage/bookings`, '.sched-summary');
+    await go(page, `${STUDIO}/bookings`, '.sched-summary');
     // Back to Arabic (set above).
     await page.reload({ waitUntil: 'networkidle2' });
     await page.waitForSelector('.sched-summary');
@@ -422,8 +446,11 @@ async function main() {
     await find(page, '.toast', 'رُفضت الدفعة');
     await page.waitForFunction(() => !document.querySelector('.proof-viewer'));
     await cust.bringToFront();
-    await go(cust, `${SALON}/#/b/${token2}`, '.status-hero h1');
+    await go(cust, `${SALON}/b/${token2}`, '.status-hero h1');
     await snap(cust, 'booking-rejected', { wait: 1000 });
+    // The salon's booking link (for its Instagram bio) opens straight into booking.
+    await go(cust, `${SALON}/book`, '.sheet .svc');
+    await snap(cust, 'book-link');
 
     // ---- a booking taken by phone, on the same day
     await page.bringToFront();
@@ -444,17 +471,17 @@ async function main() {
     await snap(page, 'booking-detail');
     await page.keyboard.press('Escape');
     await settle(page, 400);
-    await go(page, `${STUDIO}#/manage`, '.today-card .head');
+    await go(page, STUDIO, '.today-card .head');
     await snap(page, 'home-today', { full: true, wait: 1500 });
     await desk.bringToFront();
-    await go(desk, `${STUDIO}#/manage/bookings`, '.sched-summary');
+    await go(desk, `${STUDIO}/bookings`, '.sched-summary');
     await desk.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
     await desk.waitForSelector('.appt');
     await snap(desk, 'desktop-bookings', { wait: 1200 });
 
     // ---- the salon's look, its way: a cover photo, its page by day, the dashboard in its colours
     await page.bringToFront();
-    await go(page, `${STUDIO}#/manage/brand`, '.look-grid');
+    await go(page, `${STUDIO}/brand`, '.look-grid');
     await upload(page, '.cover-drop .btn-secondary', files.cover);
     await page.waitForSelector('.cover-frame.has img');
     await page.evaluate(() => [...document.querySelectorAll<HTMLElement>('.look-card')].find((c) => c.textContent!.includes('نهاري'))!.click());
@@ -463,7 +490,7 @@ async function main() {
     await snap(page, 'brand-looks', { full: true, wait: 1200 });
     await page.evaluate(() => (document.querySelector('.savebar .btn-primary') as HTMLElement).click());
     await find(page, '.toast', 'تم حفظ الهوية');
-    await go(page, `${STUDIO}#/manage`, '.hero-card');
+    await go(page, STUDIO, '.hero-card');
     await snap(page, 'home-salon-colours', { wait: 1500 });
     // A customer opens the app: the splash holds until the salon's page has its data.
     const visitor = await newPage(await browser.createBrowserContext());
