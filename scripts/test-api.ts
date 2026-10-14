@@ -12,7 +12,8 @@ import { dayBase, nightBase } from '../src/colors.js';
 import { pool, query } from '../src/db.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
-const DOMAIN = 'test.localhost';
+// TEST_DOMAIN and TEST_PORT let two runs share a machine without touching each other.
+const DOMAIN = process.env.TEST_DOMAIN ?? 'test.localhost';
 // The bare domain is the platform's landing page; its dashboard lives on admin.
 const LANDING = `${DOMAIN}:${PORT}`;
 const PLATFORM = `admin.${DOMAIN}:${PORT}`;
