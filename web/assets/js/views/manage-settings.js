@@ -5,7 +5,7 @@ import { busy, field, h, icon, input, markInvalid, sheet, toast } from '../dom.j
 import { getLang, t } from '../i18n.js';
 import { clearManageCache } from './manage.js';
 
-export function openSettings(store, app) {
+export function openSettings(store, app, { focusPassword = false } = {}) {
   const s = store.salon;
   const f = {
     phone: input({ name: 'phone', type: 'tel', value: s.phone, maxlength: 30 }),
@@ -55,6 +55,9 @@ export function openSettings(store, app) {
       next.value = '';
       markInvalid(form, null);
       toast(t('settings.password_changed'));
+      // Their own password now: the temporary-password reminder goes.
+      if (app.ctx.user) app.ctx.user.must_change_password = false;
+      document.querySelector('.temp-pw')?.remove();
     } catch (err) {
       markInvalid(form, err);
       throw err;
@@ -63,6 +66,12 @@ export function openSettings(store, app) {
 
   const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
   const panel = sheet({ title: t('settings.title'), body: form, actions: [save], tall: true });
+  if (focusPassword) {
+    requestAnimationFrame(() => {
+      current.scrollIntoView({ block: 'center' });
+      current.focus({ preventScroll: true });
+    });
+  }
   save.addEventListener('click', () => busy(save, async () => {
     try {
       const res = await api('PATCH', '/api/manage/salon', {

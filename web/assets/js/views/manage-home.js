@@ -6,6 +6,7 @@ import { fmtTime, pick, t } from '../i18n.js';
 import { miniApp, phone } from '../preview.js';
 import { nowIn, openStatus, toMin } from '../time.js';
 import { openPreview, setupSteps } from './manage.js';
+import { openSettings } from './manage-settings.js';
 
 function greeting(store, app) {
   const hour = Math.floor(nowIn(store.salon.timezone).minutes / 60);
@@ -183,9 +184,20 @@ export function homePage(store, app) {
     } catch {}
     if (!seen) setTimeout(() => confetti([getComputedStyle(document.documentElement).getPropertyValue('--brand').trim() || '#c8a15a', '#ffffff', '#f5d06f', '#7dd3fc']), 400);
   }
+  // The admin set this password; the owner should pick their own.
+  const tempPassword = app.ctx.user?.must_change_password
+    ? h(
+        'section',
+        { class: 'card temp-pw rise' },
+        h('div', { class: 'tile' }, icon('lock')),
+        h('div', { class: 'grow' }, h('div', { class: 'card-title', text: t('home.temp_pw') }), h('div', { class: 'card-sub', text: t('home.temp_pw_sub') })),
+        h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: t('home.temp_pw_btn'), onclick: () => openSettings(store, app, { focusPassword: true }) }),
+      )
+    : null;
   return h(
     'div',
     null,
+    tempPassword,
     stagger([greeting(store, app), heroCard(store, app, steps)]),
     store.services.some((s) => s.active) ? todayCard(store) : null,
     ready ? linkCard(store) : stepsCard(steps),
