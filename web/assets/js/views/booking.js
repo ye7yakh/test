@@ -1,7 +1,7 @@
 // Customer booking: a four-step sheet (service, who, when, details) and the booking's
 // own page, which walks the customer through a CliQ deposit when the salon asks for one.
 import { api, pickImage, prepareImage } from '../api.js';
-import { appIcon, appReady, avatar, busy, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
+import { appIcon, appReady, avatar, busy, clear, confirmDelete, field, h, icon, input, legalLink, markInvalid, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
 import { errorText, fmtDuration, fmtPrice, fmtTime, pick, t, westernDigits } from '../i18n.js';
 import { dayLabel, dayStrip, fmtDate, slotGrid } from '../slots.js';
 import { applyColors } from '../theme.js';
@@ -163,6 +163,8 @@ export function openBooking(app, data, { serviceId, onClose } = {}) {
       h('div', { style: { marginTop: '16px' } }, field(t('book.name'), name)),
       h('div', { class: 'phone-input', style: { marginTop: '12px' } }, h('div', { class: 'cc', text: `+${app.ctx.tenant.calling_code}` }), field(t('book.phone'), phone)),
       deposit > 0 ? h('div', { class: 'notice' }, icon('lock'), h('span', { text: t('book.deposit_note', { amount: fmtPrice(deposit, salon.currency), min: salon.payment_window_min }) })) : null,
+      // New tabs, so reading them does not lose the booking in progress.
+      h('p', { class: 'consent' }, t('legal.by_booking'), ' ', legalLink('terms', { newTab: true }), t('legal.and'), legalLink('privacy', { newTab: true }), t('legal.end')),
     );
     next.textContent = t('book.confirm');
     next.disabled = false;

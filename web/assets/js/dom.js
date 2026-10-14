@@ -1,6 +1,6 @@
 // Tiny DOM toolkit. User content only ever goes in via textContent, never innerHTML,
 // and styles go through the CSSOM so the strict CSP needs no 'unsafe-inline'.
-import { errorText, t } from './i18n.js';
+import { errorText, getLang, t } from './i18n.js';
 import { reducedMotion } from './theme.js';
 
 export function h(tag, attrs, ...children) {
@@ -154,6 +154,21 @@ export function scissorsMark() {
   }
   svg.append(g);
   return svg;
+}
+
+// ---------------------------------------------------------------- the legal pages
+
+/** The privacy policy or the terms (pages the server renders), in the app's language. */
+export function legalLink(doc, { newTab = false } = {}) {
+  return h('a', {
+    href: `/${doc}${getLang() === 'en' ? '?lang=en' : ''}`,
+    ...(newTab ? { target: '_blank', rel: 'noopener' } : {}),
+    text: t(`legal.${doc}`),
+  });
+}
+
+export function legalLinks(cls = '') {
+  return h('nav', { class: `legal-links ${cls}`, 'aria-label': t('legal.label') }, legalLink('privacy'), legalLink('terms'));
 }
 
 // ---------------------------------------------------------------- feedback

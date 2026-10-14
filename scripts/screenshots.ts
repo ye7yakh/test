@@ -78,11 +78,13 @@ async function upload(page: Page, trigger: string, file: string) {
 }
 
 const ownerPath = (p: string) => p === '/admin' || p.startsWith('/admin/');
+// The app's own screens; anything else (the privacy policy, the terms) is a server page.
+const APP_PATH = /^\/(?:book|b\/[\w-]+|admin(?:\/[a-z]+)?)?\/?$/;
 
 async function go(page: Page, url: string, selector: string) {
   const from = new URL(page.url());
   const to = new URL(url);
-  if (from.origin === to.origin && ownerPath(from.pathname) === ownerPath(to.pathname) && from.pathname !== to.pathname) {
+  if (from.origin === to.origin && APP_PATH.test(from.pathname) && APP_PATH.test(to.pathname) && ownerPath(from.pathname) === ownerPath(to.pathname) && from.pathname !== to.pathname) {
     // Same app, another screen: what a tap on one of its links does.
     await page.evaluate((path) => {
       history.pushState(null, '', path);
@@ -451,6 +453,9 @@ async function main() {
     // The salon's booking link (for its Instagram bio) opens straight into booking.
     await go(cust, `${SALON}/book`, '.sheet .svc');
     await snap(cust, 'book-link');
+    // The privacy policy, in the salon's colours on its link.
+    await go(cust, `${SALON}/privacy`, 'main h1');
+    await snap(cust, 'privacy');
 
     // ---- a booking taken by phone, on the same day
     await page.bringToFront();

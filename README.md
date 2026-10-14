@@ -126,6 +126,22 @@ colour. Search engines get the salon as a local business (name, address, phone,
 opening hours) in JSON-LD. Dashboards and customers' booking pages carry `noindex`
 and each host serves its own `robots.txt`. The landing page has its own preview.
 
+## Privacy policy and terms
+
+`/privacy` and `/terms`, in Arabic and English (`?lang=en`), on every host. They are
+plain server pages (no scripts) that describe what the code actually does: what is
+stored, who sees it (each salon only its own customers; payment screenshots only the
+owner and the customer), how long it is kept (screenshots a week after the decision,
+sign-ins 30 days), no ads, no tracking, no analytics, and that money never passes
+through the platform. On a salon's link they wear the salon's name and colours and say
+that the salon provides the service while the platform runs the page for it; search
+engines are pointed at the platform's copy. They are linked from the salon page, the
+booking step ("by confirming you agree to…"), the landing page and the owner's settings,
+and give the platform's WhatsApp number for requests. The text lives in `src/legal.ts`;
+change it together with the code it describes. It is a careful draft, not legal advice:
+have it reviewed by a lawyer in Jordan, and add the company's legal name and an email
+address once the company is registered.
+
 ## The platform dashboard (admin)
 
 Leads with new bookings across all salons over the last 30 days (with the change on
@@ -215,19 +231,20 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 263 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 269 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
 `test:api` covers the setup flow, booking and deposits, the admin tools, the addresses
-(landing, dashboard, `www.`, `/admin`, `/book`, redirects, 404s), link previews and the
+(landing, dashboard, `www.`, `/admin`, `/book`, redirects, 404s), link previews, the privacy
+policy and terms, and the
 security edges: tenant isolation, CSRF, upload validation, private payment screenshots, rate
 limits and session revocation. `screenshots` drives Chrome through the landing page and a
 brand-new salon's whole journey: the admin creating and handing it over and resetting the owner's password, the
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
 English and desktop, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 57 PNGs to `screenshots/` and fails on any page error,
+colours, and the launch splash. It writes 58 PNGs to `screenshots/` and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
@@ -255,6 +272,7 @@ migrations/            numbered SQL, idempotent
 src/server.ts          http server, routing, Origin check, errors
 src/static.ts          index.html per host and path: which app, theme, manifest, link preview, JSON-LD
 src/pages.ts           the small server pages: salon unavailable, page not found
+src/legal.ts           the privacy policy and the terms (Arabic and English)
 src/tenancy.ts         Host -> brand + site (landing, admin, salon) + salon (and earlier links, suspended salons)
 src/brand.ts           the two apps: icon backgrounds and versions, launch screens, app colours
 src/booking.ts         availability, booking, deposit holds
@@ -280,10 +298,9 @@ scripts/               build-web.mjs, test-api.ts, screenshots.ts
    api task at first: live updates and rate limits are kept in memory.
 2. **Notifications**: Web Push (VAPID) so owners hear about new bookings and sent
    deposits with the studio closed. The service worker is already registered.
-3. **Privacy policy and terms**, linked from the salon page and the booking flow.
-4. **AI photo processing**: a background-removal and relighting model would put every
+3. **AI photo processing**: a background-removal and relighting model would put every
    barber on the same studio backdrop in the salon's colours. It slots in as one more step
    before `renderPortrait` in `src/media.ts`. The studio-touch animation already frames
    it, and the original is kept as it is today.
-5. Later: SMS or WhatsApp checks on customers' numbers, reminders, rescheduling, logins
+4. Later: SMS or WhatsApp checks on customers' numbers, reminders, rescheduling, logins
    for barbers.

@@ -1480,6 +1480,13 @@ button.p-svc:hover .go { background: var(--brand); color: var(--on-brand); trans
 .p-line > .icon { width: 17px; height: 17px; flex: none; }
 .p-foot { display: grid; gap: 6px; justify-items: center; padding-top: 6px; font-size: 13px; }
 .p-foot a { color: var(--text-2); }
+/* Links to the privacy policy and the terms (server pages). */
+.legal-links { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 16px; font-size: 13px; }
+.legal-links a { color: var(--text-2); text-decoration: none; }
+.legal-links a:hover { color: var(--text); text-decoration: underline; text-underline-offset: 3px; }
+.legal-links.in-sheet { margin-top: 18px; }
+.consent { margin: 14px 2px 0; font-size: 12.5px; line-height: 1.7; color: var(--text-2); }
+.consent a { color: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 
 /* The glass bar that arrives once the hero is gone, and the book button below. */
 .p-bar { position: fixed; z-index: 40; top: 0; inset-inline: 0; padding: calc(8px + var(--safe-top)) 12px 8px; background: var(--glass); border-bottom: 1px solid var(--line); backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); transform: translateY(-110%); transition: transform .45s var(--ease-out); }

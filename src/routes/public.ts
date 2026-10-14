@@ -6,6 +6,7 @@ import { accentForDark } from '../colors.js';
 import { loadSalonWeek } from '../hours.js';
 import { one, query, pool } from '../db.js';
 import { HttpError, ok, type Ctx, type Router } from '../http.js';
+import { legalPage } from '../legal.js';
 import { addOwnerBadge, loadMediaBytes, mediaUrl, renderIcon, renderPlatformIcon, renderShareCard, renderSplash } from '../media.js';
 import type { Salon } from '../tenancy.js';
 
@@ -228,6 +229,9 @@ export function publicRoutes(r: Router) {
   r.get('/admin.webmanifest', (ctx) => manifest(ctx, true));
   r.get('/share.jpg', shareImage);
   r.get('/robots.txt', robots);
+  // The privacy policy and the terms, on every host.
+  r.get('/privacy', (ctx) => legalPage(ctx, 'privacy'));
+  r.get('/terms', (ctx) => legalPage(ctx, 'terms'));
   r.get('/icons/:name', (ctx) => icon(ctx));
   r.get('/splash/:name', splash);
   r.get('/favicon.ico', (ctx) => icon(ctx, 'favicon.ico'));

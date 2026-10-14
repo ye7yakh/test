@@ -1,7 +1,7 @@
 // The platform's front door (the bare domain), for salon owners: what their salon
 // gets, shown on a phone that cycles through example salons in their own colours,
 // and one way to start: a WhatsApp message.
-import { appReady, clear, h, icon, tilt } from '../dom.js';
+import { appReady, clear, h, icon, legalLinks, tilt } from '../dom.js';
 import { fmtPrice, fmtTime, pick, t } from '../i18n.js';
 import { homeScreen, miniApp, phone, splashScreen } from '../preview.js';
 import { brandVars, reducedMotion } from '../theme.js';
@@ -260,6 +260,7 @@ export function landingView(app) {
       { class: 'l-foot' },
       h('div', { class: 'l-brand small' }, h('div', { class: 'app-icon studio-mark' }, icon('sparkles')), h('span', { text: brand })),
       h('p', { class: 'faint', text: t('land.owner_hint', { path: ltr('/admin') }) }),
+      legalLinks(),
       h('p', { class: 'faint', text: `© ${new Date().getFullYear()} ${brand}` }),
     ),
   );

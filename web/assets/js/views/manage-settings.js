@@ -1,7 +1,7 @@
 // Settings sheet: contact details, password, language, sign out. Every salon is in
 // Jordan, so time zone and currency (Amman, JD) are set for them.
 import { api } from '../api.js';
-import { busy, field, h, icon, input, markInvalid, sheet, toast } from '../dom.js';
+import { busy, field, h, icon, input, legalLinks, markInvalid, sheet, toast } from '../dom.js';
 import { getLang, t } from '../i18n.js';
 import { clearManageCache } from './manage.js';
 
@@ -45,6 +45,7 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
     ),
     group(t('settings.language'), langs),
     h('div', { class: 'section' }, h('button', { class: 'btn btn-danger btn-block', type: 'button', onclick: () => { panel.close(); clearManageCache(); app.logout(); } }, icon('logout', 'flip-rtl'), t('logout'))),
+    legalLinks('in-sheet'),
   );
   form.addEventListener('submit', (e) => e.preventDefault());
 

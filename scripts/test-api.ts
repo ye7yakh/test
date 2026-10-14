@@ -473,6 +473,21 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await ownerA.patch(A, '/api/admin/platform', { contact_phone: '' }), 404, "no platform settings on a salon's link", 'not_found');
   expectStatus(await anon.get(LANDING, '/api/admin/salons'), 404, 'nor any admin tools on the landing page', 'not_found');
 
+  section('Privacy policy and terms');
+  const privacyAr = await anon.get(LANDING, '/privacy');
+  const pa = privacyAr.body.toString('utf8');
+  expect(privacyAr.status === 200 && String(privacyAr.headers['content-type']).startsWith('text/html') && pa.includes('<html lang="ar" dir="rtl">') && pa.includes('<h1>سياسة الخصوصية</h1>') && pa.includes('علامة تجربة') && !pa.includes('noindex') && pa.includes(`<link rel="canonical" href="http://${LANDING}/privacy">`), 'the privacy policy on the landing page, in Arabic, for search engines');
+  expect(pa.includes('href="https://wa.me/962795551234"') && String(privacyAr.headers['content-security-policy']).startsWith("default-src 'none'"), "with the platform's WhatsApp number, and no scripts at all");
+  const termsEn = (await anon.get(LANDING, '/terms?lang=en')).body.toString('utf8');
+  expect(termsEn.includes('<html lang="en" dir="ltr">') && termsEn.includes('<h1>Terms of use</h1>') && termsEn.includes('Test Brand') && termsEn.includes('href="/privacy?lang=en"'), 'the terms in English, linked to the English privacy policy');
+  const salonPrivacy = (await anon.get(A, '/privacy')).body.toString('utf8');
+  expect(salonPrivacy.includes('صالون أ') && salonPrivacy.includes('class="note"') && salonPrivacy.includes('content="noindex"') && salonPrivacy.includes(`<link rel="canonical" href="http://${LANDING}/privacy">`), "on a salon's link: the salon's name and colours, one address for search engines");
+  expectStatus(await anon.get(PLATFORM, '/terms'), 200, 'on the dashboard too');
+  await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '' });
+  const noContact = (await anon.get(LANDING, '/privacy')).body.toString('utf8');
+  expect(!noContact.includes('wa.me') && noContact.includes('حقوقك') && !noContact.includes('{contact}'), 'without a contact number, the sentences pointing to it are left out');
+  await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '0795551234' });
+
   section('Deleting');
   expectStatus(await ownerA.del(A, `/api/manage/services/${beardId}`), 200, 'delete a service');
   const photoOriginal = (await ownerA.get(A, '/api/manage/staff')).json.staff.find((s: any) => s.id === ahmadId).original_photo_url;

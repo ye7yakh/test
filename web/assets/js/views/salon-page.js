@@ -3,7 +3,7 @@
 // how to reach them, with booking one tap away from anywhere on the page.
 import { api } from '../api.js';
 import { myBookingsCard, openBooking, waNumber } from './booking.js';
-import { appReady, avatar, clear, h, icon, tilt, toast } from '../dom.js';
+import { appReady, avatar, clear, h, icon, legalLinks, tilt, toast } from '../dom.js';
 import { DAY_ORDER, dayName, errorText, fmtDuration, fmtPrice, fmtTime, pick, t } from '../i18n.js';
 import { applyColors, reducedMotion } from '../theme.js';
 import { nowIn, openStatus, toMin } from '../time.js';
@@ -268,6 +268,7 @@ function render(app, data) {
         { class: 'p-foot' },
         app.canManage ? null : h('a', { href: '/admin', text: t('pub.owner_login') }),
         h('div', { class: 'faint', text: t('pub.powered', { brand: pick(app.ctx.tenant, 'name') }) }),
+        legalLinks(),
       ),
     ),
     cta,
