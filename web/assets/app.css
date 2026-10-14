@@ -1233,6 +1233,12 @@ button.p-svc:hover .bk-go, button.p-svc:focus-visible .bk-go { background: var(-
 .bk-days { position: sticky; top: -4px; z-index: 2; margin: -4px -20px 0; padding: 4px 20px 8px; background: var(--bg-2); }
 .bk-days-skel { height: 112px; border-radius: 18px; }
 .bk-month { margin: 0 2px 8px; font-size: 13px; font-weight: 600; color: var(--text-2); }
+/* What is left of last night's opening: "Tonight" over a moon, in place of a date. */
+.book-sheet .day-chip.late { justify-content: center; background: linear-gradient(165deg, var(--brand-soft), var(--surface) 75%); border-color: var(--brand-line); }
+.book-sheet .day-chip.late .dn { display: grid; place-items: center; height: 1.2em; color: var(--brand); }
+.book-sheet .day-chip.late .dn .icon { width: .95em; height: .95em; }
+.book-sheet .day-chip.late.on { background: var(--grad, var(--brand)); border-color: transparent; }
+.book-sheet .day-chip.late.on .dn { color: inherit; }
 .book-sheet .day-strip { margin-inline: -20px; padding-inline: 20px; scroll-padding-inline: 20px;
   -webkit-mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent); mask-image: linear-gradient(to right, transparent, #000 20px, #000 calc(100% - 20px), transparent); }
 .bk-slots { margin-top: 10px; }
@@ -1283,7 +1289,7 @@ button.p-svc:hover .bk-go, button.p-svc:focus-visible .bk-go { background: var(-
 .tk-when b { display: block; margin-top: 2px; font-size: 28px; line-height: 1.2; }
 .tk-time { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; color: var(--text-2); font-size: 14.5px; }
 .tk-time .icon { width: 16px; height: 16px; color: var(--brand); }
-.tk-note { display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 10px; padding: 4px 11px; border-radius: 99px; background: var(--brand-soft); font-size: 12.5px; }
+.tk-note { display: flex; align-items: center; gap: 6px; width: fit-content; margin-top: 10px; padding: 4px 11px; border-radius: 14px; background: var(--brand-soft); font-size: 12.5px; }
 .tk-note .icon { width: 15px; height: 15px; color: var(--brand); }
 .tk-no { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
 .tk-no .eyebrow { font-size: 11px; }
@@ -1509,6 +1515,12 @@ button.alias:hover .copy-ic { background: var(--brand); color: var(--on-brand); 
 .sched-strip .day-chip.past.on { opacity: 1; }
 .sched-strip .day-chip, .new-booking .day-chip { justify-content: center; }
 .sched-strip .day-chip .dm.same, .new-booking .day-chip .dm.same { display: none; }
+/* What is left of last night's opening: "Tonight" with stars, as on the customer's sheet. */
+.new-booking .day-chip.late { background: linear-gradient(165deg, var(--brand-soft), var(--surface) 75%); border-color: var(--brand-line); }
+.new-booking .day-chip.late .dn { display: grid; place-items: center; height: 1.2em; color: var(--brand); }
+.new-booking .day-chip.late .dn .icon { width: .95em; height: .95em; }
+.new-booking .day-chip.late.on { background: var(--grad, var(--brand)); border-color: transparent; }
+.new-booking .day-chip.late.on .dn { color: inherit; }
 
 /* Changing day: the old day dims while the new one loads, then slides in from its side. */
 .sched-day { transition: opacity .2s; }
@@ -2116,7 +2128,6 @@ html.vt-proof::view-transition-new(root) { animation: fade .3s ease both; }
 .platform-out .icon { width: 18px; height: 18px; }
 
 .admin .s-head { flex-wrap: wrap; }
-.load-fail .btn { margin-top: 14px; }
 .admin-empty { margin-top: 24px; }
 
 /* On a phone, "new salon" floats in reach while the list scrolls. */

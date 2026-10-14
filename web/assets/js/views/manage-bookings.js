@@ -4,9 +4,9 @@
 // summary of the day and the booking the owner opened. From here the owner confirms
 // CliQ transfers, marks visits, adds bookings taken by phone and sets how booking works.
 import { api } from '../api.js';
-import { avatar, busy, clear, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast } from '../dom.js';
+import { avatar, busy, clear, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast, trackOverlay } from '../dom.js';
 import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, pick, t, westernDigits } from '../i18n.js';
-import { addDays, dateOf, dayLabel, dayStrip, fmtDate } from '../slots.js';
+import { addDays, dateOf, dayLabel, dayStrip, fmtDate, periodIcon } from '../slots.js';
 import { reducedMotion } from '../theme.js';
 import { nowIn, toMin } from '../time.js';
 
@@ -41,6 +41,17 @@ const mmss = (seconds) => {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
 const statusPill = (status) => h('span', { class: `pill status-${status}`, text: t(`status.${status}`) });
+/**
+ * Minutes from now until the visit starts, on the salon's clock (0 or less once it has).
+ * The server's own `upcoming` wins when it says the visit has already started.
+ */
+function untilStart(ctx, b) {
+  if (!b.upcoming) return 0;
+  const today = ctx?.today();
+  if (!today) return Infinity;
+  const days = Math.round((dateOf(b.date) - dateOf(today)) / 864e5);
+  return days * 1440 + startOf(b) - nowIn(ctx.store.salon.timezone).minutes;
+}
 /** A visit's day in a list: today, tomorrow, a weekday within the week ahead, or else the
  * date itself, so a deposit from weeks ago never reads as this Thursday. */
 const visitDay = (date, today) => {
@@ -134,7 +145,8 @@ function tween(el, from, to, format, duration = 700) {
 
 /**
  * The salon's opening ranges on a date, in minutes from that midnight (a range past
- * midnight runs over 1440). own: the day's own ranges; all: with yesterday's late night.
+ * midnight runs over 1440). own: the day's own ranges; carry: yesterday's late night
+ * running into this date's small hours; all: both.
  */
 function openRanges(hours, date) {
   if (!Array.isArray(hours) || hours.length !== 7) return null;
@@ -147,7 +159,7 @@ function openRanges(hours, date) {
   };
   const own = (hours[weekday] ?? []).map(span).sort((a, b) => a[0] - b[0]);
   const carry = (hours[(weekday + 6) % 7] ?? []).map(span).filter(([, c]) => c > 1440).map(([, c]) => [0, c - 1440]);
-  return { own, all: [...carry, ...own].sort((a, b) => a[0] - b[0]) };
+  return { own, carry, all: [...carry, ...own].sort((a, b) => a[0] - b[0]) };
 }
 
 /** Stretches of 15 minutes or more inside the windows where nobody is booked. */
@@ -241,14 +253,23 @@ function waLink(store, b) {
   return `https://wa.me/${waNumber(b.customer.phone)}?text=${encodeURIComponent(text)}`;
 }
 
-/** What the owner can do next, as [label, status, style, asks first?]. */
-function actionsFor(b) {
+/**
+ * What the owner can do next, as [label, status, style, asks first?]. A visit is marked
+ * only once it is due, as the server allows: "no-show" after it starts (asked first: it
+ * frees the chair), "arrived" from an hour before (an early arrival).
+ */
+function actionsFor(b, ctx) {
   switch (b.status) {
     case 'pending_payment':
     case 'payment_sent':
       return [['sched.reject', 'cancelled', 'btn-secondary', true], ['sched.received', 'confirmed', 'btn-primary']];
-    case 'confirmed':
-      return [['sched.no_show', 'no_show', 'btn-secondary'], ['sched.arrived', 'completed', 'btn-primary']];
+    case 'confirmed': {
+      const until = untilStart(ctx, b);
+      return [
+        until <= 0 ? ['sched.no_show', 'no_show', 'btn-secondary', true] : null,
+        until <= 60 ? ['sched.arrived', 'completed', 'btn-primary'] : null,
+      ].filter(Boolean);
+    }
     case 'completed':
     case 'no_show':
       return [['sched.undo', 'confirmed', 'btn-secondary']];
@@ -259,9 +280,18 @@ function actionsFor(b) {
 
 async function runAction(ctx, button, b, [, status, , asks], onDone) {
   if (asks) {
-    // Turning down a transfer the customer says they sent, or letting a hold go.
-    const rejecting = b.status === 'payment_sent';
-    const ok = await confirmSheet(rejecting
+    // Turning down a transfer the customer says they sent, letting a hold go, or
+    // recording that the customer never came (the chair is freed for someone else).
+    const when = `${visitDay(b.date, ctx.today())} ${fmtTime(b.start)}`;
+    const ok = await confirmSheet(status === 'no_show'
+      ? {
+          title: t('sched.no_show'),
+          question: t('sched.no_show_q', { name: b.customer.name, time: when }),
+          message: t('sched.no_show_confirm'),
+          yesText: t('sched.no_show'),
+          noText: t('sched.back'),
+        }
+      : b.status === 'payment_sent'
       ? {
           title: t('sched.reject_full'),
           question: t('sched.reject_q', { name: b.customer.name, amount: fmtPrice(b.deposit, ctx.cur()) }),
@@ -271,7 +301,7 @@ async function runAction(ctx, button, b, [, status, , asks], onDone) {
         }
       : {
           title: t('sched.cancel'),
-          question: t('sched.cancel_q', { name: b.customer.name, time: `${visitDay(b.date, ctx.today())} ${fmtTime(b.start)}` }),
+          question: t('sched.cancel_q', { name: b.customer.name, time: when }),
           message: t('sched.cancel_confirm'),
           yesText: t('sched.cancel'),
           noText: t('sched.keep'),
@@ -314,7 +344,7 @@ function openProof(ctx, b, { onDecided, thumb, queue = [], returnFocus } = {}) {
   });
   const closeBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('close') }, icon('x'));
   const awaiting = AWAITING.has(b.status);
-  const acts = awaiting ? actionsFor(b) : [];
+  const acts = awaiting ? actionsFor(b, ctx) : [];
   const buttons = acts.map((a) => h('button', { class: `btn ${a[2]}`, type: 'button', text: t(a[0]) }));
   const at = queue.findIndex((x) => x.id === b.id);
   const alias = ctx.store.salon.cliq_alias;
@@ -355,7 +385,14 @@ function openProof(ctx, b, { onDecided, thumb, queue = [], returnFocus } = {}) {
       buttons.length ? h('div', { class: 'pv-actions' }, buttons) : null,
     ),
   );
+  // A layer like the sheets (dom.js): Back, another screen or an expired session close
+  // it, and the page and any sheet under it are inert while it is open.
+  let closed = false;
+  let untrack = () => {};
   const close = () => {
+    if (closed) return;
+    closed = true;
+    untrack();
     removeEventListener('keydown', onKey, true);
     viewer.classList.add('closing');
     setTimeout(() => {
@@ -370,7 +407,7 @@ function openProof(ctx, b, { onDecided, thumb, queue = [], returnFocus } = {}) {
   // Escape closes only the topmost layer: this viewer, not the sheet under it, and
   // not this viewer while a confirmation sits on top of it.
   const onKey = (e) => {
-    if (e.key !== 'Escape' || [...document.querySelectorAll('.sheet-backdrop, .proof-viewer')].pop() !== viewer) return;
+    if (e.key !== 'Escape' || [...document.querySelectorAll('.sheet-backdrop:not(.closing), .proof-viewer:not(.closing)')].pop() !== viewer) return;
     e.stopPropagation();
     close();
   };
@@ -381,13 +418,15 @@ function openProof(ctx, b, { onDecided, thumb, queue = [], returnFocus } = {}) {
     onDecided?.(updated);
     ctx.onChange(updated);
     const next = at >= 0 ? queue.slice(at + 1).find((x) => x.status === 'payment_sent' && x.proof_url) : null;
-    if (next) setTimeout(() => openProof(ctx, next, { queue, returnFocus: previous }), reducedMotion() ? 0 : 300);
+    // Not over another screen the owner moved to in the meantime.
+    if (next) setTimeout(() => ctx.alive() && openProof(ctx, next, { queue, returnFocus: previous }), reducedMotion() ? 0 : 300);
   };
   acts.forEach((a, i) => buttons[i].addEventListener('click', () => runAction(ctx, buttons[i], b, a, decided)));
 
   const mount = () => {
     document.body.style.overflow = 'hidden';
     document.body.append(viewer);
+    untrack = trackOverlay(close, viewer);
     closeBtn.focus({ preventScroll: true });
   };
   // The thumbnail grows into the full receipt.
@@ -499,8 +538,9 @@ function detailView(ctx, b, { done, onProofDecided }) {
       : null,
   );
 
-  const buttons = actionsFor(b).map((a) => h('button', { class: `btn ${a[2]}`, type: 'button', text: t(a[0]) }));
-  actionsFor(b).forEach((a, i) => buttons[i].addEventListener('click', () => runAction(ctx, buttons[i], b, a, done)));
+  const acts = actionsFor(b, ctx);
+  const buttons = acts.map((a) => h('button', { class: `btn ${a[2]}`, type: 'button', text: t(a[0]) }));
+  acts.forEach((a, i) => buttons[i].addEventListener('click', () => runAction(ctx, buttons[i], b, a, done)));
   // Cancelling a confirmed visit is rarer, so it sits under the main actions.
   if (b.status === 'confirmed') {
     const cancel = h('button', { class: 'link-btn danger-link', type: 'button' }, icon('x'), t('sched.cancel'));
@@ -539,7 +579,7 @@ function inlineDetail(ctx, b, { onClose, onDone }) {
 
 function attentionRow(ctx, b, queue) {
   const sent = b.status === 'payment_sent';
-  const acts = actionsFor(b).map((a) => {
+  const acts = actionsFor(b, ctx).map((a) => {
     const btn = h('button', { class: `btn btn-sm ${a[2]}`, type: 'button', text: t(a[0]) });
     btn.addEventListener('click', () => runAction(ctx, btn, b, a, ctx.onChange));
     return btn;
@@ -633,7 +673,7 @@ function apptRow(ctx, b, { now, isToday, isPast, fresh, i }) {
   const live = isToday && !dropped(b) && b.status !== 'no_show' && now >= s && now < e;
   const started = isPast || (isToday && now >= s);
   // Marking a visit makes sense once it has started.
-  const quick = b.status === 'confirmed' && started ? actionsFor(b) : [];
+  const quick = b.status === 'confirmed' && started ? actionsFor(b, ctx) : [];
   const quickBtns = quick.map((a) => {
     const btn = h('button', { class: `btn btn-sm ${a[2]}`, type: 'button', text: t(a[0]) });
     btn.addEventListener('click', () => runAction(ctx, btn, b, a, ctx.onChange));
@@ -831,15 +871,38 @@ function statsCard(ctx, { shown, members, isToday, isPast, now, windows, gaps })
   );
 }
 
-/** Past days fade, and the month is named once, where it starts. */
+/** Past days fade, and the month is named once, where it starts. Tonight's chip is apart. */
 function decorateStrip(stripEl, today) {
   let month = '';
-  stripEl.querySelectorAll('.day-chip').forEach((chip, i) => {
+  stripEl.querySelectorAll('.day-chip:not(.late)').forEach((chip, i) => {
     const date = chip.dataset.date ?? '';
     chip.classList.toggle('past', !!today && date < today);
     chip.querySelector('.dm')?.classList.toggle('same', i > 0 && date.slice(0, 7) === month);
     month = date.slice(0, 7);
   });
+}
+
+/**
+ * What is left of last night's opening while it is still going (hours that run past
+ * midnight): the API books those times under the day the opening began, yesterday.
+ * date: that day; ranges: the late hours in today's minutes. Null when there are none.
+ */
+function tonightOf(ctx) {
+  const today = ctx.today();
+  const ranges = today ? openRanges(ctx.store.hours, today)?.carry ?? [] : [];
+  const now = nowIn(ctx.store.salon.timezone).minutes;
+  return ranges.some(([, z]) => z - now >= 15) ? { date: addDays(today, -1), ranges } : null;
+}
+
+/** Last night's chip reads "Tonight" with stars, not as yesterday's date (as on /book). */
+function markTonight(stripEl, date) {
+  const chip = stripEl.querySelector(`.day-chip[data-date="${date}"]`);
+  if (!chip) return;
+  chip.classList.add('late');
+  chip.setAttribute('aria-label', `${t('book.tonight')} · ${t('book.after_midnight')}`);
+  chip.querySelector('.dw').textContent = t('book.tonight');
+  clear(chip.querySelector('.dn'), periodIcon('stars'));
+  chip.querySelector('.dm')?.remove();
 }
 
 function setBadge(stripEl, date, n) {
@@ -922,7 +985,19 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
     return;
   }
   const offeredBy = staffId ? services.find((s) => s.staff_ids.includes(staffId)) : null;
-  const state = { serviceId: (offeredBy ?? services[0]).id, staffId: offeredBy ? staffId : null, date: !date || date < today ? today : date, slot: null, prefer: time };
+  // A free stretch in tonight's small hours (from the timeline), or last night's own date,
+  // goes to what is left of last night's opening, at its minutes past that midnight.
+  const tonight = tonightOf(ctx);
+  const small = !!tonight && date === today && time != null && tonight.ranges.some(([a, z]) => time >= a && time < z);
+  const late = small || (!!tonight && date === tonight.date);
+  const state = {
+    serviceId: (offeredBy ?? services[0]).id,
+    staffId: offeredBy ? staffId : null,
+    date: late ? tonight.date : !date || date < today ? today : date,
+    slot: null,
+    prefer: small ? time + 1440 : time,
+  };
+  const dayText = (d) => (d < today ? t('book.tonight') : dayLabel(d, today));
 
   const serviceRow = h('div', { class: 'scroller', role: 'group', 'aria-label': t('sched.pick_service') });
   const staffRow = h('div', { class: 'scroller', role: 'group', 'aria-label': t('sched.pick_staff') });
@@ -932,7 +1007,7 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
   const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('sched.pick_slot'), disabled: true });
 
   const strip = dayStrip({
-    days: Array.from({ length: AHEAD_DAYS + 1 }, (_, i) => ({ date: addDays(today, i) })),
+    days: [...(tonight ? [{ date: tonight.date }] : []), ...Array.from({ length: AHEAD_DAYS + 1 }, (_, i) => ({ date: addDays(today, i) }))],
     today,
     selected: state.date,
     onPick: (d) => {
@@ -940,6 +1015,7 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
       loadSlots();
     },
   });
+  if (tonight) markTonight(strip.el, tonight.date);
   decorateStrip(strip.el, today);
 
   const service = () => services.find((s) => s.id === state.serviceId);
@@ -966,7 +1042,7 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
   const choose = (s) => {
     state.slot = s;
     save.disabled = !s;
-    save.textContent = s ? t('sched.save_at', { day: dayLabel(state.date, today), time: fmtTime(s.time) }) : t('sched.pick_slot');
+    save.textContent = s ? t('sched.save_at', { day: dayText(state.date), time: fmtTime(s.time) }) : t('sched.pick_slot');
   };
 
   let seq = 0;
@@ -1023,7 +1099,12 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
         toast(t('sched.booked'));
         onDone(res.booking);
       } catch (err) {
-        if (err.code === 'slot_taken') loadSlots();
+        if (err.code === 'slot_taken') {
+          // The times reload without that one, and nothing is picked for the owner: the
+          // button stays off until they choose a time again.
+          state.prefer = null;
+          loadSlots();
+        }
         markInvalid(form, err);
         throw err;
       }
@@ -1150,10 +1231,13 @@ export function bookingsPage(store, app) {
   let strip = null;
   let stripKey = '';
   let lastFigures = { count: 0, revenue: 0 };
+  let mounted = true;
 
   const ctx = {
     store,
     app,
+    // False once the owner has left this screen: nothing more opens over the next one.
+    alive: () => mounted,
     today: () => state.today,
     cur: () => store.salon.currency,
     // Every decision lands here (the side card, a deposit row, the full-screen review, a
@@ -1475,6 +1559,7 @@ export function bookingsPage(store, app) {
   };
   mq.addEventListener('change', onWidth);
   app.onUnmount(() => {
+    mounted = false;
     clearInterval(tick);
     clearInterval(seconds);
     clearTimeout(reloadTimer);

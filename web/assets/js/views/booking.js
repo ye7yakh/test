@@ -47,6 +47,13 @@ const toMin = (hhmm) => {
 /** A slot's own calendar day: times after midnight belong to the next date. */
 const slotDay = (slot) => (slot.next_day || slot.min >= 1440 ? addDays(slot.date, 1) : slot.date);
 
+/**
+ * A slot's day in words. What is left of last night's opening (listed under yesterday,
+ * after midnight) is "tonight"; any other time goes by its own calendar day: today,
+ * tomorrow or the weekday.
+ */
+const slotDayText = (slot, today) => (today && slot.date < today ? t('book.tonight') : dayLabel(slotDay(slot), today));
+
 /** Today's date and the minutes past midnight in a time zone (the browser's when unknown). */
 function zonedNow(timeZone) {
   try {
@@ -117,9 +124,9 @@ function flashCopied(el, iconBox) {
  * The booking as a ticket: when, on top; a perforation; then what, with whom and the
  * deposit. The same ticket is the summary before booking and the booking's own page.
  */
-function ticket({ date, start, end, today, note, number, service, duration, price, priceFrom, currency, staff, deposit = 0, isVoid = false }) {
+function ticket({ date, start, end, today, label, note, number, service, duration, price, priceFrom, currency, staff, deposit = 0, isVoid = false }) {
   const weekday = fmtDate(date, { weekday: 'long' });
-  const relative = today ? dayLabel(date, today) : weekday;
+  const relative = label || (today ? dayLabel(date, today) : weekday);
   return h(
     'section',
     { class: `ticket${isVoid ? ' void' : ''}`, 'aria-label': t('book.summary') },
@@ -160,16 +167,25 @@ function ticket({ date, start, end, today, note, number, service, duration, pric
 // ---------------------------------------------------------------- the booking sheet
 
 export function openBooking(app, data, { serviceId, staffId = null, onClose } = {}) {
-  const { salon, services, staff, hours } = data;
+  const { salon, staff, hours } = data;
   const staffById = new Map(staff.map((m) => [m.id, m]));
+  // Opened from a team portrait: that person is the "who", so the menu is what they do
+  // and the "who" step never shows. (Someone not on the team, or who does nothing on
+  // the menu, is ignored: the sheet opens as usual.)
+  const doneBy = (id) => data.services.filter((s) => s.staff_ids.includes(id));
+  const lockedStaff = staffId != null && staffById.has(staffId) && doneBy(staffId).length ? staffId : null;
+  const services = lockedStaff != null ? doneBy(lockedStaff) : data.services;
+  if (serviceId != null && !services.some((s) => s.id === serviceId)) serviceId = null;
   // The salon's booking link may name a service (/book?service=3, from "book again").
   if (!serviceId && location.pathname === '/book') {
     const wanted = Number(new URLSearchParams(location.search).get('service'));
     if (services.some((s) => s.id === wanted)) serviceId = wanted;
   }
+  // Someone who does just one thing: booking with them is booking that.
+  if (!serviceId && lockedStaff != null && services.length === 1) serviceId = services[0].id;
   // Opened for one service of one person (a team portrait): there is no list to go back to.
   const lockedService = !!serviceId && services.length === 1;
-  const state = { step: 1, serviceId: serviceId ?? null, staffId, staffPicked: staffId != null, date: null, today: null, slot: null };
+  const state = { step: 1, serviceId: serviceId ?? null, staffId: lockedStaff, staffPicked: lockedStaff != null, date: null, today: null, slot: null };
   const saved = me();
 
   const service = () => services.find((s) => s.id === state.serviceId);
@@ -225,11 +241,13 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
   // An edge under the title once the content scrolls beneath it.
   scroller.addEventListener('scroll', () => panel.el.classList.toggle('scrolled', scroller.scrollTop > 4), { passive: true });
 
-  const prevStep = () => (state.step === 3 && soloStaff() ? 1 : state.step - 1);
+  /** Who does it is already settled: the person the sheet was opened for, or the only one who does it. */
+  const settledStaff = () => lockedStaff ?? soloStaff();
+  const prevStep = () => (state.step === 3 && settledStaff() != null ? 1 : state.step - 1);
   function go(step, { first = false } = {}) {
-    // One person does this service: they are the "who", so that step is skipped.
-    if (step === 2 && soloStaff()) {
-      state.staffId = soloStaff();
+    // Then they are the "who", and that step is skipped.
+    if (step === 2 && settledStaff() != null) {
+      state.staffId = settledStaff();
       state.staffPicked = true;
       step = 3;
     }
@@ -239,7 +257,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
   }
   back.addEventListener('click', () => go(prevStep()));
 
-  const slotText = (slot) => `${dayLabel(slotDay(slot), state.today)} · ${fmtTime(slot.time)}`;
+  const slotText = (slot) => `${slotDayText(slot, state.today)} · ${fmtTime(slot.time)}`;
   const crumb = (onClick, ...children) => h(
     onClick ? 'button' : 'span',
     { class: 'crumb', type: onClick ? 'button' : null, title: onClick ? t('book.change') : null, onclick: onClick },
@@ -257,10 +275,11 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
         state.step < 4 ? h('span', { class: 'faint', text: fmtDuration(s.duration_min) }) : null,
       ));
     }
-    if (s && state.step > 2 && state.staffPicked) {
+    // Opened for one person, they are named from the start: the menu below is theirs.
+    if (state.staffPicked && (lockedStaff != null || (s && state.step > 2))) {
       const m = state.staffId ? staffById.get(state.staffId) : null;
       items.push(crumb(
-        soloStaff() ? null : () => go(2),
+        settledStaff() != null ? null : () => go(2),
         m ? avatar(m.photo_url, pick(m, 'name')) : icon('sparkles'),
         m ? h('span', null, `${t('bk.with')} `, h('bdi', { text: pick(m, 'name') })) : h('span', { text: t('book.anyone') }),
       ));
@@ -295,15 +314,15 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
   function pickService(id) {
     if (id !== state.serviceId) {
       state.serviceId = id;
-      state.staffId = null;
-      state.staffPicked = false;
+      state.staffId = lockedStaff;
+      state.staffPicked = lockedStaff != null;
       state.slot = null;
     }
     go(2);
   }
 
   function stepService() {
-    const multiStaff = staff.length > 1;
+    const multiStaff = lockedStaff == null && staff.length > 1;
     return h('div', { class: 'p-services bk-services' }, stagger(services.map((s) => {
       // Who does it, only when that narrows things down (as on the salon's page).
       const who = multiStaff && s.staff_ids.length < staff.length ? s.staff_ids.map((id) => staffById.get(id)).filter(Boolean) : [];
@@ -349,7 +368,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
       clear(box, free
         ? [
           h('span', { class: 'lbl' }, h('i', { class: 'dot ok', 'aria-hidden': 'true' }), t('book.earliest_lbl')),
-          h('b', { class: 'num' }, h('span', { text: dayLabel(slotDay(free), state.today) }), h('span', { text: fmtTime(free.time) })),
+          h('b', { class: 'num' }, h('span', { text: slotDayText(free, state.today) }), h('span', { text: fmtTime(free.time) })),
         ]
         : h('span', { class: 'lbl', text: t('book.none_soon') }));
       return null;
@@ -469,7 +488,18 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
           loadSlots(date);
         },
       });
-      clear(days, h('div', { class: 'bk-month', text: monthCaption(res.days.map((d) => d.date)) }), strip.el);
+      // What is left of last night's opening comes first, under the day it opened: it
+      // reads "Tonight" with a moon, not as yesterday's date, and leaves the month out.
+      for (const d of res.days.filter((x) => x.late_night)) {
+        const chip = strip.el.querySelector(`[data-date="${d.date}"]`);
+        if (!chip) continue;
+        chip.classList.add('late');
+        chip.setAttribute('aria-label', `${t('book.tonight')} · ${t('book.after_midnight')}`);
+        chip.querySelector('.dw').textContent = t('book.tonight');
+        clear(chip.querySelector('.dn'), periodIcon('stars'));
+        chip.querySelector('.dm')?.remove();
+      }
+      clear(days, h('div', { class: 'bk-month', text: monthCaption(res.days.filter((d) => !d.late_night).map((d) => d.date)) }), strip.el);
       loadSlots(first);
     }).catch((err) => clear(days, h('p', { class: 'empty small', text: errorText(err) })));
     return wrap;
@@ -496,6 +526,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
         start: clockOf(startMin),
         end: clockOf(startMin + s.duration_min),
         today: state.today,
+        label: slotDayText(state.slot, state.today),
         note: late ? [periodIcon('stars'), t('book.late_note', { day: fmtDate(state.slot.date, { weekday: 'long' }) })] : null,
         service: { icon: s.icon, name: pick(s, 'name') },
         duration: s.duration_min,
@@ -614,6 +645,21 @@ export function bookingPage(app, token) {
   let poll = null;
   let deadline = 0;
   let offline = null;
+  // While the page itself changes the booking (sending, replacing, cancelling), a poll's
+  // answer, asked before the change, must not draw over it: it is dropped, and the
+  // change's own answer is drawn instead.
+  let changing = 0;
+  let version = 0;
+  const hold = () => {
+    changing++;
+    let open = true;
+    return () => {
+      if (!open) return;
+      open = false;
+      changing--;
+      version++;
+    };
+  };
   // The screenshot picked but not sent yet; survives re-renders.
   let proofFile = null;
   let proofPreview = null;
@@ -635,6 +681,7 @@ export function bookingPage(app, token) {
   });
 
   async function load() {
+    const asked = version;
     let res;
     try {
       res = await api('GET', `/api/public/bookings/${token}`);
@@ -656,6 +703,7 @@ export function bookingPage(app, token) {
       appReady();
       return;
     }
+    if (asked !== version || changing) return;
     if (offline) offline.hidden = true;
     const first = !booking;
     if (first) info = await infoP;
@@ -666,6 +714,20 @@ export function bookingPage(app, token) {
     if (first || changed) render(changed);
     else if (booking.status === 'pending_payment' && booking.expires_in_s != null) deadline = Date.now() + booking.expires_in_s * 1000;
     if (first) appReady();
+  }
+
+  /**
+   * The evening a small-hours visit belongs to: a time before the close of a night that
+   * opened the day before (Thursday 18:00–02:00 for Friday 01:00) is that night's, as
+   * the booking sheet said when it was booked. The date and time stay the visit's own.
+   */
+  function nightBefore(b) {
+    const week = info?.hours;
+    if (!Array.isArray(week)) return null;
+    const eve = addDays(b.date, -1);
+    const start = toMin(b.start);
+    const late = (week[dateOf(eve).getUTCDay()] ?? []).some((r) => toMin(r.close) <= toMin(r.open) && start < toMin(r.close));
+    return late ? eve : null;
   }
 
   /** "See you in two days" / "today, in 3 hours": the ticket below has the date itself. */
@@ -717,11 +779,15 @@ export function bookingPage(app, token) {
     const cliq = b.status === 'pending_payment' ? cliqCard(b) : null;
     const proof = b.status === 'payment_sent' && b.proof_url ? proofCard(b) : null;
     const today = info ? zonedNow(info.salon?.timezone)?.date : null;
+    const eve = nightBefore(b);
     const details = ticket({
       date: b.date,
       start: b.start,
       end: b.end,
       today,
+      // Tonight's small hours, while they are still ahead, read as on the booking sheet.
+      label: eve && b.upcoming && b.date === today ? t('book.tonight') : null,
+      note: eve ? [periodIcon('stars'), t('book.late_note', { day: fmtDate(eve, { weekday: 'long' }) })] : null,
       number: b.id,
       service: { icon: b.service.icon, name: pick(b.service, 'name') },
       duration: b.duration_min,
@@ -750,7 +816,12 @@ export function bookingPage(app, token) {
     cancel?.addEventListener('click', async () => {
       if (!(await confirmDelete({ title: t('bk.cancel'), message: t('bk.cancel_confirm'), yesText: t('bk.cancel') }))) return;
       busy(cancel, async () => {
-        booking = (await api('POST', `/api/public/bookings/${token}/cancel`)).booking;
+        const done = hold();
+        try {
+          booking = (await api('POST', `/api/public/bookings/${token}/cancel`)).booking;
+        } finally {
+          done();
+        }
         render(true);
       });
     });
@@ -766,6 +837,14 @@ export function bookingPage(app, token) {
       ),
       h('main', { class: 'page stack-lg bk-main' }, stagger([hero, track, actions, cliq, proof, details, again, contact, cancel].filter(Boolean))),
     );
+    // A new status redraws the page under the customer (often from a button far down):
+    // the news is at the top, and focus, whose button is gone, goes to its title.
+    if (changed) {
+      const heading = hero.querySelector('h1');
+      heading.tabIndex = -1;
+      heading.focus({ preventScroll: true });
+      window.scrollTo({ top: 0, behavior: reducedMotion() ? 'auto' : 'smooth' });
+    }
 
     // The confirmation is the moment to celebrate: when it happens with the page open,
     // and the first time the customer opens a confirmed booking on this device.
@@ -925,16 +1004,25 @@ export function bookingPage(app, token) {
       renderDrop();
     });
     renderDrop();
+    // The screenshot is what counts: once it is in, the booking waits on the salon (the
+    // hold's clock stops). The sender's name is a note on top, sent after it; if that
+    // one fails, the booking is no worse off, so it does not hold the page up.
     sent.addEventListener('click', () => busy(sent, async () => {
+      const done = hold();
+      let res;
       try {
-        await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(proofFile, 3000));
-        booking = (await api('POST', `/api/public/bookings/${token}/sent`, { note: note.value })).booking;
-        setProof(null);
-        render(true);
+        res = await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(proofFile, 3000));
       } catch (err) {
+        done();
         if (err.code === 'not_pending') load();
         throw err;
       }
+      booking = res.booking;
+      setProof(null);
+      const text = note.value.trim();
+      if (text) booking = (await api('POST', `/api/public/bookings/${token}/sent`, { note: text }).catch(() => null))?.booking ?? booking;
+      done();
+      render(true);
     }));
     const amount = fmtPrice(b.deposit, s.currency);
     return h(
@@ -966,7 +1054,16 @@ export function bookingPage(app, token) {
       const file = await pickImage();
       if (!file) return;
       busy(replace, async () => {
-        booking = (await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(file, 3000))).booking;
+        const done = hold();
+        try {
+          booking = (await api('PUT', `/api/public/bookings/${token}/proof`, await prepareImage(file, 3000))).booking;
+        } catch (err) {
+          done();
+          // Decided meanwhile, or the visit has begun: show where things stand.
+          if (err.code === 'not_pending') load();
+          throw err;
+        }
+        done();
         toast(t('bk.replaced'));
         render(false);
       });
@@ -981,30 +1078,4 @@ export function bookingPage(app, token) {
 
   load();
   return el;
-}
-
-/** "Your bookings" on the salon page: upcoming ones made on this device. */
-export function myBookingsCard(salon) {
-  const list = myBookings(salon.id);
-  if (!list.length) return null;
-  const box = h('div', { class: 'card flush' });
-  const section = h('section', { hidden: true }, h('div', { class: 'p-head' }, h('h2', { text: t('book.mine') })), box);
-  Promise.all(list.slice(0, 5).map((item) => api('GET', `/api/public/bookings/${item.token}`).then((r) => ({ ...item, booking: r.booking })).catch(() => null)))
-    .then((rows) => {
-      const live = rows.filter((r) => r && (r.booking.upcoming || LIVE.has(r.booking.status)) && !['cancelled', 'expired'].includes(r.booking.status));
-      if (!live.length) return;
-      clear(box, h('ul', { class: 'list' }, live.map((r) => h(
-        'li',
-        null,
-        h(
-          'a',
-          { class: 'svc', href: `/b/${r.token}` },
-          h('div', { class: 'tile emoji-tile', text: r.booking.service.icon || '✂️' }),
-          h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(r.booking.service, 'name') }), h('div', { class: 'meta', text: `${fmtDate(r.booking.date, { weekday: 'long', day: 'numeric', month: 'short' })} · ${fmtTime(r.booking.start)}` })),
-          h('span', { class: `pill status-${r.booking.status}`, text: r.booking.status === 'payment_sent' ? t('bk.payment_sent') : t(`status.${r.booking.status}`) }),
-        ),
-      ))));
-      section.hidden = false;
-    });
-  return section;
 }

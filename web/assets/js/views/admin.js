@@ -639,10 +639,14 @@ export function adminView(app) {
   ];
   const body = h('div', null, ...skeleton());
   let loaded = false;
+  // Only the newest request may paint: a slow answer must not cover a later one.
+  let seq = 0;
 
   async function load() {
+    const mine = ++seq;
     try {
       const data = await api('GET', '/api/admin/salons');
+      if (mine !== seq) return;
       loaded = true;
       clear(
         body,
@@ -653,21 +657,27 @@ export function adminView(app) {
           : h('div', { class: 'card empty admin-empty' }, h('div', { class: 'tile' }, icon('store')), h('p', { text: t('admin.empty') })),
       );
     } catch (err) {
-      // A refresh after an edit keeps the dashboard; a first load that fails says so, with a way to try again.
+      if (mine !== seq) return;
+      // A refresh after an edit keeps the dashboard and only toasts. A first load that
+      // fails says why and offers to try again in place (an installed app has no reload button).
       if (loaded) toastError(err);
       else {
-        clear(body, h(
-          'div',
-          { class: 'card empty load-fail' },
-          h('div', { class: 'tile' }, icon('alert')),
-          h('p', { text: errorText(err) }),
-          h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => { clear(body, ...skeleton()); load(); } }),
-        ));
+        const retry = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: start }, icon('undo'), t('retry'));
+        clear(body, h('div', { class: 'card empty load-error rise', role: 'alert' }, h('div', { class: 'tile' }, icon('alert')), h('p', { text: errorText(err) }), retry));
       }
     }
     appReady();
   }
+  /** The first load, again: the skeleton comes back while it runs. */
+  function start() {
+    clear(body, ...skeleton());
+    load();
+  }
   load();
+  // Back online after a failed first load: try again by itself.
+  const onOnline = () => body.querySelector('.load-error') && start();
+  addEventListener('online', onOnline);
+  app.onUnmount(() => removeEventListener('online', onOnline));
 
   const header = h(
     'header',

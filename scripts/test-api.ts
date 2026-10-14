@@ -8,7 +8,7 @@ import http from 'node:http';
 import sharp from 'sharp';
 import { hashPassword } from '../src/auth.js';
 import { addDays, availability, clock, createBooking, purgeProofs } from '../src/booking.js';
-import { dayBase, nightBase } from '../src/colors.js';
+import { nightBase } from '../src/colors.js';
 import { pool, query, tx } from '../src/db.js';
 import { renderPortrait } from '../src/media.js';
 import type { Salon } from '../src/tenancy.js';
@@ -198,6 +198,9 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const typo = await anon.get(hostOf('nosuchsalon'), '/book', { Accept: 'text/html' });
   const typoHtml = typo.body.toString('utf8');
   expect(typo.status === 404 && String(typo.headers['content-type']).startsWith('text/html') && typoHtml.includes('لا يوجد صالون بهذا الرابط') && typoHtml.includes(`href="http://${LANDING}/"`), "a mistyped salon link in a browser: a page that says so, with the way to the platform", { status: typo.status, type: typo.headers['content-type'] });
+  const typoBare = await anon.get(hostOf('nosuchsalon'), '/book');
+  expect(typoBare.status === 404 && typoBare.body.toString('utf8').includes('لا يوجد صالون بهذا الرابط'), 'the same page for a request that does not say it wants HTML (a link preview)', { status: typoBare.status, type: typoBare.headers['content-type'] });
+  expectStatus(await anon.get(hostOf('nosuchsalon'), '/icons/icon-192.png'), 404, "a file on a mistyped link: a plain answer, not the page", 'not_found');
   expect(String((await anon.get('nothing.example', '/', { Accept: 'text/html' })).headers['content-type']).startsWith('text/plain'), 'a host on no platform still gets the plain answer');
   expectStatus(await anon.get(`x.y.${DOMAIN}`, '/api/context'), 404, 'nested subdomain');
   const pctx = await anon.get(PLATFORM, '/api/context');
@@ -301,7 +304,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const brandPub = (await anon.get(A, '/api/public/salon')).json?.salon;
   expect(brandPub?.page_theme === 'day' && brandPub.cover_url === cover.json?.salon.cover_url && brandPub.icon_v === ownIcon.json?.salon.icon_v, 'customers get the look, the banner and the icon version', brandPub);
   const dayManifest = JSON.parse((await anon.get(A, '/manifest.webmanifest')).body.toString('utf8'));
-  expect(dayManifest.background_color === dayBase('#0f3d3e') && dayManifest.icons[0].src.includes(`v=${brandPub?.icon_v}`), "the customers' app launches on the day page", dayManifest);
+  // By day the app opens on its hero in the salon's main colour, so the launch screen and bars wear it.
+  expect(dayManifest.background_color === '#0f3d3e' && dayManifest.theme_color === '#0f3d3e' && dayManifest.icons[0].src.includes(`v=${brandPub?.icon_v}`), "the customers' app launches on the day hero, in the salon's main colour", dayManifest);
   const ownerManifest = JSON.parse((await anon.get(A, '/admin.webmanifest')).body.toString('utf8'));
   expect(ownerManifest.id === '/admin' && ownerManifest.start_url === '/admin' && ownerManifest.scope === '/admin' && ownerManifest.name === 'إدارة صالون أ' && ownerManifest.background_color === nightBase('#0f3d3e') && ownerManifest.icons.every((i: any) => i.src.startsWith('/icons/owner-')), "the owner's app: its own id, name, scope, colours and icons", ownerManifest);
   const plainIcon = await anon.get(A, '/icons/icon-512.png');
@@ -318,6 +322,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(customerHtml.includes('data-page="day"') && customerHtml.includes('class="boot splash"') && customerHtml.includes('apple-touch-startup-image') && customerHtml.includes('--accent-ink:'), "the customers' app: day page, a splash with the salon's icon, iOS launch screens");
   const launch = await anon.get(A, `/splash/1179x2556.png?v=${brandPub?.icon_v}`);
   expect((await pngSize(launch)) === '1179x2556' && /max-age=31536000/.test(String(launch.headers['cache-control'])), 'an iPhone launch screen at the exact size');
+  const launchCorner = launch.status === 200 ? [...(await sharp(launch.body).extract({ left: 0, top: 0, width: 1, height: 1 }).removeAlpha().raw().toBuffer())].join() : '';
+  expect(launchCorner === '15,61,62' && customerHtml.includes(`.png?v=${brandPub?.icon_v}-0f3d3e"`), "by day the launch screen is the hero's main colour, and its address says so", launchCorner);
   expect((await pngSize(await anon.get(A, '/splash/owner-2048x2732.png'))) === '2048x2732', "an iPad launch screen for the owner's app");
   expectStatus(await anon.get(A, '/splash/1000x1000.png'), 404, 'only real screen sizes');
   expectStatus(await anon.get(PLATFORM, '/admin'), 404, 'no owner app on the platform dashboard');
@@ -658,7 +664,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await anon.get(A2, '/api/public/salon'), 200, 'the new link works');
   const redirect = await anon.get(A, '/some/page?x=1');
   expect(redirect.status === 302 && redirect.headers.location === `http://${A2}/some/page?x=1` && redirect.headers['cache-control'] === 'no-store', 'the old link sends people to the same page on the new one', { status: redirect.status, location: redirect.headers.location });
-  expectStatus(await anon.request(A, 'POST', '/api/public/bookings', { json: {} }), 404, 'writes to an old link are not redirected');
+  expectStatus(await anon.request(A, 'POST', '/api/public/bookings', { json: {} }), 404, 'writes to an old link are not redirected', 'not_found');
   const doorOld = await anon.get(LANDING, `/admin?salon=${subA}`);
   expect(doorOld.status === 302 && doorOld.headers.location === `http://${A2}/admin`, "an owner who types the salon's earlier link reaches its dashboard on the new one", doorOld.headers.location);
   expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: subA, name_ar: 'x', owner_phone: '0790001234', owner_password: 'whatever-123' }), 409, 'an old link is not given to another salon', 'subdomain_taken');
@@ -676,6 +682,11 @@ async function tests(adminCreds: { phone: string; password: string }) {
     const r = await anon.get(A, path, { Accept: 'text/html' });
     expect(r.status === 503 && String(r.headers['content-type']).startsWith('text/html') && r.body.toString('utf8').includes('صالون أ الجديد') && r.headers['retry-after'] === '3600', `${path} in a browser: the same calm page`, { status: r.status, type: r.headers['content-type'] });
   }
+  // Also when nothing says HTML (a link preview fetching the shared link) and for HEAD.
+  const bare = await anon.get(A, `/b/${someToken}`, { Accept: '*/*' });
+  const head = await anon.request(A, 'HEAD', '/book');
+  expect(bare.status === 503 && String(bare.headers['content-type']).startsWith('text/html') && head.status === 503 && head.body.length === 0 && String(head.headers['content-type']).startsWith('text/html'), 'a page asked for without text/html, or with HEAD: the same calm page, not JSON', { bare: bare.status, head: head.status });
+  expectStatus(await anon.get(A, '/api/public/salon', { Accept: 'text/html' }), 404, 'the API answers in JSON even when asked for HTML', 'suspended');
   const suspendedPolicy = await anon.get(A, '/privacy?lang=en');
   expect(suspendedPolicy.status === 302 && suspendedPolicy.headers.location === `http://${LANDING}/privacy?lang=en`, "the policies are read on the platform's own domain", suspendedPolicy.headers.location);
   expectStatus(await anon.get(A, '/icons/icon-192.png'), 404, 'icons and other files are simply gone', 'not_found');
@@ -746,7 +757,9 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expectStatus(days, 200, 'next two weeks');
   expect(days.json?.days.length === 14 && days.json.days[1].slots > 0, 'every day has slots when open around the clock', days.json?.days?.slice(0, 2));
   const tomorrow = days.json?.days[1].date as string;
-  const avail = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`);
+  // A whole day is checked two days out: in the last half hour before midnight, the
+  // booking lead time rightly keeps tomorrow's 00:00 off the list.
+  const avail = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${days.json?.days[2].date}`);
   const first = avail.json?.slots?.[0];
   expect(first?.time === '00:00' && first.staff.length === 2 && avail.json.slots.length === 96 - 1, '15-minute slots across the day, both barbers free', { first, n: avail.json?.slots?.length });
   const colourSlots = await guest.get(K, `/api/public/availability?service_id=${color}&date=${tomorrow}`);

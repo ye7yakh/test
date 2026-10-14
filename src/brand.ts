@@ -48,7 +48,8 @@ export const studioColor = (s: Salon) => (s.studio_theme === 'brand' ? nightBase
 /** Changes whenever the shared-link picture would: the cover, or the icon on its page colour. */
 export const shareVersion = (s: Salon) => `${s.cover_media_id ?? iconVersion(s)}-${pageColor(s).slice(1)}-${s.color_accent.slice(1)}`;
 
-export const splashVersion = (s: Salon, owner: boolean) => `${iconVersion(s)}-${(owner ? studioColor(s) : pageColor(s)).slice(1)}`;
+/** Changes whenever a launch screen would: the icon, or the colour the app opens on. */
+export const splashVersion = (s: Salon, owner: boolean) => `${iconVersion(s)}-${(owner ? studioColor(s) : heroColor(s)).slice(1)}`;
 
 // iPhone and iPad screens (points, pixel ratio). iOS shows the matching launch image
 // while an installed web app opens; without one it shows a blank screen.

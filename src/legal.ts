@@ -32,8 +32,10 @@ interface Doc {
 }
 
 // Placeholders, filled in when the page is rendered: {brand} the platform's name,
-// {salon} the salon's, {days} how long a sign-in lasts, {contact} the WhatsApp
-// number as a link (sentences that need it are left out when there is none).
+// {salon} the salon's, {days} how long a sign-in lasts, {contact} the platform's
+// WhatsApp number as a link. There is no number until the admin sets one in the
+// dashboard (or SEED_CONTACT_PHONE does), so a sentence that needs {contact} stands
+// on its own and is left out without one; a section left empty goes with it.
 // **text** is bold.
 
 const PRIVACY: Record<Lang, Doc> = {
@@ -56,7 +58,7 @@ const PRIVACY: Record<Lang, Doc> = {
           [
             'اسمك ورقم هاتفك.',
             'تفاصيل الحجز: الخدمة والموظف والموعد والسعر والعربون وحالة الحجز.',
-            'صورة تحويل كليك إذا طلب الصالون عربونًا، والملاحظة التي تكتبها مع التحويل إن وجدت. قد تظهر في الصورة بيانات من تطبيق بنكك، مثل اسمك ومرجع التحويل، لذلك نحفظها بشكل خاص.',
+            'صورة تحويل كليك إذا طلب الصالون عربونًا، والملاحظة التي تكتبها مع التحويل إن وجدت. ترفعها أو تستبدلها قبل أن يبدأ موعدك فقط، وإلى أن يبتّ الصالون فيها. قد تظهر في الصورة بيانات من تطبيق بنكك، مثل اسمك ومرجع التحويل، لذلك نحفظها بشكل خاص.',
           ],
           '**عندما تدير صالونًا:**',
           [
@@ -101,7 +103,7 @@ const PRIVACY: Record<Lang, Doc> = {
         title: 'مدة الاحتفاظ بها',
         body: [
           [
-            '**صور التحويل:** نحذفها تلقائيًا بعد أسبوع من تأكيد الحجز أو رفضه أو انتهاء مهلته.',
+            '**صور التحويل:** نحذفها تلقائيًا بعد أسبوع من آخر تغيير على الحجز: تأكيده أو رفضه أو إلغاؤه أو انتهاء مهلته، أو تسجيل حضورك أو غيابك. وإذا لم يبتّ الصالون في التحويل، نحذف الصورة بعد أسبوع من موعد الزيارة، ويبقى الحجز نفسه في سجلات الصالون.',
             '**تسجيل الدخول:** ينتهي بعد {days} يومًا أو عند تسجيل الخروج، وعند تغيير كلمة المرور تُسجَّل الأجهزة الأخرى خروجًا.',
             '**الحجوزات وبيانات العملاء:** تبقى ضمن سجلات الصالون ما دام يستخدم المنصة، ويمكنك طلب حذفها (انظر «حقوقك»).',
             '**حساب الصالون ومعلوماته:** تبقى ما دام الحساب قائمًا، ونحذفها عندما يطلب صاحب الصالون إغلاقه، إلا ما يلزمنا القانون بالاحتفاظ به.',
@@ -176,7 +178,7 @@ const PRIVACY: Record<Lang, Doc> = {
           [
             'Your name and phone number.',
             'The booking: service, staff member, time, price, deposit and status.',
-            'Your CliQ transfer screenshot if the salon asks for a deposit, and any note you add with it. The screenshot can show details from your banking app, such as your name and the transfer reference, so we keep it private.',
+            'Your CliQ transfer screenshot if the salon asks for a deposit, and any note you add with it. You can upload or replace it only before your appointment starts, and until the salon decides on it. The screenshot can show details from your banking app, such as your name and the transfer reference, so we keep it private.',
           ],
           '**When you run a salon:**',
           [
@@ -221,7 +223,7 @@ const PRIVACY: Record<Lang, Doc> = {
         title: 'How long we keep it',
         body: [
           [
-            '**Transfer screenshots:** deleted automatically a week after the booking is confirmed, rejected or runs out of time.',
+            '**Transfer screenshots:** deleted automatically a week after the booking last changes: when it is confirmed, rejected or cancelled, runs out of time, or your visit is marked done or missed. If the salon never decides on the transfer, the screenshot is deleted a week after the appointment, and the booking itself stays in the salon\'s records.',
             '**Sign-ins:** end after {days} days or when you sign out; changing the password signs out other devices.',
             '**Bookings and customer details:** kept in the salon\'s records while the salon uses the platform. You can ask for them to be deleted (see "Your rights").',
             '**A salon\'s account and information:** kept while the account is open, and deleted when the owner asks us to close it, except what the law requires us to keep.',
@@ -307,7 +309,7 @@ const TERMS: Record<Lang, Doc> = {
           [
             'قد يطلب الصالون عربونًا لتثبيت الموعد. تحوّله من تطبيق بنكك إلى اسم كليك الخاص بالصالون، ثم ترفع صورة التحويل.',
             'يبقى الموعد محجوزًا لك خلال المهلة الظاهرة على صفحة الحجز. إذا لم ترسل التحويل خلالها يُلغى الحجز ويعود الموعد متاحًا.',
-            'ارفع صورة حقيقية للتحويل. يراجعها الصالون، فيؤكد الحجز أو يرفضه إذا لم يصله المبلغ.',
+            'ارفع صورة حقيقية للتحويل قبل أن يبدأ موعدك. يراجعها الصالون، فيؤكد الحجز أو يرفضه إذا لم يصله المبلغ، ويمكنك استبدالها إلى أن يقرّر.',
             'يذهب المبلغ إلى الصالون مباشرة. الاسترجاع أو الخصم من العربون عند الإلغاء أو عدم الحضور يخضع لسياسة الصالون وتطلبه منه، فنحن لا نستلم المال ولا نستطيع إرجاعه.',
           ],
         ],
@@ -389,7 +391,7 @@ const TERMS: Record<Lang, Doc> = {
           [
             'A salon may ask for a deposit to hold your time. You send it from your banking app to the salon\'s CliQ alias, then upload the transfer screenshot.',
             'Your time is held for the period shown on your booking page. If the transfer is not sent in time, the booking is cancelled and the time is released.',
-            'Upload a genuine screenshot. The salon checks it and confirms the booking, or rejects it if the money did not arrive.',
+            'Upload a genuine screenshot before your appointment starts. The salon checks it and confirms the booking, or rejects it if the money did not arrive; until it decides, you can replace the screenshot.',
             'The money goes straight to the salon. Refunds, or keeping a deposit after a cancellation or a missed appointment, follow the salon\'s policy and are a matter for the salon: we never receive the money and cannot return it.',
           ],
         ],
@@ -629,7 +631,6 @@ export function legalPage(ctx: Ctx, kind: LegalDoc): void {
   const query = en ? '?lang=en' : '';
   // One address for search engines: the platform's own domain.
   const canonical = `${proto}://${tenant.domain}${port}/${kind}`;
-  const other: LegalDoc = kind === 'privacy' ? 'terms' : 'privacy';
   const t = (ar: string, english: string) => (en ? english : ar);
   const updated = new Intl.DateTimeFormat(en ? 'en-GB' : 'ar-u-nu-latn', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(`${UPDATED}T00:00:00Z`));
   const icon = salon ? `/icons/icon-192.png?v=${iconVersion(salon)}` : '/icons/icon-192.png';

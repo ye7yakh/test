@@ -1,7 +1,7 @@
 // What customers (and anyone) can see on a salon's subdomain: the salon page data,
 // the per-salon PWA manifest and icons, the salon's images, the picture its shared
 // link shows, and what search engines may read.
-import { iconBackground, iconVersion, pageColor, shareVersion, SPLASH_SIZES, splashVersion, STUDIO_BG, studioColor } from '../brand.js';
+import { heroColor, iconBackground, iconVersion, pageColor, shareVersion, SPLASH_SIZES, splashVersion, STUDIO_BG, studioColor } from '../brand.js';
 import { accentForDark } from '../colors.js';
 import { loadSalonWeek } from '../hours.js';
 import { one, query, pool } from '../db.js';
@@ -84,7 +84,7 @@ function manifest(ctx: Ctx, owner: boolean) {
   const salon = requireSalon(ctx);
   const v = iconVersion(salon);
   const prefix = owner ? 'owner-' : '';
-  const color = owner ? studioColor(salon) : pageColor(salon);
+  const color = owner ? studioColor(salon) : heroColor(salon);
   const short = salon.name_ar.length > 12 && salon.name_en ? salon.name_en : salon.name_ar;
   const body = {
     id: owner ? '/admin' : '/',
@@ -97,7 +97,8 @@ function manifest(ctx: Ctx, owner: boolean) {
     scope: owner ? '/admin' : '/',
     display: 'standalone',
     orientation: 'portrait',
-    // The launch screen and bars match the page the app opens on.
+    // The launch screen and bars match what the app opens on: the owner's studio, or
+    // the customers' hero (the night page, or the salon's main colour by day).
     background_color: color,
     theme_color: color,
     icons: [
@@ -246,7 +247,7 @@ function robots(ctx: Ctx) {
   ctx.res.end(['User-agent: *', ...rules, ''].join('\n'));
 }
 
-/** iOS launch screens: the app's background with its icon. */
+/** iOS launch screens: what the app opens on (the studio, or the customers' hero) with its icon. */
 async function splash(ctx: Ctx) {
   const salon = requireSalon(ctx);
   const m = /^(owner-)?(\d{3,4})x(\d{3,4})\.png$/.exec(ctx.params.name ?? '');
@@ -255,7 +256,7 @@ async function splash(ctx: Ctx) {
   const [width, height] = [Number(m[2]), Number(m[3])];
   const png = await cached(`splash:${salon.id}:${splashVersion(salon, owner)}:${width}x${height}`, async () => {
     const icon = await salonIcon(salon, 'icon-512.png', false);
-    return render(() => renderSplash(width, height, owner ? studioColor(salon) : pageColor(salon), icon));
+    return render(() => renderSplash(width, height, owner ? studioColor(salon) : heroColor(salon), icon));
   });
   // The URL carries a version of everything in the picture.
   sendImage(ctx, png, 31536000);

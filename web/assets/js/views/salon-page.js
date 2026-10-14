@@ -16,11 +16,14 @@ export function salonPage(app, { book = false } = {}) {
   const el = h('div', { class: 'p-page' }, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
   api('GET', '/api/public/salon')
     .then((data) => {
+      // Left before the salon answered: this page is gone, and nothing of it (its
+      // colours, its listeners, the booking sheet) belongs on the screen shown now.
+      if (!el.isConnected) return;
       clear(el, render(app, data));
-      requestAnimationFrame(() => watchScroll(app, el, data.salon));
+      requestAnimationFrame(() => el.isConnected && watchScroll(app, el, data.salon));
       // The salon's booking link (/book) opens the booking sheet over its page; the
       // address goes back to the page itself once the sheet closes.
-      if (book) {
+      if (book && location.pathname === '/book') {
         const leave = () => history.replaceState(null, '', '/');
         if (data.salon.booking_enabled && data.services.length) openBooking(app, data, { onClose: leave });
         else leave();
@@ -365,11 +368,8 @@ function render(app, data) {
 
   // ---- team: portraits; tapping one books with that person
   const offers = (m) => services.some((s) => s.staff_ids.includes(m.id));
-  const bookWith = (m) => openBooking(app, {
-    ...data,
-    services: services.filter((s) => s.staff_ids.includes(m.id)).map((s) => ({ ...s, staff_ids: [m.id] })),
-    staff: [m],
-  }, { staffId: m.id });
+  // The sheet narrows the menu to what they do and skips "with whom?".
+  const bookWith = (m) => openBooking(app, data, { staffId: m.id });
   const photo = (m, alt) => (m.photo_url ? h('img', { src: m.photo_url, alt, loading: 'lazy' }) : h('div', { class: 'placeholder' }, icon('user')));
   const member = (m, i) => {
     const can = canBook && offers(m);

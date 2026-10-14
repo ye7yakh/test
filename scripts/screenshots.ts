@@ -1,13 +1,15 @@
 // Renders the app at phone width (and desktop) and presses through the whole
 // owner journey on a brand-new salon, saving a screenshot at each step to
-// screenshots/. Fails on any page error, console error, CSP violation, failed
-// request or missing element.
+// screenshots/. The platform's landing page comes first: still (reduced motion)
+// top to bottom, then its scroll story at its beats, and never wider than the
+// screen at 360, 400 and 1440. Fails on any page error, console error, CSP
+// violation, failed request, missing element or sideways scroll.
 //
 // Needs the api running (npm run dev) against a seeded database (npm run seed).
 //   BASE_HOST=localhost:3000 CHROME_PATH=/path/to/chrome npm run screenshots
 import fs from 'node:fs';
 import path from 'node:path';
-import sharp from 'sharp';
+import sharp, { type OverlayOptions } from 'sharp';
 import puppeteer, { type Browser, type BrowserContext, type ElementHandle, type Page } from 'puppeteer-core';
 
 const BASE_HOST = process.env.BASE_HOST ?? 'localhost:3000';
@@ -40,9 +42,14 @@ async function settle(page: Page, ms = 700) {
   await sleep(ms); // entrance animations and view transitions
 }
 
+const nextFile = (name: string) => path.join(OUT, `${String(++shot).padStart(2, '0')}-${name}.png`);
+
+/** Two animation frames: the page has drawn what its scroll position asks for. */
+const frames = (page: Page) => page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+
 async function snap(page: Page, name: string, { full = false, wait = 700 } = {}) {
   await settle(page, wait);
-  const file = path.join(OUT, `${String(++shot).padStart(2, '0')}-${name}.png`);
+  const file = nextFile(name);
   const viewport = page.viewport()!;
   if (full) {
     // Grow the viewport to the whole page so fixed bars sit where they would at the end of a scroll.
@@ -52,6 +59,52 @@ async function snap(page: Page, name: string, { full = false, wait = 700 } = {})
   }
   await page.screenshot({ path: file });
   if (full) await page.setViewport(viewport);
+  console.log(`  ${path.relative(process.cwd(), file)}`);
+}
+
+/**
+ * The whole page top to bottom at its own viewport size, as viewport captures stitched
+ * together. Growing the viewport (snap's full) would stretch every svh-tall section, and
+ * one capture beyond the viewport leaves the sections under content-visibility: auto blank.
+ */
+async function snapStitched(page: Page, name: string, wait = 1200) {
+  await settle(page, wait);
+  const file = nextFile(name);
+  const { width, height: vh } = page.viewport()!;
+  const height = () => page.evaluate(() => document.scrollingElement!.scrollHeight);
+  // A first pass down the page: sections under content-visibility take their real height.
+  let total = await height();
+  for (let pass = 0; pass < 3; pass++) {
+    for (let y = 0; y < total; y += vh) {
+      await page.evaluate((to) => window.scrollTo(0, to), y);
+      await frames(page);
+    }
+    const now = await height();
+    if (now === total) break;
+    total = now;
+  }
+  const parts: OverlayOptions[] = [];
+  for (let top = 0; top < total; top += vh) {
+    // Where the page really went: the last tile starts higher, and only its lower part is new.
+    const y = await page.evaluate((to) => {
+      window.scrollTo(0, to);
+      return Math.round(scrollY);
+    }, Math.max(0, Math.min(top, total - vh)));
+    await frames(page);
+    await sleep(350); // late images paint
+    // The bar and any other fixed chrome once, at the top of the page.
+    if (top === vh) {
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll<HTMLElement>('body *')) if (getComputedStyle(el).position === 'fixed') el.style.visibility = 'hidden';
+      });
+      await frames(page);
+    }
+    const cut = top - y;
+    if (cut < 0 || cut >= vh) throw new Error(`${name}: asked to scroll to ${top}, the page stopped at ${y}`);
+    const tile = Buffer.from(await page.screenshot());
+    parts.push({ input: await sharp(tile).extract({ left: 0, top: cut, width, height: Math.min(vh, total - y) - cut }).toBuffer(), top, left: 0 });
+  }
+  await sharp({ create: { width, height: total, channels: 3, background: '#000000' } }).composite(parts).png().toFile(file);
   console.log(`  ${path.relative(process.cwd(), file)}`);
 }
 
@@ -101,6 +154,10 @@ async function go(page: Page, url: string, selector: string) {
 async function newPage(browser: Browser | BrowserContext, viewport: typeof PHONE | typeof DESKTOP = PHONE) {
   const page = await browser.newPage();
   await page.setViewport(viewport);
+  // Chrome also logs these; the listener names the directive and the source line.
+  await page.evaluateOnNewDocument(() => {
+    document.addEventListener('securitypolicyviolation', (e) => console.error(`CSP violation: ${e.violatedDirective} ${e.blockedURI} at ${e.sourceFile}:${e.lineNumber}`));
+  });
   page.on('pageerror', (err) => problems.push(`pageerror: ${(err as Error).message}`));
   page.on('console', (msg) => {
     // Failed requests are reported with their URL by the response handler below.
@@ -121,6 +178,113 @@ async function login(page: Page, base: string, phone: string, password: string, 
   await page.type('input[name=phone]', phone);
   await page.type('input[name=password]', password);
   await page.click('button[type=submit]');
+}
+
+async function fitsWidth(page: Page, where: string) {
+  const { scrollWidth, width } = await page.evaluate(() => ({ scrollWidth: document.scrollingElement!.scrollWidth, width: innerWidth }));
+  if (scrollWidth > width) problems.push(`${where}: the page scrolls sideways (scrollWidth ${scrollWidth} > innerWidth ${width})`);
+}
+
+type Stop = {
+  name: string;
+  /** The scene's element: a pin's tall wrapper, or the block a view scene follows. */
+  sel: string;
+  /** pin: p over the pinned stretch; view: p over the element's pass through the viewport; top: just under the bar; centre: centred. */
+  kind: 'pin' | 'view' | 'top' | 'centre';
+  p?: number;
+  /** Selectors that must match once there: the scene really is at that beat. */
+  expect?: string[];
+  wideOnly?: boolean;
+  wait?: number;
+  then?: (page: Page) => Promise<unknown>;
+};
+
+/** The landing's scroll story, one stop per beat worth seeing (landing spec §11). */
+const LANDING_STOPS: Stop[] = [
+  { name: 'cover', sel: '#cover', kind: 'pin', p: 0, expect: ['#cover.go'], wait: 2600 },
+  { name: 'cover-push', sel: '#cover', kind: 'pin', p: 0.5 },
+  { name: 'white-label', sel: '#white-label .wl-pin', kind: 'pin', p: 0.16, expect: ['.wl-stage[data-l="1"]'] },
+  { name: 'white-label-wipe', sel: '#white-label .wl-pin', kind: 'pin', p: 0.34, expect: ['.wl-stage[data-l="3"]'] },
+  { name: 'white-label-magnifier', sel: '#white-label .wl-pin', kind: 'pin', p: 0.93, expect: ['.wl-stage.mag'] },
+  { name: 'collection', sel: '#collection .co-pin', kind: 'pin', p: 0.43, expect: ['#collection .co-pin.pin'], wideOnly: true },
+  {
+    name: 'try-emerald-day',
+    sel: '#try .try-art',
+    kind: 'centre',
+    expect: ['.try-sw[data-id="emerald"][aria-pressed="true"]', '.try-look button:last-child[aria-pressed="true"]'],
+    then: (page) => page.evaluate(() => {
+      document.querySelector<HTMLElement>('.try-sw[data-id="emerald"]')!.click();
+      document.querySelector<HTMLElement>('.try-look button:last-child')!.click();
+    }),
+  },
+  { name: 'pocket-landed', sel: '#pocket .pk-pin', kind: 'pin', p: 0.7, expect: ['.pk-stage[data-s="4"]'], wait: 1400 },
+  { name: 'booking-developed', sel: '#booking .bk-grid', kind: 'top', expect: ['.l-print.dev'], wait: 2200 },
+  // The first scroll positions past each beat (the curtain at .55, the last bulb at .55).
+  { name: 'backstage-curtain', sel: '#backstage .bs-art', kind: 'view', p: 0.56, expect: ['#backstage.b1.b2'], wait: 1200 },
+  { name: 'finale-lit', sel: '#finale', kind: 'view', p: 0.56, expect: ['#finale.lit'], wait: 1400 },
+];
+
+async function scrollToStop(page: Page, stop: Stop) {
+  // Twice: a section painted for the first time (content-visibility) can move the ones after it.
+  for (let i = 0; i < 2; i++) {
+    const y = await page.evaluate((sel, kind, p) => {
+      const el = document.querySelector<HTMLElement>(sel)!;
+      const top = el.getBoundingClientRect().top + scrollY;
+      const vh = innerHeight;
+      const at = kind === 'pin' ? top + p * (el.offsetHeight - vh)
+        : kind === 'view' ? top - vh + p * (el.offsetHeight + vh)
+        : kind === 'top' ? top - 88
+        : top + el.offsetHeight / 2 - vh / 2;
+      return Math.round(Math.max(0, Math.min(at, document.scrollingElement!.scrollHeight - vh)));
+    }, stop.sel, stop.kind, stop.p ?? 0);
+    await page.evaluate((to) => window.scrollTo(0, to), y);
+    await frames(page);
+    if (!i) await sleep(300);
+  }
+}
+
+async function landingPages(browser: Browser) {
+  const motion = (page: Page) => page.$eval('.land', (el) => (el as HTMLElement).dataset.motion);
+  // Reduced motion: every section at its natural height, the whole page in one picture.
+  for (const [viewport, name] of [[DESKTOP, 'landing-desktop'], [PHONE, 'landing']] as const) {
+    const page = await newPage(browser, viewport);
+    await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+    await go(page, `${LANDING}/`, '.cv-h1');
+    if ((await motion(page)) !== 'still') problems.push(`${name}: reduced motion did not give the still page`);
+    await fitsWidth(page, name);
+    await snapStitched(page, name, 1600);
+    await fitsWidth(page, name);
+    await page.close();
+  }
+  // Full motion: the scroll story at its stops (scroll, two frames, then the beat's transitions).
+  for (const [viewport, label] of [[DESKTOP, 'landing-desktop'], [PHONE, 'landing']] as const) {
+    const page = await newPage(browser, viewport);
+    await go(page, `${LANDING}/`, '.cv-h1');
+    if ((await motion(page)) !== 'full') problems.push(`${label}: the landing did not start in full motion`);
+    for (const stop of LANDING_STOPS) {
+      if (stop.wideOnly && viewport.width < 1024) continue;
+      await scrollToStop(page, stop);
+      await stop.then?.(page);
+      await snap(page, `${label}-${stop.name}`, { wait: stop.wait ?? 900 });
+      for (const sel of stop.expect ?? []) if (!(await page.$(sel))) problems.push(`${label}-${stop.name}: nothing matches ${sel}`);
+      await fitsWidth(page, `${label}-${stop.name}`);
+    }
+    await page.close();
+  }
+  // The narrowest phones, moving and still: nothing pushes the page sideways at any stop.
+  for (const reduced of [false, true]) {
+    const page = await newPage(browser, { ...PHONE, width: 360, height: 740 });
+    if (reduced) await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
+    await go(page, `${LANDING}/`, '.cv-h1');
+    for (const stop of LANDING_STOPS) {
+      if (stop.wideOnly) continue;
+      // Still, nothing is pinned: the section itself, centred.
+      await scrollToStop(page, reduced ? { ...stop, sel: stop.sel.split(' ')[0]!, kind: 'centre' } : stop);
+      await sleep(200);
+      await fitsWidth(page, `landing 360 ${reduced ? 'still' : 'moving'} at ${stop.name}`);
+    }
+    await page.close();
+  }
 }
 
 /** Test portraits that disagree on purpose (framing, colour cast), plus a logo. */
@@ -176,14 +340,7 @@ async function main() {
   const STUDIO = `${SALON}/admin`;
   try {
     // ---- the platform's landing page, for salon owners
-    const landDesk = await newPage(browser, DESKTOP);
-    await go(landDesk, `${LANDING}/`, '.l-title');
-    await snap(landDesk, 'landing-desktop', { wait: 2600 });
-    await landDesk.close();
-    const land = await newPage(browser);
-    await go(land, `${LANDING}/`, '.l-title');
-    await snap(land, 'landing', { full: true, wait: 2600 });
-    await land.close();
+    await landingPages(browser);
 
     // ---- the platform owner creates a salon
     const admin = await newPage(browser);
@@ -192,7 +349,7 @@ async function main() {
     await admin.$eval('input[name=password]', (el) => { (el as HTMLInputElement).value = ''; });
     await admin.type('input[name=password]', ADMIN.password);
     await admin.click('button[type=submit]');
-    await admin.waitForSelector('.trend-card svg .line');
+    await admin.waitForSelector('.trend-card svg .bar');
     await snap(admin, 'admin', { full: true, wait: 2400 });
     // The platform's own settings: its landing page and contact number.
     await admin.click('.s-header .icon-btn[aria-label="إعدادات المنصة"]');
@@ -214,9 +371,9 @@ async function main() {
     await snap(admin, 'admin-handover', { wait: 1400 });
     await clickText(admin, '.sheet-foot button', 'تم');
     await admin.waitForFunction(() => !document.querySelector('.sheet'));
-    // The new salon's sheet: its numbers, setup, owner, name and link.
+    // The new salon's sheet: nothing to count yet (a nudge for the owner), its setup, owner, name and link.
     await clickText(admin, '.salon-card', sub);
-    await admin.waitForSelector('.sheet .sd-stats');
+    await admin.waitForSelector('.sheet .sd-quiet');
     await snap(admin, 'admin-salon', { wait: 900 });
     // The owner forgot their password: a new temporary one, shown once.
     await clickText(admin, '.sheet button', 'إعادة تعيين كلمة المرور');
@@ -238,7 +395,8 @@ async function main() {
     await page.type('.sheet input[name=current]', owner.password);
     owner.password = 'owner-pass-888';
     await page.type('.sheet input[name=next]', owner.password);
-    await clickText(page, '.sheet button', 'تغيير كلمة المرور');
+    // The button under the fields (the row that opens them carries the same title).
+    await clickText(page, '.sheet .pw-fields button', 'تغيير كلمة المرور');
     await find(page, '.toast', 'تم تغيير كلمة المرور');
     await page.waitForFunction(() => !document.querySelector('.temp-pw'));
     await page.keyboard.press('Escape');
@@ -377,13 +535,17 @@ async function main() {
     const customer = await browser.createBrowserContext();
     const cust = await newPage(customer);
     await go(cust, `${SALON}/`, '.p-hero h1');
-    await clickText(cust, 'button', 'احجز موعدك');
-    await cust.waitForSelector('.sheet .svc');
+    // The bar along the bottom of the phone (the hero's own button is for wide screens).
+    await clickText(cust, 'button.p-book', 'احجز موعدك');
+    await cust.waitForSelector('.sheet .p-svc');
     await snap(cust, 'book-service');
-    await cust.click('.sheet .svc');
-    await cust.waitForSelector('.sheet .pick-card');
-    await snap(cust, 'book-staff');
-    await cust.click('.sheet .pick-card.anyone');
+    await cust.click('.sheet .p-svc');
+    // Who: asked only when more than one person offers the service (here only فهد does).
+    await cust.waitForSelector('.sheet .pick-card, .sheet .slot');
+    if (await cust.$('.sheet .pick-card')) {
+      await snap(cust, 'book-staff');
+      await cust.click('.sheet .pick-card.anyone');
+    }
     await cust.waitForSelector('.sheet .slot');
     await cust.click('.sheet .slot');
     await snap(cust, 'book-time');
@@ -406,10 +568,12 @@ async function main() {
 
     // ---- the owner sees it arrive live, opens the screenshot and approves
     await page.bringToFront();
-    await page.waitForSelector('.att-row.sent .proof-strip');
+    await page.waitForSelector('.att-row.sent .att-thumb');
     await snap(page, 'bookings-deposit-to-check', { wait: 1200 });
-    await page.click('.att-row.sent .proof-strip');
+    await page.click('.att-row.sent .att-thumb');
     await page.waitForSelector('.proof-viewer .pv-stage img');
+    // The thumbnail grows into the receipt (a view transition): taps wait for it to land.
+    await page.waitForFunction(() => !document.documentElement.classList.contains('vt-proof'));
     await page.waitForFunction(() => (document.querySelector('.proof-viewer img') as HTMLImageElement)?.complete);
     await snap(page, 'owner-review-screenshot', { wait: 900 });
     await clickText(page, '.proof-viewer .pv-actions button', 'استلمت الدفعة');
@@ -438,9 +602,10 @@ async function main() {
       return made.token;
     })()`)) as string;
     await page.bringToFront();
-    await page.waitForSelector('.att-row.sent .proof-strip');
-    await page.click('.att-row.sent .proof-strip');
+    await page.waitForSelector('.att-row.sent .att-thumb');
+    await page.click('.att-row.sent .att-thumb');
     await page.waitForSelector('.proof-viewer .pv-actions');
+    await page.waitForFunction(() => !document.documentElement.classList.contains('vt-proof'));
     await clickText(page, '.proof-viewer .pv-actions button', 'رفض');
     await page.waitForSelector('.sheet .btn-danger');
     await snap(page, 'owner-reject-confirm');
@@ -451,7 +616,7 @@ async function main() {
     await go(cust, `${SALON}/b/${token2}`, '.status-hero h1');
     await snap(cust, 'booking-rejected', { wait: 1000 });
     // The salon's booking link (for its Instagram bio) opens straight into booking.
-    await go(cust, `${SALON}/book`, '.sheet .svc');
+    await go(cust, `${SALON}/book`, '.sheet .p-svc');
     await snap(cust, 'book-link');
     // The privacy policy, in the salon's colours on its link.
     await go(cust, `${SALON}/privacy`, 'main h1');
@@ -461,13 +626,14 @@ async function main() {
     await page.bringToFront();
     await page.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
     await page.waitForSelector('.appt');
-    await page.click('.s-head .primary-icon');
-    await page.waitForSelector('.sheet .slot');
-    await page.$$eval('.sheet .slot', (els) => (els[Math.min(4, els.length - 1)] as HTMLElement).click());
+    await page.click('.sched-head .add-btn:not([disabled])');
+    await page.waitForSelector('.sheet .slot-q');
+    await page.$$eval('.sheet .slot-q', (els) => (els[Math.min(4, els.length - 1)] as HTMLElement).click());
     await page.type('.sheet input[name=name]', 'ليث');
     await page.type('.sheet input[name=phone]', '0791234567');
     await snap(page, 'bookings-new');
-    await clickText(page, '.sheet-foot button', 'احفظ الحجز');
+    // The button names the time it saves: «احفظ · اليوم 4:00 م».
+    await clickText(page, '.sheet-foot button', 'احفظ');
     await find(page, '.toast', 'تم الحجز');
     await page.waitForFunction(() => document.querySelectorAll('.appt').length >= 2);
     await snap(page, 'bookings-day', { full: true, wait: 1200 });

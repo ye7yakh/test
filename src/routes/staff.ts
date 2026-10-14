@@ -3,7 +3,7 @@ import { requireOwner } from '../auth.js';
 import { one, pool, query, tx, type Db } from '../db.js';
 import { formatWeek, parseWeek, saveStaffWeek, type HoursRow } from '../hours.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
-import { deleteMedia, intakeImage, loadMediaBytes, mediaUrl, readImageUpload, renderPortrait, saveMedia } from '../media.js';
+import { deleteMedia, intakeImage, mediaUrl, readImageUpload, renderPortrait, saveMedia } from '../media.js';
 import type { PhotoStyle } from '../tenancy.js';
 import { bool, idList, Input, parseId, text } from '../validate.js';
 import { setLinks } from './services.js';
@@ -129,14 +129,24 @@ async function uploadPhoto(ctx: Ctx) {
   // Render before taking any locks: this is the slow part.
   const styled = await renderPortrait(original.bytes, salon.photo_style, salon.color_accent);
   await tx(async (db) => {
+    // The salon's look now, under a lock a change of style waits for. A style saved
+    // while this photo was rendering is applied here (rare, so rendering again inside
+    // the transaction is fine); one saved after this commits finds the photo and
+    // restyles it with the rest (salon.ts).
+    const look = await one<{ photo_style: PhotoStyle; color_accent: string }>(
+      'select photo_style, color_accent from salons where id = $1 for share',
+      [salonId],
+      db,
+    );
     const current = await one<{ photo_id: string | null; photo_original_id: string | null }>(
       'select photo_id, photo_original_id from staff where salon_id = $1 and id = $2 for update',
       [salonId, id],
       db,
     );
-    if (!current) throw new HttpError(404, 'not_found');
+    if (!look || !current) throw new HttpError(404, 'not_found');
+    const stale = look.photo_style !== salon.photo_style || (look.photo_style === 'brand' && look.color_accent !== salon.color_accent);
     const originalId = await saveMedia(db, salonId, original);
-    const styledId = await saveMedia(db, salonId, styled);
+    const styledId = await saveMedia(db, salonId, stale ? await renderPortrait(original.bytes, look.photo_style, look.color_accent) : styled);
     await query('update staff set photo_original_id = $3, photo_id = $4, updated_at = now() where salon_id = $1 and id = $2', [
       salonId,
       id,
@@ -162,22 +172,6 @@ async function removePhoto(ctx: Ctx) {
     await deleteMedia(db, salonId, [current.photo_id, current.photo_original_id]);
   });
   ok(ctx, { staff: await listStaff(pool, salonId) });
-}
-
-/** Re-renders every team photo from its original, after the salon's photo style or accent changes. */
-export async function rerenderTeamPhotos(db: Db, salonId: number, style: PhotoStyle, accent: string): Promise<void> {
-  const rows = await query<{ id: number; photo_id: string | null; photo_original_id: string }>(
-    'select id, photo_id, photo_original_id from staff where salon_id = $1 and photo_original_id is not null for update',
-    [salonId],
-    db,
-  );
-  for (const row of rows) {
-    const original = await loadMediaBytes(db, salonId, row.photo_original_id);
-    if (!original) continue;
-    const styledId = await saveMedia(db, salonId, await renderPortrait(original, style, accent));
-    await query('update staff set photo_id = $3, updated_at = now() where salon_id = $1 and id = $2', [salonId, row.id, styledId], db);
-    await deleteMedia(db, salonId, [row.photo_id]);
-  }
 }
 
 export function staffRoutes(r: Router) {

@@ -26,6 +26,8 @@ staffRoutes(router);
 bookingRoutes(router);
 
 const SAFE_METHODS = new Set(['GET', 'HEAD']);
+/** Addresses of files rather than pages: every page's path but /index.html is extensionless. */
+const FILE_PATH = /^\/(?:assets|icons|splash|media)\/|\.[a-z0-9]+$/i;
 
 async function handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
   baseSecurityHeaders(res, config.isProd);
@@ -51,23 +53,25 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       return;
     }
     const api = url.pathname.startsWith('/api/');
-    // A page a browser opens (the salon page, /book, a booking link, the owner's app),
-    // as opposed to an icon, a manifest or the service worker.
-    const browserPage = SAFE_METHODS.has(method) && !api && (url.pathname === '/' || url.pathname === '/index.html' || !!req.headers.accept?.includes('text/html'));
+    // A page someone opens (the salon page, /book, a booking link from WhatsApp, the
+    // owner's installed app), as opposed to the API or a file: icons, launch screens,
+    // the manifests, the service worker, pictures. A browser asking for HTML always
+    // gets the page, even at a file's address.
+    const browserPage = SAFE_METHODS.has(method) && !api && (url.pathname === '/index.html' || !FILE_PATH.test(url.pathname) || !!req.headers.accept?.includes('text/html'));
     if (offline?.kind === 'suspended') {
-      if (api) sendJson(res, 404, { error: 'suspended' });
-      else if (SAFE_METHODS.has(method) && (url.pathname === '/privacy' || url.pathname === '/terms')) {
+      if (SAFE_METHODS.has(method) && (url.pathname === '/privacy' || url.pathname === '/terms')) {
         // The policies are the platform's: read them on its own domain.
         const port = offline.port ? `:${offline.port}` : '';
         res.writeHead(302, { Location: `${requestProto(req, config.trustProxy)}://${offline.tenant.domain}${port}${url.pathname}${url.search}`, 'Cache-Control': 'no-store' });
         res.end();
       } else if (browserPage) unavailablePage(res, offline);
-      else sendJson(res, 404, { error: 'not_found' });
+      else sendJson(res, 404, { error: api ? 'suspended' : 'not_found' });
       return;
     }
-    if (offline?.kind === 'unknown') {
-      // A mistyped salon link: say so, and show the way to the platform.
-      if (browserPage) unknownSalonPage(res, offline.tenant, offline.port, requestProto(req, config.trustProxy));
+    if (offline) {
+      // A mistyped salon link: say so, and show the way to the platform. A write to a
+      // salon's earlier link is not followed: it answers like any unknown address.
+      if (browserPage && offline.kind === 'unknown') unknownSalonPage(res, offline.tenant, offline.port, requestProto(req, config.trustProxy));
       else sendJson(res, 404, { error: 'not_found' });
       return;
     }
@@ -131,7 +135,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     if (page) return await serveIndex(ctx, page.page);
     // A mistyped address in a browser gets a page with the way home, not raw JSON.
     if (SAFE_METHODS.has(method) && !url.pathname.startsWith('/api/') && req.headers.accept?.includes('text/html')) {
-      notFoundPage(res);
+      notFoundPage(ctx);
       return;
     }
     throw new HttpError(404, 'not_found');
