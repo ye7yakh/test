@@ -113,7 +113,8 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       await match.handler(ctx);
       return;
     }
-    if (url.pathname === '/' && SAFE_METHODS.has(method)) return await serveIndex(ctx);
+    // The salon's link is the customers' app; /manage is the owner's (salons only).
+    if ((url.pathname === '/' || (url.pathname === '/manage' && host.salon)) && SAFE_METHODS.has(method)) return await serveIndex(ctx);
     throw new HttpError(404, 'not_found');
   } catch (err) {
     sendError(ctx, err);

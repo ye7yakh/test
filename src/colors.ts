@@ -70,3 +70,42 @@ export function accentForDark(accent: string, against = '#16161f'): string {
   }
   return out;
 }
+
+/** The accent, darkened only as far as it takes to read on the day page (white cards). */
+export function accentForLight(accent: string, against = '#ffffff'): string {
+  const [h, s, l0] = toHsl(rgb(accent));
+  let out = accent;
+  for (let l = l0; contrast(out, against) < 4.5 && l > 0.04; ) {
+    l = Math.max(0.04, l - 0.03);
+    out = fromHsl(h, s, l);
+  }
+  return out;
+}
+
+/** The salon's page by day: a warm off-white with a breath of its main colour. */
+export function dayBase(primary: string): string {
+  const base = [247, 246, 243];
+  return toHex(rgb(primary).map((v, i) => v * 0.06 + base[i]! * 0.94));
+}
+
+/**
+ * Every colour the two themes derive from the salon's pair, as CSS variables. The
+ * browser computes the same set for live previews (theme.js).
+ */
+export function brandVars(primary: string, accent: string): Record<string, string> {
+  const lift = accentForDark(accent);
+  const ink = accentForLight(accent);
+  return {
+    '--primary': primary,
+    '--on-primary': onColor(primary),
+    '--accent': accent,
+    '--on-accent': onColor(accent),
+    '--night': nightBase(primary),
+    '--day': dayBase(primary),
+    '--accent-lift': lift,
+    '--on-accent-lift': onColor(lift),
+    '--accent-ink': ink,
+    '--on-accent-ink': onColor(ink),
+    '--primary-lift': accentForDark(primary),
+  };
+}

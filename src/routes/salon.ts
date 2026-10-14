@@ -4,6 +4,7 @@ import { one, pool, query, tx } from '../db.js';
 import { loadSalonWeek, parseWeek, saveSalonWeek } from '../hours.js';
 import { ok, readJson, type Ctx, type Router } from '../http.js';
 import { deleteMedia, intakeImage, mediaUrl, PHOTO_STYLES, readImageUpload, saveMedia } from '../media.js';
+import { iconVersion } from '../brand.js';
 import { SALON_COLUMNS, type Salon } from '../tenancy.js';
 import { bool, color, currency, CURRENCIES, Input, int, oneOf, price, text, timezone } from '../validate.js';
 import { HttpError } from '../http.js';
@@ -12,9 +13,9 @@ import { rerenderTeamPhotos } from './staff.js';
 
 async function salonBody(salonId: number) {
   const s = (await one<Salon>(`select ${SALON_COLUMNS} from salons where id = $1`, [salonId]))!;
-  const { logo_media_id, tenant_id, active, updated_at, ...rest } = s;
+  const { logo_media_id, cover_media_id, icon_media_id, tenant_id, active, updated_at, ...rest } = s;
   return {
-    salon: { ...rest, logo_url: mediaUrl(logo_media_id) },
+    salon: { ...rest, logo_url: mediaUrl(logo_media_id), cover_url: mediaUrl(cover_media_id), icon_url: mediaUrl(icon_media_id), icon_v: iconVersion(s) },
     hours: await loadSalonWeek(pool, salonId),
     options: { currencies: CURRENCIES, photo_styles: PHOTO_STYLES, service_icons: SERVICE_ICONS },
   };
@@ -36,6 +37,9 @@ async function updateSalon(ctx: Ctx) {
     color_primary: b.opt('color_primary', color),
     color_accent: b.opt('color_accent', color),
     photo_style: b.opt('photo_style', oneOf(PHOTO_STYLES)),
+    icon_bg: b.opt('icon_bg', oneOf(['auto', 'white', 'primary', 'night'] as const)),
+    page_theme: b.opt('page_theme', oneOf(['night', 'day'] as const)),
+    studio_theme: b.opt('studio_theme', oneOf(['studio', 'brand'] as const)),
     booking_enabled: b.opt('booking_enabled', bool),
     cliq_required: b.opt('cliq_required', bool),
     cliq_alias: b.opt('cliq_alias', text(60)),
@@ -63,26 +67,41 @@ async function updateSalon(ctx: Ctx) {
   ok(ctx, await salonBody(salonId));
 }
 
-async function uploadLogo(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
-  const img = await intakeImage(await readImageUpload(ctx), 64);
-  await tx(async (db) => {
-    const id = await saveMedia(db, salonId, img);
-    const old = await one<{ logo_media_id: string | null }>('select logo_media_id from salons where id = $1 for update', [salonId], db);
-    await query('update salons set logo_media_id = $2, updated_at = now() where id = $1', [salonId, id], db);
-    await deleteMedia(db, salonId, [old?.logo_media_id]);
-  });
-  ok(ctx, await salonBody(salonId));
+// The salon's pictures: logo, cover banner and its own app icon. Each is a file
+// saved straight away (not part of the brand draft); the old one is deleted.
+const BRAND_IMAGES = {
+  logo: { column: 'logo_media_id', minSide: 64 },
+  cover: { column: 'cover_media_id', minSide: 300 },
+  icon: { column: 'icon_media_id', minSide: 192 },
+} as const;
+type BrandImage = keyof typeof BRAND_IMAGES;
+
+function uploadBrandImage(kind: BrandImage) {
+  return async (ctx: Ctx) => {
+    const salonId = requireOwner(ctx);
+    const { column, minSide } = BRAND_IMAGES[kind];
+    const img = await intakeImage(await readImageUpload(ctx), minSide);
+    await tx(async (db) => {
+      const id = await saveMedia(db, salonId, img);
+      const old = await one<Record<string, string | null>>(`select ${column} from salons where id = $1 for update`, [salonId], db);
+      await query(`update salons set ${column} = $2, updated_at = now() where id = $1`, [salonId, id], db);
+      await deleteMedia(db, salonId, [old?.[column]]);
+    });
+    ok(ctx, await salonBody(salonId));
+  };
 }
 
-async function removeLogo(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
-  await tx(async (db) => {
-    const old = await one<{ logo_media_id: string | null }>('select logo_media_id from salons where id = $1 for update', [salonId], db);
-    await query('update salons set logo_media_id = null, updated_at = now() where id = $1', [salonId], db);
-    await deleteMedia(db, salonId, [old?.logo_media_id]);
-  });
-  ok(ctx, await salonBody(salonId));
+function removeBrandImage(kind: BrandImage) {
+  return async (ctx: Ctx) => {
+    const salonId = requireOwner(ctx);
+    const { column } = BRAND_IMAGES[kind];
+    await tx(async (db) => {
+      const old = await one<Record<string, string | null>>(`select ${column} from salons where id = $1 for update`, [salonId], db);
+      await query(`update salons set ${column} = null, updated_at = now() where id = $1`, [salonId], db);
+      await deleteMedia(db, salonId, [old?.[column]]);
+    });
+    ok(ctx, await salonBody(salonId));
+  };
 }
 
 async function updateHours(ctx: Ctx) {
@@ -96,7 +115,9 @@ async function updateHours(ctx: Ctx) {
 export function salonRoutes(r: Router) {
   r.get('/api/manage/salon', async (ctx) => ok(ctx, await salonBody(requireOwner(ctx))));
   r.patch('/api/manage/salon', updateSalon);
-  r.put('/api/manage/salon/logo', uploadLogo);
-  r.delete('/api/manage/salon/logo', removeLogo);
+  for (const kind of Object.keys(BRAND_IMAGES) as BrandImage[]) {
+    r.put(`/api/manage/salon/${kind}`, uploadBrandImage(kind));
+    r.delete(`/api/manage/salon/${kind}`, removeBrandImage(kind));
+  }
   r.put('/api/manage/hours', updateHours);
 }

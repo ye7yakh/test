@@ -3,7 +3,8 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { accentForDark, nightBase, onColor } from './colors.js';
+import { iconVersion, pageColor, startupImageLinks, STUDIO_BG, studioColor } from './brand.js';
+import { brandVars } from './colors.js';
 import { config } from './config.js';
 import { HttpError, requestProto, type Ctx } from './http.js';
 
@@ -64,37 +65,62 @@ export async function serveAsset(ctx: Ctx): Promise<boolean> {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-// Owner screens (and the whole platform host) use the dark studio theme; the
-// salon's public page is its own night theme. Set before first paint so there is no flash.
-const BOOT_SCRIPT = `(function(){var s=/^#\\/(manage|login)/.test(location.hash)||document.documentElement.dataset.platform==='1';
-if(s){document.documentElement.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content='#0a0918';}})();`;
+// Owner screens (and the whole platform host) use the studio theme; the salon's
+// customer page uses the salon's own theme. Set before first paint so there is no
+// flash: the server knows /manage, the hash (#/manage, #/login) only the browser sees.
+const BOOT_SCRIPT = `(function(){var r=document.documentElement,s=/^#\\/(manage|login)/.test(location.hash)||r.dataset.platform==='1'||r.dataset.app==='owner';
+if(s){r.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content=r.dataset.studioColor||'#0a0918';}})();`;
 
 export async function serveIndex(ctx: Ctx): Promise<void> {
   const template = await readCached(path.join(config.webDir, 'index.html'));
   if (!template) throw new HttpError(500, 'missing_index');
   const salon = ctx.host.salon;
-  const primary = salon?.color_primary ?? '#1f2a37';
-  const accent = salon?.color_accent ?? '#c8a15a';
-  const title = salon ? salon.name_ar : ctx.host.tenant.name;
-  const head = salon
-    ? `<link rel="manifest" href="/manifest.webmanifest">
-<link rel="icon" href="/icons/icon-192.png?v=${salon.logo_media_id ?? 'default'}">
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=${salon.logo_media_id ?? 'default'}">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="${escapeHtml(title)}">`
-    : '';
+  // /manage is the owner's installable app; the salon's link is the customers'.
+  const owner = !!salon && ctx.url.pathname === '/manage';
+  const title = salon ? (owner ? `إدارة ${salon.name_ar}` : salon.name_ar) : ctx.host.tenant.name;
+  let head = '';
+  let attrs = 'data-theme="studio" data-platform="1"';
+  let theme = STUDIO_BG;
+  let splash = '<div class="boot"><div class="spinner"></div></div>';
+  if (salon) {
+    const v = iconVersion(salon);
+    const prefix = owner ? 'owner-' : '';
+    const studio = studioColor(salon);
+    theme = owner ? studio : pageColor(salon);
+    attrs = [
+      `data-theme="${owner ? 'studio' : 'public'}"`,
+      `data-page="${salon.page_theme}"`,
+      `data-studio="${salon.studio_theme}"`,
+      `data-studio-color="${studio}"`,
+      owner ? 'data-app="owner"' : '',
+    ].filter(Boolean).join(' ');
+    // A dark page runs under the status bar; a light one keeps the bar its own.
+    const statusBar = owner || salon.page_theme === 'night' ? 'black-translucent' : 'default';
+    head = [
+      `<link rel="manifest" href="/${owner ? 'manage' : 'manifest'}.webmanifest">`,
+      `<link rel="icon" href="/icons/icon-192.png?v=${v}">`,
+      `<link rel="apple-touch-icon" href="/icons/${prefix}apple-touch-icon.png?v=${v}">`,
+      '<meta name="mobile-web-app-capable" content="yes">',
+      '<meta name="apple-mobile-web-app-capable" content="yes">',
+      `<meta name="apple-mobile-web-app-status-bar-style" content="${statusBar}">`,
+      `<meta name="apple-mobile-web-app-title" content="${escapeHtml(owner ? 'إدارة الصالون' : salon.name_ar)}">`,
+      startupImageLinks(salon, owner),
+    ].join('\n');
+    // The first thing anyone sees: the salon's icon and name, until the app is ready.
+    splash = `<div class="boot splash"><div class="splash-mark"><img src="/icons/icon-512.png?v=${v}" alt=""></div><div class="splash-name">${escapeHtml(salon.name_ar)}</div></div>`;
+  }
   const nonce = crypto.randomBytes(16).toString('base64');
-  const night = nightBase(primary);
-  const lift = accentForDark(accent);
-  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)};--night:${night};--accent-lift:${lift};--on-accent-lift:${onColor(lift)}}`;
+  const colors = brandVars(salon?.color_primary ?? '#1f2a37', salon?.color_accent ?? '#c8a15a');
+  const vars = `:root{${Object.entries(colors).map(([k, val]) => `${k}:${val}`).join(';')}}`;
   const html = template.body
     .toString('utf8')
-    .replace('data-theme="{{mode}}"', salon ? 'data-theme="public"' : 'data-theme="studio" data-platform="1"')
+    .replace('data-theme="{{mode}}"', attrs)
     .replaceAll('{{title}}', escapeHtml(title))
-    .replaceAll('{{theme}}', salon ? night : '#0a0918')
+    .replaceAll('{{theme}}', theme)
     .replace('{{head}}', head)
     .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
-    .replace('{{boot}}', `<script nonce="${nonce}">${BOOT_SCRIPT}</script>`);
+    .replace('{{boot}}', `<script nonce="${nonce}">${BOOT_SCRIPT}</script>`)
+    .replace('{{splash}}', splash);
   // The platform host shows each salon's app icon, served from the salon's own subdomain.
   const port = ctx.host.port ? `:${ctx.host.port}` : '';
   const salonIcons = salon ? '' : ` ${requestProto(ctx.req, config.trustProxy)}://*.${ctx.host.tenant.domain}${port}`;

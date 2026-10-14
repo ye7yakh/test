@@ -177,17 +177,68 @@ function defaultIconSvg(size: number, bg: string): Buffer {
  * PNG app icon. `padding` is the share of the canvas kept clear around a logo:
  * maskable icons need a larger safe zone because launchers crop them.
  */
-export async function renderIcon(size: number, primary: string, logo: Buffer | null, padding: number): Promise<Buffer> {
-  if (!logo) return sharp(defaultIconSvg(size, primary)).png().toBuffer();
+/**
+ * The app icon. A dedicated icon fills the square; a logo sits inside it on the
+ * chosen background with room around it (more for maskable icons, which launchers
+ * crop to circles and squircles). With neither, the scissors mark on the background.
+ */
+export async function renderIcon(size: number, opts: { bg: string; art: Buffer | null; fill: boolean; padding: number }): Promise<Buffer> {
+  const { bg, art, fill, padding } = opts;
+  if (!art) return sharp(defaultIconSvg(size, bg)).png().toBuffer();
+  if (fill) {
+    // Full bleed, except the maskable size keeps a margin for round masks.
+    const inner = Math.round(size * (padding >= 0.2 ? 0.76 : 1));
+    const mark = await sharp(art).resize(inner, inner, { fit: 'cover', position: sharp.strategy.attention }).png().toBuffer();
+    return sharp({ create: { width: size, height: size, channels: 4, background: bg } })
+      .composite([{ input: mark, gravity: 'centre' }])
+      .flatten({ background: bg })
+      .png()
+      .toBuffer();
+  }
   const inner = Math.round(size * (1 - padding * 2));
-  const mark = await sharp(logo)
+  const mark = await sharp(art)
     .resize(inner, inner, { fit: 'contain', background: { r: 0, g: 0, b: 0, alpha: 0 } })
     .png()
     .toBuffer();
-  return sharp({ create: { width: size, height: size, channels: 4, background: '#ffffff' } })
+  return sharp({ create: { width: size, height: size, channels: 4, background: bg } })
     .composite([{ input: mark, gravity: 'centre' }])
-    .flatten({ background: '#ffffff' })
+    .flatten({ background: bg })
     .png()
+    .toBuffer();
+}
+
+/**
+ * The owner's app wears a small dashboard badge, so the two apps on a phone are
+ * told apart at a glance. Placed inside the area every launcher mask keeps.
+ */
+export async function addOwnerBadge(icon: Buffer, size: number, maskable: boolean): Promise<Buffer> {
+  const d = Math.round(size * (maskable ? 0.27 : 0.36));
+  const centre = size * (maskable ? 0.665 : 0.735);
+  const ring = Math.max(2, Math.round(d * 0.07));
+  const badge = Buffer.from(
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${d}" height="${d}" viewBox="0 0 100 100">
+      <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#a855f7"/><stop offset=".55" stop-color="#6366f1"/><stop offset="1" stop-color="#3b82f6"/></linearGradient></defs>
+      <circle cx="50" cy="50" r="${50 - (ring / d) * 50}" fill="url(#g)" stroke="#ffffff" stroke-width="${(ring / d) * 100}"/>
+      <g stroke="#ffffff" stroke-width="7" stroke-linecap="round" fill="none">
+        <path d="M33 30v40M50 30v40M67 30v40"/>
+      </g>
+      <g fill="#ffffff"><circle cx="33" cy="58" r="8"/><circle cx="50" cy="40" r="8"/><circle cx="67" cy="54" r="8"/></g>
+    </svg>`,
+  );
+  const left = Math.round(centre - d / 2);
+  return sharp(icon).composite([{ input: badge, left, top: left }]).png().toBuffer();
+}
+
+/** A launch screen: the app's background with its icon, rounded, a little above centre. */
+export async function renderSplash(width: number, height: number, bg: string, icon: Buffer): Promise<Buffer> {
+  const side = Math.round(Math.min(width, height) * 0.27);
+  const radius = Math.round(side * 0.225);
+  const mask = Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="${side}" height="${side}"><rect width="${side}" height="${side}" rx="${radius}" ry="${radius}"/></svg>`);
+  const mark = await sharp(icon).resize(side, side).composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+  return sharp({ create: { width, height, channels: 4, background: bg } })
+    .composite([{ input: mark, left: Math.round((width - side) / 2), top: Math.round(height * 0.44 - side / 2) }])
+    .flatten({ background: bg })
+    .png({ compressionLevel: 9 })
     .toBuffer();
 }
 

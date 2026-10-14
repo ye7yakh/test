@@ -37,7 +37,14 @@ export interface Salon {
   deposit_kind: 'fixed' | 'full';
   deposit_amount: string;
   payment_window_min: number;
+  cover_media_id: string | null;
+  icon_media_id: string | null;
+  icon_bg: IconBg;
+  page_theme: 'night' | 'day';
+  studio_theme: 'studio' | 'brand';
 }
+
+export type IconBg = 'auto' | 'white' | 'primary' | 'night';
 
 export type PhotoStyle = 'natural' | 'warm' | 'mono' | 'brand';
 
@@ -75,7 +82,7 @@ export function clearTenantCache(): void {
 export const SALON_COLUMNS = `id, tenant_id, subdomain, name_ar, name_en, about_ar, about_en, phone, address,
   timezone, currency, color_primary, color_accent, photo_style, logo_media_id, active, updated_at,
   booking_enabled, cliq_required, cliq_alias, cliq_name, deposit_kind, trim_scale(deposit_amount)::text as deposit_amount,
-  payment_window_min`;
+  payment_window_min, cover_media_id, icon_media_id, icon_bg, page_theme, studio_theme`;
 
 interface ParsedHost {
   tenant: Tenant;

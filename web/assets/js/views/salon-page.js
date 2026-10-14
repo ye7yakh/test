@@ -3,7 +3,7 @@
 // how to reach them, with booking one tap away from anywhere on the page.
 import { api } from '../api.js';
 import { myBookingsCard, openBooking, waNumber } from './booking.js';
-import { avatar, clear, h, icon, tilt, toast } from '../dom.js';
+import { appReady, avatar, clear, h, icon, tilt, toast } from '../dom.js';
 import { DAY_ORDER, dayName, errorText, fmtDuration, fmtPrice, fmtTime, pick, t } from '../i18n.js';
 import { applyColors, reducedMotion } from '../theme.js';
 import { nowIn, openStatus, toMin } from '../time.js';
@@ -15,7 +15,8 @@ export function salonPage(app) {
       clear(el, render(app, data));
       requestAnimationFrame(() => watchScroll(app, el));
     })
-    .catch((err) => clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }))));
+    .catch((err) => clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }))))
+    .finally(appReady);
   return el;
 }
 
@@ -110,7 +111,7 @@ function render(app, data) {
     h(
       'div',
       { class: 'p-top' },
-      app.canManage ? h('a', { class: 'p-glass-btn', href: '#/manage' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
+      app.canManage ? h('a', { class: 'p-glass-btn', href: '/manage' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
       h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
     ),
     h(
@@ -240,7 +241,7 @@ function render(app, data) {
       h(
         'footer',
         { class: 'p-foot' },
-        app.canManage ? null : h('a', { href: '#/login', text: t('pub.owner_login') }),
+        app.canManage ? null : h('a', { href: '/manage', text: t('pub.owner_login') }),
         h('div', { class: 'faint', text: t('pub.powered', { brand: app.ctx.tenant.name }) }),
       ),
     ),

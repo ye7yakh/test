@@ -4,7 +4,7 @@
 // bookings coming in.
 import { api } from '../api.js';
 import { areaChart } from '../chart.js';
-import { avatar, busy, clear, confetti, confirmDelete, countUp, field, h, icon, input, markInvalid, scissorsMark, sheet, stagger, switchRow, toast, toastError } from '../dom.js';
+import { appReady, avatar, busy, clear, confetti, confirmDelete, countUp, field, h, icon, input, markInvalid, scissorsMark, sheet, stagger, switchRow, toast, toastError } from '../dom.js';
 import { getLang, pick, t, westernDigits } from '../i18n.js';
 import { fmtDate } from '../slots.js';
 import { waNumber } from './booking.js';
@@ -248,7 +248,7 @@ function openCreate(onCreated) {
       const res = await api('POST', '/api/admin/salons', Object.fromEntries(Object.entries(f).map(([k, el]) => [k, el.value])));
       panel.close();
       onCreated();
-      const link = `${res.url}/#/login`;
+      const link = `${res.url}/manage`;
       const name = f.owner_name.value.trim();
       credentialsSheet({
         title: t('admin.handover'),
@@ -306,7 +306,7 @@ async function openSalon(id, onChange) {
       'div',
       { class: 'sd-links' },
       h('a', { class: 'btn btn-secondary btn-sm', href: salon.url, target: '_blank', rel: 'noopener' }, icon('external'), t('admin.open_page')),
-      h('a', { class: 'btn btn-secondary btn-sm', href: `${salon.url}/#/login`, target: '_blank', rel: 'noopener' }, icon('sliders'), t('admin.open_studio')),
+      h('a', { class: 'btn btn-secondary btn-sm', href: `${salon.url}/manage`, target: '_blank', rel: 'noopener' }, icon('sliders'), t('admin.open_studio')),
     );
 
     const live = switchRow(t('admin.live'), t('admin.live_sub'), salon.active);
@@ -353,7 +353,7 @@ async function openSalon(id, onChange) {
         if (!(await confirmDelete({ title: t('admin.reset'), message: t('admin.reset_confirm'), yesText: t('admin.reset_yes') }))) return;
         busy(reset, async () => {
           const res = await api('POST', `/api/admin/salons/${salon.id}/reset-password`);
-          const link = `${salon.url}/#/login`;
+          const link = `${salon.url}/manage`;
           credentialsSheet({
             title: t('admin.reset_done'),
             intro: t('admin.reset_once'),
@@ -457,6 +457,7 @@ export function adminView(app) {
     } catch (err) {
       toastError(err);
     }
+    appReady();
   }
   load();
 

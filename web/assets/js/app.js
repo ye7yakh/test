@@ -3,7 +3,7 @@
 import { api } from './api.js';
 import { h, clear } from './dom.js';
 import { applyLang, setLang, getLang, t } from './i18n.js';
-import { reducedMotion, setTheme } from './theme.js';
+import { applyLooks, reducedMotion, setTheme } from './theme.js';
 import { loginView } from './views/login.js';
 import { salonPage } from './views/salon-page.js';
 import { bookingPage } from './views/booking.js';
@@ -12,9 +12,12 @@ import { adminView } from './views/admin.js';
 
 const root = document.getElementById('app');
 let unmount = [];
+// /manage is the owner's installable app; everything else is the customers' app.
+const ownerApp = location.pathname === '/manage';
 
 const app = {
   ctx: null,
+  ownerApp,
   async reload() {
     app.ctx = await api('GET', '/api/context');
     render();
@@ -31,7 +34,7 @@ const app = {
     await api('POST', '/api/auth/logout').catch(() => {});
     clearManageCache();
     app.ctx.user = null;
-    app.go(app.ctx.kind === 'salon' ? '#/' : '#/login');
+    app.go(app.ctx.kind === 'salon' && !ownerApp ? '#/' : '#/login');
   },
   /** Views register cleanup (floating bars, listeners) for when they are replaced. */
   onUnmount(fn) {
@@ -53,6 +56,8 @@ function build() {
   const ctx = app.ctx;
   if (ctx.kind === 'platform') return { theme: 'studio', view: () => (ctx.user ? adminView(app) : loginView(app)) };
   if (name === 'login') return { theme: 'studio', view: () => loginView(app) };
+  // The owner's app only shows the studio (and its login).
+  if (ownerApp && name !== 'manage') return { redirect: '#/manage' };
   if (name === 'b' && rest[0]) return { theme: 'public', view: () => bookingPage(app, rest[0]) };
   if (name === 'manage') {
     if (!app.canManage) return { redirect: '#/login' };
@@ -92,11 +97,41 @@ function render() {
   }
 }
 
+/**
+ * The server paints the salon's splash (icon and name) inside #app. It moves to an
+ * overlay above the app and fades once the first screen has its content, a moment
+ * longer when the app was opened from the home screen, so it reads as a launch.
+ */
+function holdSplash() {
+  const splash = root.querySelector('.splash');
+  if (!splash) return () => {};
+  document.body.append(splash);
+  splash.classList.add('overlay');
+  const started = performance.now();
+  const installed = matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  let done = false;
+  const release = () => {
+    if (done) return;
+    done = true;
+    const wait = Math.max(0, (installed ? 900 : 250) - (performance.now() - started));
+    setTimeout(() => {
+      splash.classList.add('out');
+      setTimeout(() => splash.remove(), 600);
+    }, wait);
+  };
+  addEventListener('app-ready', release, { once: true });
+  setTimeout(release, 3000);
+  return release;
+}
+
 async function boot() {
   applyLang();
+  if (ownerApp && !/^#\/(manage|login)/.test(location.hash)) history.replaceState(null, '', '/manage#/manage');
+  const releaseSplash = holdSplash();
   try {
     app.ctx = await api('GET', '/api/context');
   } catch {
+    releaseSplash();
     clear(
       root,
       h('div', { class: 'boot' }, h('div', { class: 'stack center' },
@@ -106,6 +141,7 @@ async function boot() {
     );
     return;
   }
+  if (app.ctx.salon) applyLooks(app.ctx.salon);
   window.addEventListener('hashchange', render);
   window.addEventListener('session-expired', () => {
     app.ctx.user = null;

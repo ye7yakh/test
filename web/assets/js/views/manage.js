@@ -2,7 +2,7 @@
 // desktop), the current page, and a live preview of the salon's app. All pages share
 // one store, so the setup progress, badges and preview follow every save.
 import { api } from '../api.js';
-import { appIcon, clear, h, icon, sheet, toastError } from '../dom.js';
+import { appIcon, appReady, clear, h, icon, sheet, toastError } from '../dom.js';
 import { pick, t } from '../i18n.js';
 import { homeScreen, miniApp, phone } from '../preview.js';
 import { applyColors } from '../theme.js';
@@ -238,6 +238,7 @@ export function manageView(app, pageId) {
     applyColors(store.salon.color_primary, store.salon.color_accent);
     refresh();
     clear(content, page.render(store, app));
+    appReady();
   }
 
   const onResize = () => {
@@ -256,7 +257,10 @@ export function manageView(app, pageId) {
         Object.assign(store, data);
         show();
       })
-      .catch(toastError);
+      .catch((err) => {
+        toastError(err);
+        appReady();
+      });
   }
   return view;
 }

@@ -69,16 +69,53 @@ export function accentForDark(accent, against = '#16161f') {
   return out;
 }
 
+/** The accent, darkened only as far as it takes to read on the day page (white cards). */
+export function accentForLight(accent, against = '#ffffff') {
+  const [h, s, l0] = toHsl(rgb(accent));
+  let out = accent;
+  for (let l = l0; contrast(out, against) < 4.5 && l > 0.04; ) {
+    l = Math.max(0.04, l - 0.03);
+    out = fromHsl(h, s, l);
+  }
+  return out;
+}
+
+/** The salon's page by day: a warm off-white with a breath of its main colour. */
+export const dayBase = (primary) => toHex(rgb(primary).map((v, i) => v * 0.06 + [247, 246, 243][i] * 0.94));
+
+/** Every colour the themes derive from the salon's pair (same as brandVars on the server). */
+export function brandVars(primary, accent) {
+  const lift = accentForDark(accent);
+  const ink = accentForLight(accent);
+  return {
+    '--primary': primary,
+    '--on-primary': onColor(primary),
+    '--accent': accent,
+    '--on-accent': onColor(accent),
+    '--night': nightBase(primary),
+    '--day': dayBase(primary),
+    '--accent-lift': lift,
+    '--on-accent-lift': onColor(lift),
+    '--accent-ink': ink,
+    '--on-accent-ink': onColor(ink),
+    '--primary-lift': accentForDark(primary),
+  };
+}
+
 export function applyColors(primary, accent) {
   const root = document.documentElement.style;
-  root.setProperty('--primary', primary);
-  root.setProperty('--on-primary', onColor(primary));
-  root.setProperty('--accent', accent);
-  root.setProperty('--on-accent', onColor(accent));
-  const lift = accentForDark(accent);
-  root.setProperty('--night', nightBase(primary));
-  root.setProperty('--accent-lift', lift);
-  root.setProperty('--on-accent-lift', onColor(lift));
+  for (const [k, v] of Object.entries(brandVars(primary, accent))) root.setProperty(k, v);
+  syncThemeColor();
+}
+
+/**
+ * The salon's two looks: its customer page at night or by day, and the owner's
+ * dashboard in the studio's violet and blue or in the salon's own colours.
+ */
+export function applyLooks({ page_theme, studio_theme }) {
+  const root = document.documentElement;
+  if (page_theme) root.dataset.page = page_theme;
+  if (studio_theme) root.dataset.studio = studio_theme;
   syncThemeColor();
 }
 
@@ -88,9 +125,15 @@ export function setTheme(mode) {
 }
 
 function syncThemeColor() {
-  const studio = document.documentElement.dataset.theme === 'studio';
-  const night = document.documentElement.style.getPropertyValue('--night') || getComputedStyle(document.documentElement).getPropertyValue('--night');
-  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', studio ? '#0a0918' : night.trim() || '#0a0918');
+  const root = document.documentElement;
+  const css = (name) => (root.style.getPropertyValue(name) || getComputedStyle(root).getPropertyValue(name)).trim();
+  let color = '#0a0918';
+  if (root.dataset.theme === 'studio') {
+    if (root.dataset.studio === 'brand' && !root.dataset.platform) color = css('--night') || color;
+  } else {
+    color = (root.dataset.page === 'day' ? css('--day') : css('--night')) || color;
+  }
+  document.querySelector('meta[name="theme-color"]')?.setAttribute('content', color);
 }
 
 export const reducedMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;

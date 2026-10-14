@@ -1,7 +1,7 @@
 // Customer booking: a four-step sheet (service, who, when, details) and the booking's
 // own page, which walks the customer through a CliQ deposit when the salon asks for one.
 import { api, pickImage, prepareImage } from '../api.js';
-import { appIcon, avatar, busy, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
+import { appIcon, appReady, avatar, busy, clear, confirmDelete, field, h, icon, input, markInvalid, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
 import { errorText, fmtDuration, fmtPrice, fmtTime, pick, t, westernDigits } from '../i18n.js';
 import { dayLabel, dayStrip, fmtDate, slotGrid } from '../slots.js';
 import { applyColors } from '../theme.js';
@@ -237,8 +237,10 @@ export function bookingPage(app, token) {
       booking = res.booking;
       // Polling only redraws when something happened, so a half-filled form stays put.
       if (first || changed) render(changed);
+      if (first) appReady();
     } catch (err) {
       clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }), h('a', { class: 'btn btn-secondary btn-block', href: '#/', text: t('bk.back') })));
+      appReady();
     }
   }
 

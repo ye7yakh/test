@@ -38,6 +38,9 @@ export function clear(el, ...children) {
   return el;
 }
 
+/** The first screen has its content: the launch splash can go. */
+export const appReady = () => dispatchEvent(new Event('app-ready'));
+
 /** Staggered entrance for a list of elements. */
 export function stagger(nodes, start = 0) {
   nodes.forEach((node, i) => {

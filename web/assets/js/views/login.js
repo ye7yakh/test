@@ -1,9 +1,10 @@
 // Sign-in for salon owners (on the salon's subdomain) and the platform admin.
 import { api } from '../api.js';
-import { appIcon, field, h, icon, input, markInvalid } from '../dom.js';
+import { appIcon, appReady, field, h, icon, input, markInvalid } from '../dom.js';
 import { errorText, pick, t } from '../i18n.js';
 
 export function loginView(app) {
+  queueMicrotask(appReady);
   const ctx = app.ctx;
   const salon = ctx.salon;
   const phone = input({ type: 'tel', name: 'phone', autocomplete: 'username', inputmode: 'tel', required: true });
@@ -38,7 +39,9 @@ export function loginView(app) {
     try {
       await api('POST', '/api/auth/login', { phone: phone.value, password: password.value });
       await app.reload();
-      if (ctx.kind === 'salon') app.go(app.canManage ? '#/manage' : '#/');
+      // Owners land in their own app (/manage), so adding it to the home screen installs the dashboard.
+      if (ctx.kind === 'salon' && app.canManage && !app.ownerApp) location.assign('/manage');
+      else if (ctx.kind === 'salon') app.go(app.canManage ? '#/manage' : '#/');
     } catch (err) {
       error.textContent = errorText(err);
       error.hidden = false;
@@ -68,7 +71,7 @@ export function loginView(app) {
       h(
         'div',
         { class: 'login-foot rise', style: { '--i': '2' } },
-        salon ? h('a', { class: 'link-btn', href: '#/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
+        salon ? h('a', { class: 'link-btn', href: app.ownerApp ? '/' : '#/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
         h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
       ),
     ),
