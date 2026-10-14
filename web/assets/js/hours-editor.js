@@ -7,6 +7,7 @@ import { nowIn, toMin } from './time.js';
 
 const TIMES = Array.from({ length: 96 }, (_, i) => `${String(Math.floor(i / 4)).padStart(2, '0')}:${String((i % 4) * 15).padStart(2, '0')}`);
 const pct = (min) => `${(min / 1440) * 100}%`;
+const FOCUSABLE = '.day-line, select, input, button';
 const copy = (week) => week.map((ranges) => ranges.map((r) => ({ open: r.open, close: r.close })));
 
 function timeSelect(value, label) {
@@ -167,10 +168,18 @@ export function hoursEditor(initialWeek, { timezone, onChange } = {}) {
         toggle();
       }
     });
+    // A row is rebuilt on every edit: keep the keyboard where it was (same control,
+    // by position; the day line is always first and the switch second).
     const old = rows.get(d);
+    const active = document.activeElement;
+    const refocus = old && active && old.contains(active) ? [...old.querySelectorAll(FOCUSABLE)].indexOf(active) : -1;
     if (old) old.replaceWith(row);
     else el.append(row);
     rows.set(d, row);
+    if (refocus >= 0) {
+      const items = row.querySelectorAll(FOCUSABLE);
+      (items[refocus] ?? items[items.length - 1] ?? line).focus({ preventScroll: true });
+    }
   }
 
   DAY_ORDER.forEach(renderDay);

@@ -3,7 +3,8 @@ import { config } from './config.js';
 import { loadSession, purgeExpiredSessions } from './auth.js';
 import { pool } from './db.js';
 import { baseSecurityHeaders, clientIp, HttpError, requestProto, Router, sendJson, type Ctx } from './http.js';
-import { notFoundPage, unavailablePage } from './pages.js';
+import { ownerDoor } from './owner-door.js';
+import { notFoundPage, unavailablePage, unknownSalonPage } from './pages.js';
 import { hostOrigin, pageFor, serveAsset, serveIndex } from './static.js';
 import { offlineHost, resolveHost } from './tenancy.js';
 import { adminRoutes } from './routes/admin.js';
@@ -49,9 +50,24 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       res.end();
       return;
     }
+    const api = url.pathname.startsWith('/api/');
+    // A page a browser opens (the salon page, /book, a booking link, the owner's app),
+    // as opposed to an icon, a manifest or the service worker.
+    const browserPage = SAFE_METHODS.has(method) && !api && (url.pathname === '/' || url.pathname === '/index.html' || !!req.headers.accept?.includes('text/html'));
     if (offline?.kind === 'suspended') {
-      if (url.pathname.startsWith('/api/')) sendJson(res, 404, { error: 'suspended' });
-      else if (SAFE_METHODS.has(method) && (url.pathname === '/' || url.pathname === '/index.html')) unavailablePage(res, offline);
+      if (api) sendJson(res, 404, { error: 'suspended' });
+      else if (SAFE_METHODS.has(method) && (url.pathname === '/privacy' || url.pathname === '/terms')) {
+        // The policies are the platform's: read them on its own domain.
+        const port = offline.port ? `:${offline.port}` : '';
+        res.writeHead(302, { Location: `${requestProto(req, config.trustProxy)}://${offline.tenant.domain}${port}${url.pathname}${url.search}`, 'Cache-Control': 'no-store' });
+        res.end();
+      } else if (browserPage) unavailablePage(res, offline);
+      else sendJson(res, 404, { error: 'not_found' });
+      return;
+    }
+    if (offline?.kind === 'unknown') {
+      // A mistyped salon link: say so, and show the way to the platform.
+      if (browserPage) unknownSalonPage(res, offline.tenant, offline.port, requestProto(req, config.trustProxy));
       else sendJson(res, 404, { error: 'not_found' });
       return;
     }
@@ -70,6 +86,14 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
   try {
     if (await serveAsset(ctx)) return;
 
+    // One address per page: /admin/bookings/ and /privacy/ lead to /admin/bookings and
+    // /privacy. Leading slashes collapse too, so the Location never names another host.
+    if (SAFE_METHODS.has(method) && url.pathname.length > 1 && url.pathname.endsWith('/') && !url.pathname.startsWith('/api/')) {
+      res.writeHead(301, { Location: `/${url.pathname.replace(/^\/+|\/+$/g, '')}${url.search}` });
+      res.end();
+      return;
+    }
+
     if (!SAFE_METHODS.has(method)) {
       // Writes must come from this same host (each salon is its own origin).
       const origin = req.headers.origin;
@@ -87,7 +111,12 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
     const match = router.match(method, url.pathname);
     if (match === 'method') throw new HttpError(405, 'method_not_allowed');
     if (match) {
-      if (url.pathname.startsWith('/api/')) ctx.session = await loadSession(req.headers.cookie, host);
+      if (url.pathname.startsWith('/api/')) {
+        // Crawlers may fetch what the public pages draw themselves from (robots.txt),
+        // but the JSON itself is never a search result.
+        res.setHeader('X-Robots-Tag', 'noindex');
+        ctx.session = await loadSession(req.headers.cookie, host);
+      }
       ctx.params = match.params;
       await match.handler(ctx);
       return;
@@ -98,6 +127,7 @@ async function handle(req: http.IncomingMessage, res: http.ServerResponse): Prom
       res.end();
       return;
     }
+    if (page && 'door' in page) return await ownerDoor(ctx);
     if (page) return await serveIndex(ctx, page.page);
     // A mistyped address in a browser gets a page with the way home, not raw JSON.
     if (SAFE_METHODS.has(method) && !url.pathname.startsWith('/api/') && req.headers.accept?.includes('text/html')) {
@@ -133,6 +163,11 @@ function sendError(ctx: Ctx, err: unknown): void {
   }
   if ((err as { code?: string }).code === '23505') {
     sendJson(res, 409, { error: 'conflict' });
+    return;
+  }
+  // A value Postgres cannot read as its type (a malformed uuid, say): the request's fault.
+  if ((err as { code?: string }).code === '22P02') {
+    sendJson(res, 400, { error: 'bad_request' });
     return;
   }
   console.error(`${ctx.req.method} ${ctx.url.pathname}`, err);

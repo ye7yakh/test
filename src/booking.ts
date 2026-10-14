@@ -99,31 +99,49 @@ export async function availability(db: Db, salon: Salon, input: AvailabilityInpu
       [salon.id, weekday, staffIds],
       db,
     );
+  // Busy time in real instants (minutes since the epoch), not wall-clock minutes: on a
+  // night the clocks change, wall-clock maths would shrink or stretch a booking.
+  // A visit marked done ("Arrived", which the owner taps as it starts) still holds the
+  // chair until its end: the customer is sitting in it, and Undo must be able to bring
+  // it back to confirmed. The exclusion constraint leaves 'completed' out on purpose
+  // (older rows may overlap one); every new booking comes through here, so none can.
   const busy = await query<{ staff_id: number; s: string; e: string }>(
-      `select staff_id,
-              extract(epoch from (start_at at time zone $2) - $3::timestamp) / 60 as s,
-              extract(epoch from (end_at at time zone $2) - $3::timestamp) / 60 as e
+      `select staff_id, extract(epoch from start_at) / 60 as s, extract(epoch from end_at) / 60 as e
          from bookings
         where salon_id = $1 and staff_id = any($4::bigint[])
-          and status in ('pending_payment', 'payment_sent', 'confirmed')
+          and status in ('pending_payment', 'payment_sent', 'confirmed', 'completed')
           and (status <> 'pending_payment' or expires_at > now())
           and start_at < (($3::date + 2)::timestamp at time zone $2)
           and end_at > ($3::timestamp at time zone $2)`,
       [salon.id, salon.timezone, input.date, staffIds],
       db,
     );
-  const nowRow = await one<{ now_min: string }>(`select extract(epoch from (now() at time zone $1) - $2::timestamp) / 60 as now_min`, [salon.timezone, input.date], db);
+  // Each possible start (wall-clock minutes after the date's midnight) as a real
+  // instant, and whether that wall-clock time exists at all: when clocks go forward
+  // an hour is skipped, and its times would land on the hour after (a "free" 02:00
+  // that books as 03:00, or always fails). The same mapping createBooking stores.
+  const instants = await query<{ m: number; inst: string; real: boolean; now_at: string }>(
+      `select m, extract(epoch from inst) / 60 as inst, (inst at time zone $1) = wall as real, extract(epoch from now()) / 60 as now_at
+         from (select m, wall, wall at time zone $1 as inst
+                 from (select m, $2::timestamp + make_interval(mins => m) as wall from generate_series(0, 2880 - $3::int, $3::int) m) w) l
+        order by m`,
+      [salon.timezone, input.date, STEP_MIN],
+      db,
+    );
+  const instantOf = new Map(instants.map((r) => [r.m, r.real ? Number(r.inst) : null]));
 
-  const earliest = Number(nowRow!.now_min) + input.lead;
+  const earliest = Number(instants[0]!.now_at) + input.lead;
   const dur = service.duration_min;
   const free = new Map<number, number[]>();
   for (const st of staff) {
     const ranges = st.custom_hours ? ownRanges.filter((r) => r.staff_id === st.id) : salonRanges;
     const taken = busy.filter((b) => b.staff_id === st.id).map((b) => [Number(b.s), Number(b.e)] as const);
     for (const r of ranges) {
+      // Opening hours are wall-clock; the overlap test is in real time.
       for (let t = Math.ceil(r.open_min / STEP_MIN) * STEP_MIN; t + dur <= r.close_min; t += STEP_MIN) {
-        if (t < earliest) continue;
-        if (taken.some(([s, e]) => t < e && t + dur > s)) continue;
+        const at = instantOf.get(t);
+        if (at == null || at < earliest) continue;
+        if (taken.some(([s, e]) => at < e && at + dur > s)) continue;
         const list = free.get(t) ?? [];
         list.push(st.id);
         free.set(t, list);
@@ -143,6 +161,13 @@ interface CreateInput extends AvailabilityInput {
 
 /** Books a slot. Runs inside the caller's transaction; the database refuses overlaps. */
 export async function createBooking(db: Db, salon: Salon, input: CreateInput): Promise<{ id: number; token: string }> {
+  // One booking at a time per salon, until this transaction ends. Two people asking
+  // for "anyone" at the same moment would otherwise both be given the same barber
+  // (worked out from what was committed before either of them), and the second
+  // would be told the time is taken while another barber is free. Waiting in turn,
+  // the second sees the first booking and gets someone else. (Its own key space,
+  // apart from the migration lock's single key.)
+  await query('select pg_advisory_xact_lock(727002, $1::int)', [salon.id], db);
   await expireHolds(db, salon.id);
   const { service, slots } = await availability(db, salon, input);
   const slot = slots.find((s) => s.min === input.min);
@@ -163,11 +188,14 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
     staffId = [...slot.staff].sort((a, b) => (load.get(a) ?? 0) - (load.get(b) ?? 0))[0]!;
   }
 
+  // The phone is not verified, so an online booking never renames someone the salon
+  // already knows by this number; the owner's own entry does. Either way the name
+  // given is kept on this booking (customer_name), and that is what is shown for it.
   const customer = await one<{ id: number }>(
     `insert into customers (salon_id, phone, name) values ($1, $2, $3)
-     on conflict (salon_id, phone) do update set name = excluded.name
+     on conflict (salon_id, phone) do update set name = case when $4 = 'owner' then excluded.name else customers.name end
      returning id`,
-    [salon.id, input.phone, input.name],
+    [salon.id, input.phone, input.name, input.source],
     db,
   );
 
@@ -186,17 +214,19 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
   const needsDeposit = input.source === 'online' && salon.cliq_required;
   try {
     const row = await one<{ id: number; status: string }>(
-      `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, deposit, expires_at, source, token_hash)
+      // The deposit hold never outlives the appointment's start: nobody should be
+      // paying for a visit that has begun (online slots start at least LEAD_MIN out).
+      `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, deposit, expires_at, source, token_hash, customer_name)
        select $1, $2, $3, $4, t.start_at, t.start_at + make_interval(mins => $7),
               case when d.deposit > 0 then 'pending_payment' else 'confirmed' end,
               $8::numeric, d.deposit,
-              case when d.deposit > 0 then now() + make_interval(mins => $12) end,
-              $13, $14
+              case when d.deposit > 0 then least(now() + make_interval(mins => $12), t.start_at) end,
+              $13, $14, $16
          from (select ($5::timestamp + make_interval(mins => $6)) at time zone $15 as start_at) t,
               (select case when $9 then (case when $10 = 'full' then $8::numeric else least($11::numeric, $8::numeric) end) else 0 end as deposit) d
        returning id, status`,
       [salon.id, customer!.id, staffId, service.id, input.date, input.min, service.duration_min, service.price,
-        needsDeposit, salon.deposit_kind, salon.deposit_amount, salon.payment_window_min, input.source, hashToken(token), salon.timezone],
+        needsDeposit, salon.deposit_kind, salon.deposit_amount, salon.payment_window_min, input.source, hashToken(token), salon.timezone, input.name],
       db,
     );
     publish(salon.id, 'booking', { id: row!.id, status: row!.status });
@@ -226,7 +256,8 @@ export function bookingSelect(where: string): string {
            (extract(epoch from b.end_at - b.start_at) / 60)::int as duration_min,
            b.start_at > now() as upcoming,
            b.created_at,
-           c.id as customer_id, c.name as customer_name, c.phone as customer_phone,
+           -- The name given for this booking; older rows fall back to the customer's.
+           c.id as customer_id, coalesce(b.customer_name, c.name) as customer_name, c.phone as customer_phone,
            st.id as staff_id, st.name_ar as staff_name_ar, st.name_en as staff_name_en, st.photo_id as staff_photo_id,
            sv.id as service_id, sv.name_ar as service_name_ar, sv.name_en as service_name_en, sv.icon as service_icon
       from bookings b
@@ -262,13 +293,21 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
   };
 }
 
-/** Payment screenshots hold bank details: gone a week after the booking is decided. */
+/**
+ * Payment screenshots hold bank details: gone a week after the booking is decided
+ * or runs out of time. A payment the owner never decided on runs out a week after
+ * the visit (its updated_at does not move while it waits, so the visit is the clock);
+ * the booking itself stays for the owner to settle.
+ */
 export async function purgeProofs(db: Db): Promise<number> {
   const rows = await query(
     `delete from booking_proofs p using bookings b
       where b.id = p.booking_id
-        and (b.status not in ('pending_payment', 'payment_sent') or (b.status = 'pending_payment' and b.expires_at <= now()))
-        and b.updated_at < now() - interval '7 days'
+        and (
+          ((b.status not in ('pending_payment', 'payment_sent') or (b.status = 'pending_payment' and b.expires_at <= now()))
+            and b.updated_at < now() - interval '7 days')
+          or (b.status = 'payment_sent' and b.end_at < now() - interval '7 days')
+        )
       returning p.booking_id`,
     [],
     db,

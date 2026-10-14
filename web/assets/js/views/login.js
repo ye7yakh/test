@@ -1,13 +1,76 @@
-// Sign-in for salon owners (on the salon's subdomain) and the platform admin.
+// Sign-in for salon owners (on the salon's subdomain) and the platform admin. On a
+// wide screen the form shares the room with a showcase: on a salon's link, the
+// salon's own app in its colours (what the owner is about to run); on the
+// platform's dashboard, the constellation of salons it serves.
 import { api } from '../api.js';
-import { appIcon, appReady, field, h, icon, input, markInvalid } from '../dom.js';
+import { appIcon, appReady, clear, field, h, icon, input, legalLinks, markInvalid, scissorsMark } from '../dom.js';
 import { errorText, pick, t } from '../i18n.js';
+import { miniApp, phone } from '../preview.js';
+import { waNumber } from './booking.js';
+
+const WIDE = '(min-width: 1024px)';
+
+/** The salon's app as its customers see it, drawn from its live page data. */
+function salonShowcase(salon) {
+  const name = pick(salon, 'name');
+  const stage = h('div', { class: 'ls-stage', 'aria-hidden': 'true' }, h('div', { class: 'ls-ring' }), h('div', { class: 'ls-phone ls-wait' }, phone(h('div', { class: 'ls-blank' }), { scale: 0.82 })));
+  const panel = h(
+    'aside',
+    { class: 'login-show salon' },
+    stage,
+    h('div', { class: 'ls-caption' }, h('h2', { text: t('login.showcase_salon', { name }) }), h('p', { text: t('login.showcase_salon_sub') })),
+  );
+  let started = false;
+  const load = () => {
+    if (started) return;
+    started = true;
+    api('GET', '/api/public/salon')
+      .then((data) => {
+        const holder = stage.querySelector('.ls-phone');
+        clear(holder, phone(miniApp(data), { scale: 0.82 }));
+        holder.classList.remove('ls-wait');
+      })
+      .catch(() => {});
+  };
+  // Phones never see the panel, so they never fetch it.
+  const wide = matchMedia(WIDE);
+  if (wide.matches) load();
+  else wide.addEventListener('change', (e) => e.matches && load(), { once: true });
+  return panel;
+}
+
+/** The platform's dashboard: its mark at the centre, salons in orbit, bookings rising. */
+function platformShowcase() {
+  const tile = (i) => h('span', { class: `ls-sat s${i}` }, h('span', { class: 'app-icon' }, scissorsMark()));
+  const bars = [32, 46, 28, 58, 40, 72, 52, 86, 64, 94, 78, 100];
+  return h(
+    'aside',
+    { class: 'login-show platform' },
+    h(
+      'div',
+      { class: 'ls-orbit', 'aria-hidden': 'true' },
+      h('i', { class: 'orb r1' }),
+      h('i', { class: 'orb r2' }),
+      h('i', { class: 'orb r3' }),
+      h('div', { class: 'ls-spin a' }, tile(1), tile(2)),
+      h('div', { class: 'ls-spin b' }, tile(3), tile(4), tile(5)),
+      h('div', { class: 'ls-core app-icon studio-mark' }, icon('sparkles')),
+      h(
+        'div',
+        { class: 'ls-board' },
+        h('div', { class: 'ls-board-top' }, h('i'), h('i'), h('b')),
+        h('div', { class: 'ls-bars' }, bars.map((v, i) => h('i', { style: { '--v': String(v / 100), '--i': String(i) } }))),
+      ),
+    ),
+    h('div', { class: 'ls-caption' }, h('h2', { text: t('admin.dash_title') }), h('p', { text: t('login.showcase_platform') })),
+  );
+}
 
 export function loginView(app) {
   queueMicrotask(appReady);
   const ctx = app.ctx;
   const salon = ctx.salon;
-  const phone = input({ type: 'tel', name: 'phone', autocomplete: 'username', inputmode: 'tel', required: true });
+  const phoneInput = input({ type: 'tel', name: 'phone', autocomplete: 'username', inputmode: 'tel', required: true });
   const password = input({ type: 'password', name: 'password', autocomplete: 'current-password', required: true });
   const reveal = h('button', { class: 'pw-toggle', type: 'button', 'aria-label': t('login.show'), 'aria-pressed': 'false' }, icon('eye'));
   reveal.addEventListener('click', () => {
@@ -26,7 +89,7 @@ export function loginView(app) {
   const form = h(
     'form',
     { class: 'card', novalidate: true },
-    h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${ctx.tenant.calling_code}` }), field(t('login.phone'), phone)),
+    h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${ctx.tenant.calling_code}` }), field(t('login.phone'), phoneInput)),
     h('div', { style: { marginTop: '12px' } }, pwField),
     error,
     submit,
@@ -37,7 +100,7 @@ export function loginView(app) {
     submit.classList.add('busy');
     submit.disabled = true;
     try {
-      await api('POST', '/api/auth/login', { phone: phone.value, password: password.value });
+      await api('POST', '/api/auth/login', { phone: phoneInput.value, password: password.value });
       await app.reload();
       // Owners land on their dashboard (/admin), the app their phone installs.
       if (ctx.kind === 'salon' && app.canManage) app.go('/admin', { replace: true });
@@ -53,27 +116,50 @@ export function loginView(app) {
   });
 
   const name = pick(salon ?? ctx.tenant, 'name');
+  // Owners get their passwords from the platform: a forgotten one is a WhatsApp
+  // message to it, with the salon and the number already filled in.
+  const contact = ctx.tenant.contact_phone;
+  let forgot = null;
+  if (salon && contact) {
+    forgot = h('a', { class: 'link-btn forgot', target: '_blank', rel: 'noopener' }, icon('key'), t('login.forgot'));
+    const sync = () => {
+      const typed = phoneInput.value.trim();
+      const text = t('login.forgot_wa', { salon: name, phone: typed ? `+${ctx.tenant.calling_code} ${typed.replace(/^0+/, '')}` : '—' });
+      forgot.href = `https://wa.me/${waNumber(contact)}?text=${encodeURIComponent(text)}`;
+    };
+    sync();
+    phoneInput.addEventListener('input', sync);
+  }
+
+  const show = salon ? salonShowcase(salon) : platformShowcase();
   return h(
     'div',
-    { class: 'login' },
+    { class: 'login has-show' },
     h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h(
       'div',
-      { class: 'login-inner' },
+      { class: 'login-grid' },
       h(
-        'div',
-        { class: 'login-brand rise' },
-        salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon studio-mark' }, icon('sparkles')),
-        h('h1', { text: t('login.welcome') }),
-        h('p', { text: salon ? t('login.studio', { name }) : `${name} · ${t('login.platform')}` }),
+        'main',
+        { class: 'login-inner' },
+        h(
+          'div',
+          { class: 'login-brand rise' },
+          salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon studio-mark' }, icon('sparkles')),
+          h('h1', { text: t('login.welcome') }),
+          h('p', { text: salon ? t('login.studio', { name }) : `${name} · ${t('login.platform')}` }),
+        ),
+        h('div', { class: 'rise', style: { '--i': '1' } }, form),
+        forgot ? h('div', { class: 'login-help rise', style: { '--i': '2' } }, forgot) : null,
+        h(
+          'div',
+          { class: 'login-foot rise', style: { '--i': '2' } },
+          salon ? h('a', { class: 'link-btn', href: '/' }, icon('arrow', 'flip-rtl'), t('login.back')) : null,
+          h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
+        ),
+        h('div', { class: 'login-legal rise', style: { '--i': '3' } }, legalLinks()),
       ),
-      h('div', { class: 'rise', style: { '--i': '1' } }, form),
-      h(
-        'div',
-        { class: 'login-foot rise', style: { '--i': '2' } },
-        salon ? h('a', { class: 'link-btn', href: '/' }, icon('arrow', 'flip-rtl'), t('login.back')) : h('span'),
-        h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
-      ),
+      show,
     ),
   );
 }

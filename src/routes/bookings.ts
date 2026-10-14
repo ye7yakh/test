@@ -34,9 +34,14 @@ const idParam = (ctx: Ctx, name: string, required = true): number | null => {
 
 const slotView = (s: { min: number; staff: number[] }) => ({ min: s.min, time: clock(s.min), next_day: s.min >= 1440, staff: s.staff });
 
+/**
+ * Bookable days: today up to maxDays ahead, and yesterday too, because a range that
+ * runs past midnight belongs to the day it opened. At 00:30 on Friday, Thursday's
+ * 18:00–02:00 is still open; availability() only offers what is left of it.
+ */
 async function checkDateWindow(salon: Salon, date: string, maxDays: number) {
   const today = await salonToday(pool, salon.timezone);
-  if (date < today || date > addDays(today, maxDays)) throw new HttpError(400, 'invalid', 'date');
+  if (date < addDays(today, -1) || date > addDays(today, maxDays)) throw new HttpError(400, 'invalid', 'date');
   return today;
 }
 
@@ -90,8 +95,17 @@ async function publicDays(ctx: Ctx) {
   const serviceId = idParam(ctx, 'service_id')!;
   const staffId = idParam(ctx, 'staff_id', false);
   const today = await salonToday(pool, salon.timezone);
-  const days = [];
-  for (let i = 0; i < DAYS_AHEAD; i++) {
+  const days: { date: string; slots: number; late_night?: true }[] = [];
+  // After midnight, last night's late opening may still be running. What is left of it
+  // comes first, under the day it opened, marked so the strip can call it "tonight".
+  const yesterday = addDays(today, -1);
+  const tail = await availability(pool, salon, { serviceId, staffId, date: yesterday, lead: LEAD_MIN });
+  if (tail.slots.length) days.push({ date: yesterday, slots: tail.slots.length, late_night: true });
+  // The strip always has DAYS_AHEAD chips (two rows of seven on a wide screen): when
+  // tonight's entry is there, the last day ahead gives way to it. That day can still be
+  // booked through /availability (checkDateWindow allows it); it just is not listed.
+  const ahead = DAYS_AHEAD - days.length;
+  for (let i = 0; i < ahead; i++) {
     const date = addDays(today, i);
     const { slots } = await availability(pool, salon, { serviceId, staffId, date, lead: LEAD_MIN });
     days.push({ date, slots: slots.length });
@@ -162,7 +176,12 @@ async function publicProof(ctx: Ctx) {
 
 /**
  * The customer uploads the CliQ receipt. Allowed while the deposit is awaited and,
- * to fix a wrong picture, until the owner has decided.
+ * to fix a wrong picture, until the owner has decided or the visit has begun.
+ *
+ * A receipt that arrives in time locks the booking in: it moves to "payment_sent"
+ * in the same transaction that checked the deadline. The customer's "sent" that
+ * follows only adds the note, so a deadline passing between the two requests (the
+ * upload is the slow one) can never cost a customer who has paid their booking.
  */
 async function publicProofUpload(ctx: Ctx) {
   const salon = requireBookableSalon(ctx);
@@ -174,7 +193,7 @@ async function publicProofUpload(ctx: Ctx) {
     const b = await one<{ id: number; status: BookingStatus }>(
       `select id, status from bookings
         where salon_id = $1 and token_hash = $2
-          and (status = 'payment_sent' or (status = 'pending_payment' and expires_at > now()))
+          and start_at > now() and (status = 'payment_sent' or (status = 'pending_payment' and expires_at > now()))
         for update`,
       [salon.id, hashToken(token)],
       db,
@@ -187,25 +206,41 @@ async function publicProofUpload(ctx: Ctx) {
       [b.id, img.contentType, img.bytes, img.width, img.height],
       db,
     );
+    if (b.status === 'pending_payment') {
+      await query(`update bookings set status = 'payment_sent', updated_at = now() where id = $1`, [b.id], db);
+    }
     return b;
   });
-  // A replaced picture on a payment already under review: the owner's screen refreshes.
-  if (changed.status === 'payment_sent') publish(salon.id, 'booking', { id: changed.id, status: 'payment_sent', proof: 'replaced' });
+  // The owner's screen refreshes: a payment to check, or a replaced picture on one under review.
+  publish(salon.id, 'booking', changed.status === 'payment_sent'
+    ? { id: changed.id, status: 'payment_sent', proof: 'replaced' }
+    : { id: changed.id, status: 'payment_sent' });
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
 
-/** The customer says the CliQ transfer is sent, with its screenshot; the owner reviews it. */
+/**
+ * The customer says the CliQ transfer is sent, with who sent it; the owner reviews it.
+ * The screenshot uploaded just before has already moved the booking to "payment_sent"
+ * (in time, or it would have been refused), so this only records the note, however
+ * late it arrives. Before the owner decides, the note can be corrected.
+ */
 async function publicSent(ctx: Ctx) {
   const salon = requireBookableSalon(ctx);
   const token = tokenParam(ctx);
   const note = new Input(await readJson(ctx)).opt('note', text(120)) ?? '';
-  const row = await one<{ id: number; has_proof: boolean }>(
-    `update bookings b set status = 'payment_sent', payment_note = $3, updated_at = now()
-      where b.salon_id = $1 and b.token_hash = $2 and b.status = 'pending_payment' and b.expires_at > now()
-        and exists (select 1 from booking_proofs p where p.booking_id = b.id)
-      returning b.id, true as has_proof`,
-    [salon.id, hashToken(token), note],
-  );
+  const row = await tx(async (db) => {
+    const b = await one<{ id: number; status: BookingStatus }>(
+      `select b.id, b.status from bookings b
+        where b.salon_id = $1 and b.token_hash = $2
+          and (b.status = 'payment_sent' or (b.status = 'pending_payment' and b.expires_at > now()))
+          and exists (select 1 from booking_proofs p where p.booking_id = b.id)
+        for update`,
+      [salon.id, hashToken(token)],
+      db,
+    );
+    if (b) await query(`update bookings set status = 'payment_sent', payment_note = $2, updated_at = now() where id = $1`, [b.id, note], db);
+    return b;
+  });
   if (!row) {
     // Tell "still waiting, but no screenshot yet" apart from "too late".
     const waiting = await one(
@@ -214,7 +249,9 @@ async function publicSent(ctx: Ctx) {
     );
     throw waiting ? new HttpError(400, 'required', 'proof') : new HttpError(409, 'not_pending');
   }
-  publish(salon.id, 'booking', { id: row.id, status: 'payment_sent' });
+  // Only a booking that changed status announces a payment; a note on one already
+  // announced (by its upload) just refreshes the owner's screen, without a second toast.
+  publish(salon.id, 'booking', row.status === 'pending_payment' ? { id: row.id, status: 'payment_sent' } : { id: row.id, note: 'updated' });
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
 
@@ -265,10 +302,13 @@ async function ownerOverview(ctx: Ctx) {
         group by 1`,
       [salonId, from, days],
     ),
+    // A payment waiting for the owner's check stays here (and in the badge) until it is
+    // decided, however long ago the visit was; those come first, soonest visit on top,
+    // then the holds still waiting for the customer's transfer.
     query(
-      `${bookingSelect(`b.salon_id = $1 and b.end_at > now() - interval '1 hour'
+      `${bookingSelect(`b.salon_id = $1
          and (b.status = 'payment_sent' or (b.status = 'pending_payment' and b.expires_at > now()))`)}
-       order by b.status desc, b.start_at`,
+       order by (b.status = 'payment_sent') desc, b.start_at, b.id`,
       [salonId],
     ),
   ]);
@@ -333,9 +373,22 @@ async function ownerUpdate(ctx: Ctx) {
   const status = new Input(await readJson(ctx)).req('status', oneOf(['confirmed', 'completed', 'no_show', 'cancelled'] as const));
   await tx(async (db) => {
     await expireHolds(db, salonId);
-    const current = await one<{ status: BookingStatus }>('select status from bookings where salon_id = $1 and id = $2 for update', [salonId, id], db);
+    const current = await one<{ status: BookingStatus; started: boolean; near: boolean }>(
+      `select status, start_at <= now() as started, start_at <= now() + interval '1 hour' as near
+         from bookings where salon_id = $1 and id = $2 for update`,
+      [salonId, id],
+      db,
+    );
     if (!current) throw new HttpError(404, 'not_found');
     if (!NEXT[current.status].includes(status)) throw new HttpError(409, 'bad_transition');
+    // A visit is closed only once it is due: "no-show" after it starts, "done" from an
+    // hour before (an early arrival). A no-show frees the chair, so on a future booking
+    // a stray tap would let someone else take the time, and Undo could not bring it
+    // back. "Done" keeps holding the chair until the visit ends (see availability()),
+    // but marking a visit days ahead as done is a mistake either way.
+    if ((status === 'no_show' && !current.started) || (status === 'completed' && !current.near)) {
+      throw new HttpError(409, 'bad_transition');
+    }
     try {
       // Cancelling a payment the customer said they sent is a rejection; they are told so.
       const rejected = status === 'cancelled' && current.status === 'payment_sent';

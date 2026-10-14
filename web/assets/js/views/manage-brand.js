@@ -8,7 +8,8 @@ import { appIcon, busy, clear, field, h, icon, input, markInvalid, salonIcon, sa
 import { t } from '../i18n.js';
 import { homeScreen, miniApp, phone, splashScreen } from '../preview.js';
 import { PALETTES } from '../templates.js';
-import { applyColors, applyLooks } from '../theme.js';
+import { applyColors, applyLooks, reducedMotion } from '../theme.js';
+import { openPreview } from './manage.js';
 
 const KEYS = ['name_ar', 'name_en', 'color_primary', 'color_accent', 'photo_style', 'icon_bg', 'page_theme', 'studio_theme'];
 const ICON_BGS = ['auto', 'white', 'primary', 'night'];
@@ -75,6 +76,32 @@ async function removePicture(button, kind, store, after) {
   });
 }
 
+/** The floating phone: shown while the big stage is scrolled away (phones only). */
+function floatingPreview(store) {
+  const holder = h('span', { class: 'peek-phone', 'aria-hidden': 'true' });
+  const el = h('button', { class: 'peek', type: 'button', 'aria-label': t('preview.title'), onclick: () => openPreview(store) }, holder, h('span', { class: 'peek-eye', 'aria-hidden': 'true' }, icon('eye')));
+  let shown = false;
+  const render = () => {
+    if (shown) clear(holder, phone(miniApp(store.previewState()), { scale: 0.2 }));
+  };
+  return {
+    render,
+    show(on) {
+      if (on === shown) return;
+      shown = on;
+      if (on) {
+        render();
+        el.classList.remove('out');
+        document.body.append(el);
+      } else if (el.isConnected) {
+        el.classList.add('out');
+        setTimeout(() => !shown && el.remove(), reducedMotion() ? 0 : 250);
+      }
+    },
+    remove: () => el.remove(),
+  };
+}
+
 export function brandPage(store, app) {
   const saved = () => Object.fromEntries(KEYS.map((k) => [k, store.salon[k]]));
   let draft = saved();
@@ -89,11 +116,13 @@ export function brandPage(store, app) {
   });
 
   const preview = stage(store);
+  const peek = floatingPreview(store);
   const pictures = () => {
     renderLogo();
     renderIcon();
     renderCover();
     preview.render();
+    peek.render();
   };
 
   // ---- name
@@ -118,7 +147,7 @@ export function brandPage(store, app) {
 
   // ---- app icon: its own picture, or the logo on a background
   const iconBox = h('div', { class: 'logo-drop' });
-  const bgChips = h('div', { class: 'scroller icon-bgs' });
+  const bgChips = h('div', { class: 'scroller fit icon-bgs' });
   function renderIcon() {
     const own = store.salon.icon_url;
     const tile = salonIcon({ ...store.salon, ...draft });
@@ -140,12 +169,20 @@ export function brandPage(store, app) {
   const coverBox = h('div', { class: 'cover-drop' });
   function renderCover() {
     const url = store.salon.cover_url;
-    const shot = url ? h('img', { src: url, alt: '' }) : h('div', { class: 'cover-empty' }, icon('image'), h('span', { text: t('brand.cover_sub') }));
     const upload = h('button', { class: 'btn btn-secondary btn-sm', type: 'button' }, icon('camera'), url ? t('brand.cover_change') : t('brand.cover_upload'));
     upload.addEventListener('click', () => uploadPicture(upload, 'cover', store, pictures, 2000));
-    const remove = url ? h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: t('brand.cover_remove') }) : null;
-    remove?.addEventListener('click', () => removePicture(remove, 'cover', store, pictures));
-    const frame = h('button', { class: `cover-frame ${url ? 'has' : ''}`, type: 'button', 'aria-label': upload.textContent }, shot);
+    if (!url) {
+      // Empty: one frame, one button inside it.
+      const empty = h('div', { class: 'cover-frame cover-empty' }, h('div', { class: 'tile', 'aria-hidden': 'true' }, icon('image')), h('span', { text: t('brand.cover_sub') }), upload);
+      empty.addEventListener('click', (e) => {
+        if (e.target === empty) upload.click();
+      });
+      clear(coverBox, empty);
+      return;
+    }
+    const remove = h('button', { class: 'btn btn-ghost btn-sm', type: 'button', text: t('brand.cover_remove') });
+    remove.addEventListener('click', () => removePicture(remove, 'cover', store, pictures));
+    const frame = h('button', { class: 'cover-frame has', type: 'button', 'aria-label': t('brand.cover_change') }, h('img', { src: url, alt: '' }));
     frame.addEventListener('click', () => upload.click());
     clear(coverBox, frame, h('div', { class: 'row wrap', style: { gap: '8px', marginTop: '12px' } }, upload, remove));
   }
@@ -153,10 +190,11 @@ export function brandPage(store, app) {
   // ---- colours
   const palettes = PALETTES.map(([id, primary, accent]) => h(
     'button',
-    { class: 'palette', type: 'button', 'data-id': id, onclick: () => change({ color_primary: primary, color_accent: accent }) },
-    h('div', { class: 'sw', style: { background: primary } }, h('i', { style: { background: accent } })),
+    { class: 'palette', type: 'button', 'data-id': id, 'aria-pressed': 'false', onclick: () => change({ color_primary: primary, color_accent: accent }) },
+    h('div', { class: 'sw', 'aria-hidden': 'true', style: { '--p': primary, '--a': accent } }),
     h('span', { class: 'nm', text: t(`pal.${id}`) }),
   ));
+  const paletteStrip = h('div', { class: 'scroller fit palettes' }, palettes);
   const colorRow = (key, title, sub) => {
     const swatch = h('div', { class: 'sw' });
     const picker = h('input', { type: 'color', 'aria-label': title });
@@ -199,7 +237,11 @@ export function brandPage(store, app) {
   });
 
   function refreshControls() {
-    palettes.forEach((p, i) => p.classList.toggle('on', PALETTES[i][1] === draft.color_primary && PALETTES[i][2] === draft.color_accent));
+    palettes.forEach((p, i) => {
+      const on = PALETTES[i][1] === draft.color_primary && PALETTES[i][2] === draft.color_accent;
+      p.classList.toggle('on', on);
+      p.setAttribute('aria-pressed', String(on));
+    });
     primaryRow.refresh();
     accentRow.refresh();
     styleCards.forEach((c) => c.refresh());
@@ -215,6 +257,7 @@ export function brandPage(store, app) {
     applyLooks({ studio_theme: draft.studio_theme });
     store.preview(draft);
     preview.render();
+    peek.render();
     refreshControls();
     bar.toggle(dirty());
   }
@@ -252,27 +295,126 @@ export function brandPage(store, app) {
     h('div', { class: 'section-head' }, h('div', null, h('h2', { text: title }), sub ? h('p', { text: sub }) : null)),
     ...body,
   );
-  const form = h(
-    'div',
-    null,
-    h('div', { class: 's-head' }, h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t('brand.title') }), h('p', { class: 's-sub', text: t('brand.sub') }))),
-    stagger([
-      preview.el,
+  // Four groups, each a stop on the sticky chip bar.
+  const group = (id, ...children) => h('div', { class: 'brand-group', id: `brand-${id}`, 'data-group': id }, children);
+  const groups = [
+    group(
+      'identity',
       h('section', { class: 'section' }, h('div', { class: 'card' }, field(t('brand.name'), nameAr), field(t('brand.name_en'), nameEn, { optional: true }))),
       section(t('brand.logo'), null, h('div', { class: 'card' }, logoBox)),
       section(t('brand.app_icon'), t('brand.app_icon_sub'), h('div', { class: 'card' }, iconBox, h('div', { class: 'eyebrow', style: { margin: '16px 2px 8px' }, text: t('brand.icon_bg') }), bgChips)),
       section(t('brand.cover'), null, coverBox),
-      section(t('brand.colors'), t('brand.colors_sub'), h('div', { class: 'scroller' }, palettes), h('div', { style: { marginTop: '12px' } }, primaryRow, accentRow)),
-      section(t('brand.page_look'), t('brand.page_look_sub'), pageLook),
-      section(t('brand.studio_look'), t('brand.studio_look_sub'), studioLook),
+    ),
+    group('colors', section(t('brand.colors'), t('brand.colors_sub'), paletteStrip, h('div', { style: { marginTop: '12px' } }, primaryRow, accentRow))),
+    group('looks', section(t('brand.page_look'), t('brand.page_look_sub'), pageLook), section(t('brand.studio_look'), t('brand.studio_look_sub'), studioLook)),
+    group(
+      'photos',
       h(
         'section',
         { class: 'section' },
         h('div', { class: 'section-head' }, h('div', null, h('h2', { class: 'row', style: { gap: '8px' } }, icon('sparkles'), t('brand.style')), h('p', { text: t('brand.style_sub') }))),
         h('div', { class: 'style-grid' }, styleCards),
       ),
-    ]),
+    ),
+  ];
+  const nav = brandNav(groups, app);
+  const form = h(
+    'div',
+    { class: 'brand-page' },
+    h('div', { class: 's-head' }, h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t('brand.title') }), h('p', { class: 's-sub', text: t('brand.sub') }))),
+    nav,
+    stagger([preview.el, ...groups]),
   );
   refreshControls();
+
+  // The chosen palette in view, not clipped at the strip's end.
+  requestAnimationFrame(() => {
+    const on = palettes.find((p) => p.classList.contains('on'));
+    if (on && paletteStrip.scrollWidth > paletteStrip.clientWidth) {
+      const strip = paletteStrip.getBoundingClientRect();
+      const box = on.getBoundingClientRect();
+      paletteStrip.scrollLeft += box.left + box.width / 2 - (strip.left + strip.width / 2);
+    }
+  });
+
+  // On a phone the stage scrolls away after the first section: a small floating
+  // phone keeps the result in sight, and opens the full preview.
+  // It steps aside over the photo styles at the page's end, so none stays covered.
+  const styleGrid = form.querySelector('.style-grid');
+  let stageGone = false;
+  let stylesShown = false;
+  const observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (entry.target === preview.el) stageGone = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+      else stylesShown = entry.isIntersecting;
+    }
+    peek.show(stageGone && !stylesShown);
+  }, { threshold: 0.08 });
+  observer.observe(preview.el);
+  observer.observe(styleGrid);
+  app.onUnmount(() => {
+    observer.disconnect();
+    peek.remove();
+  });
   return form;
+}
+
+/** Chips for the page's four groups: tap to jump, and they follow the scroll. */
+function brandNav(groups, app) {
+  const chips = groups.map((g) => {
+    const id = g.dataset.group;
+    return h('button', {
+      class: 'chip-btn',
+      type: 'button',
+      'data-group': id,
+      'aria-controls': g.id,
+      onclick: () => {
+        mark(id);
+        g.scrollIntoView({ behavior: reducedMotion() ? 'auto' : 'smooth', block: 'start' });
+      },
+    }, t(`brand.nav_${id}`));
+  });
+  const strip = h('div', { class: 'scroller' }, chips);
+  const el = h('nav', { class: 'brand-nav', 'aria-label': t('brand.nav') }, strip);
+  const visible = new Map();
+  let currentId = null;
+  const mark = (id) => {
+    if (id === currentId) return;
+    currentId = id;
+    chips.forEach((c) => {
+      const on = c.dataset.group === id;
+      c.classList.toggle('on', on);
+      if (on) c.setAttribute('aria-current', 'true');
+      else c.removeAttribute('aria-current');
+      // Keep the lit chip in view on a narrow strip (the strip only; the page keeps its scroll).
+      if (on && strip.scrollWidth > strip.clientWidth) {
+        const a = strip.getBoundingClientRect();
+        const b = c.getBoundingClientRect();
+        const pad = 24;
+        const shift = b.left < a.left + pad ? b.left - a.left - pad : b.right > a.right - pad ? b.right - a.right + pad : 0;
+        if (shift) strip.scrollBy({ left: shift, behavior: reducedMotion() ? 'auto' : 'smooth' });
+      }
+    });
+  };
+  mark(groups[0].dataset.group);
+  // A group is "current" once it reaches the band under the sticky bars.
+  // The last group is short and may never reach that band: at the page's end it is current.
+  const atEnd = () => innerHeight + scrollY >= document.documentElement.scrollHeight - 4;
+  const spy = new IntersectionObserver((entries) => {
+    for (const e of entries) visible.set(e.target.dataset.group, e.isIntersecting);
+    const current = groups.find((g) => visible.get(g.dataset.group));
+    if (current && !atEnd()) mark(current.dataset.group);
+  }, { rootMargin: '-140px 0px -55% 0px' });
+  groups.forEach((g) => spy.observe(g));
+  // Glass only once it is pinned under the header, not as a band across the page top.
+  const onScroll = () => {
+    el.classList.toggle('stuck', el.getBoundingClientRect().top <= parseFloat(getComputedStyle(el).top) + 1);
+    if (atEnd()) mark(groups[groups.length - 1].dataset.group);
+  };
+  addEventListener('scroll', onScroll, { passive: true });
+  app.onUnmount(() => {
+    spy.disconnect();
+    removeEventListener('scroll', onScroll);
+  });
+  return el;
 }

@@ -1,13 +1,12 @@
 import {
   assertLoginAllowed,
   checkNewPassword,
-  clearLoginFailures,
   createSession,
   destroySession,
   DUMMY_HASH,
   hashPassword,
+  loginSucceeded,
   normalizePhone,
-  recordLoginFailure,
   verifyPassword,
 } from '../auth.js';
 import { one, query } from '../db.js';
@@ -41,6 +40,7 @@ async function login(ctx: Ctx) {
   const phone = normalizePhone(body.phone, tenant.default_calling_code);
   const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
   const limitKey = `${tenant.id}:${phone ?? String(body.phone ?? '').slice(0, 40)}`;
+  // Counts this attempt now, before the slow password check, so parallel guesses are limited too.
   assertLoginAllowed(ctx.ip, limitKey);
 
   const user = phone
@@ -52,10 +52,10 @@ async function login(ctx: Ctx) {
   const passwordOk = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
   // The platform host is for the super admin only.
   if (!user || !passwordOk || (!ctx.host.salon && !user.is_super_admin)) {
-    recordLoginFailure(ctx.ip, limitKey);
+    // Already counted when the attempt began.
     throw new HttpError(401, 'bad_credentials');
   }
-  clearLoginFailures(limitKey);
+  loginSucceeded(ctx.ip, limitKey);
   if (ctx.session) await destroySession(ctx);
   await createSession(ctx.res, user.id, ctx.host);
   ok(ctx, { ok: true });
@@ -65,10 +65,16 @@ async function changePassword(ctx: Ctx) {
   if (!ctx.session) throw new HttpError(401, 'login_required');
   const body = await readJson(ctx);
   const next = checkNewPassword(body.next);
+  // Guessing the current password here is guessing the login: same limits, same
+  // account key, so the two together give no more tries than the login alone, and
+  // the admin's password reset clears both.
+  const limitKey = `${ctx.host.tenant.id}:${ctx.session.user.phone}`;
+  assertLoginAllowed(ctx.ip, limitKey);
   const row = await one<{ password_hash: string }>('select password_hash from users where id = $1', [ctx.session.user.id]);
   if (!row || typeof body.current !== 'string' || !(await verifyPassword(body.current, row.password_hash))) {
     throw new HttpError(400, 'wrong_password', 'current');
   }
+  loginSucceeded(ctx.ip, limitKey);
   // Their own password now, so any temporary one the admin set is gone.
   await query('update users set password_hash = $2, must_change_password = false where id = $1', [ctx.session.user.id, await hashPassword(next)]);
   // Sign out every other device.

@@ -1,32 +1,42 @@
 // Platform owner: every salon on this brand at a glance, and the controls to run
 // them: create and hand over, rename or move to a new link, suspend, reset an
 // owner's password. Leads with the one number that says the platform is alive:
-// bookings coming in.
+// bookings coming in. Salons that need a nudge come first.
 import { api } from '../api.js';
-import { areaChart } from '../chart.js';
+import { barChart } from '../chart.js';
 import { appReady, avatar, busy, clear, confetti, confirmDelete, countUp, field, h, icon, input, markInvalid, scissorsMark, sheet, stagger, switchRow, toast, toastError } from '../dom.js';
-import { getLang, pick, t, westernDigits } from '../i18n.js';
+import { errorText, getLang, pick, t, westernDigits } from '../i18n.js';
 import { fmtDate } from '../slots.js';
 import { waNumber } from './booking.js';
 
 const LOCALE = () => (getLang() === 'ar' ? 'ar-u-nu-latn' : 'en-u-nu-latn');
-const fmtNumber = (n) => new Intl.NumberFormat(LOCALE()).format(n);
+const fmtNumber = (n) => new Intl.NumberFormat(LOCALE(), { maximumFractionDigits: 1 }).format(n);
 const SETUP = ['brand', 'services', 'team', 'photos'];
 const FILTERS = ['all', 'active', 'setup', 'suspended'];
 const baseHost = () => location.host.replace(/^(admin|www)\./, '');
 const bare = (url) => url.replace(/^https?:\/\//, '');
+/** The link as people will type it: no scheme, no dev port. */
+const shortLink = (url) => bare(url).replace(/:\d+$/, '');
 // Keeps "+18%" in one piece inside Arabic text.
 const isolate = (s) => `⁦${s}⁩`;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const LAYOUT_KEY = 'admin-layout';
 
 const statusOf = (s) => (!s.active ? 'suspended' : s.ready ? 'ready' : 'setup');
 const setupDone = (s) => SETUP.filter((k) => s.setup[k]).length;
+/** Live salons that are stuck: setup unfinished, still on a temporary password, or never opened. */
+const needsAttention = (s) => {
+  const owner = s.owners[0];
+  return s.active && (!s.ready || !owner || owner.must_change_password || !owner.last_seen_at);
+};
 
-/** "3 hours ago", "yesterday". Last-seen is written hourly, so nothing finer. */
+/** "3 hours ago", "yesterday". Last-seen is written hourly, so nothing finer than "just now". */
 function relative(iso) {
   if (!iso) return null;
   const seconds = (Date.parse(iso) - Date.now()) / 1000;
-  const rtf = new Intl.RelativeTimeFormat(LOCALE(), { numeric: 'auto' });
   const abs = Math.abs(seconds);
+  if (abs < 3600) return t('admin.just_now');
+  const rtf = new Intl.RelativeTimeFormat(LOCALE(), { numeric: 'auto' });
   if (abs < 86400) return rtf.format(Math.round(seconds / 3600), 'hour');
   if (abs < 86400 * 45) return rtf.format(Math.round(seconds / 86400), 'day');
   return rtf.format(Math.round(seconds / (86400 * 30)), 'month');
@@ -35,6 +45,34 @@ function relative(iso) {
 async function copy(text) {
   await navigator.clipboard?.writeText(text).catch(() => {});
   toast(t('copied'));
+}
+
+const savedLayout = () => {
+  try {
+    return localStorage.getItem(LAYOUT_KEY) === 'list' ? 'list' : 'grid';
+  } catch {
+    return 'grid';
+  }
+};
+const saveLayout = (layout) => {
+  try {
+    localStorage.setItem(LAYOUT_KEY, layout);
+  } catch {}
+};
+
+/** Two small glyphs the shared icon set does not have: cards and rows. */
+function glyph(kind) {
+  const el = document.createElementNS(SVG_NS, 'svg');
+  for (const [k, v] of Object.entries({ viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.8', 'stroke-linecap': 'round', 'aria-hidden': 'true', class: 'icon' })) el.setAttribute(k, v);
+  const shapes = kind === 'grid'
+    ? [['rect', { x: 4, y: 4, width: 6.5, height: 6.5, rx: 2 }], ['rect', { x: 13.5, y: 4, width: 6.5, height: 6.5, rx: 2 }], ['rect', { x: 4, y: 13.5, width: 6.5, height: 6.5, rx: 2 }], ['rect', { x: 13.5, y: 13.5, width: 6.5, height: 6.5, rx: 2 }]]
+    : [['path', { d: 'M9.5 6.5H20M9.5 12H20M9.5 17.5H20' }], ['circle', { cx: 5, cy: 6.5, r: 1.2 }], ['circle', { cx: 5, cy: 12, r: 1.2 }], ['circle', { cx: 5, cy: 17.5, r: 1.2 }]];
+  for (const [tag, attrs] of shapes) {
+    const s = document.createElementNS(SVG_NS, tag);
+    for (const [k, v] of Object.entries(attrs)) s.setAttribute(k, String(v));
+    el.append(s);
+  }
+  return el;
 }
 
 /** The salon's own app icon, or the platform mark while it is offline. */
@@ -55,17 +93,17 @@ function salonIcon(s) {
 function trendCard(series) {
   const sum = (list) => list.reduce((n, p) => n + p.n, 0);
   const total = sum(series);
+  // The pill speaks for its own window: the last 7 days against the 7 before.
   const last7 = sum(series.slice(-7));
   const prev7 = sum(series.slice(-14, -7));
   let dir = 'flat';
-  let delta = t('admin.same_week');
+  let value = t('admin.no_change');
   if (last7 !== prev7) {
     dir = last7 > prev7 ? 'up' : 'down';
-    const value = prev7 === 0 ? `+${fmtNumber(last7)}` : `${dir === 'up' ? '+' : '−'}${Math.abs(Math.round(((last7 - prev7) / prev7) * 100))}%`;
-    delta = t('admin.vs_week', { delta: isolate(value) });
+    value = prev7 === 0 ? `+${fmtNumber(last7)}` : `${dir === 'up' ? '+' : '−'}${Math.abs(Math.round(((last7 - prev7) / prev7) * 100))}%`;
   }
   const peak = series.reduce((m, p) => (p.n > m.n ? p : m), series[0]);
-  const chart = areaChart({
+  const chart = barChart({
     points: series,
     fmtTick: (d) => fmtDate(d, { day: 'numeric', month: 'short' }),
     fmtDay: (d) => fmtDate(d, { weekday: 'long', day: 'numeric', month: 'long' }),
@@ -78,14 +116,34 @@ function trendCard(series) {
       value: t('admin.bookings'),
     },
   });
+  const delta = h(
+    'span',
+    { class: `delta ${dir}` },
+    h('span', { class: 'sr-only', text: t('admin.last7_sr', { n: fmtNumber(last7), prev: fmtNumber(prev7) }) }),
+    h('span', { class: 'delta-in', 'aria-hidden': 'true' }, icon(dir === 'flat' ? 'minus' : 'trend', dir === 'down' ? 'flip-v' : ''), h('span', { text: t('admin.last7') }), h('b', { text: isolate(value) })),
+  );
+  // A quiet second reading for wide screens: the busiest day and the daily pace.
+  const side = total
+    ? h(
+        'dl',
+        { class: 'trend-side' },
+        h('div', null, h('dt', { text: t('admin.busiest') }), h('dd', null, h('b', { class: 'num', text: fmtNumber(peak.n) }), h('span', { text: fmtDate(peak.date, { weekday: 'long', day: 'numeric', month: 'long' }) }))),
+        h('div', null, h('dt', { text: t('admin.daily_avg') }), h('dd', null, h('b', { class: 'num', text: fmtNumber(Math.round((total / series.length) * 10) / 10) }), h('span', { text: t('admin.per_day') }))),
+      )
+    : null;
   return h(
     'section',
     { class: 'card glow trend-card' },
     h(
       'div',
       { class: 'trend-head' },
-      h('div', null, h('div', { class: 'eyebrow', text: t('admin.bookings_30') }), countUp(h('div', { class: 'hero-figure' }), total, { format: fmtNumber, duration: 1200 })),
-      h('span', { class: `delta ${dir}` }, icon(dir === 'flat' ? 'minus' : 'trend', dir === 'down' ? 'flip-v' : ''), h('span', { text: delta })),
+      h(
+        'div',
+        { class: 'trend-main' },
+        h('h2', { class: 'eyebrow', text: t('admin.bookings_30') }),
+        h('div', { class: 'trend-row' }, countUp(h('div', { class: 'hero-figure' }), total, { format: fmtNumber, duration: 1200 }), delta),
+      ),
+      side,
     ),
     chart,
   );
@@ -115,36 +173,47 @@ function kpis(totals) {
 
 // ---------------------------------------------------------------- salons
 
+/**
+ * One salon, compact: icon, name and link, status; the setup bar only while it is
+ * being set up; then one line with its bookings and its owner's last visit. In the
+ * list layout (wide screens) the same pieces line up as columns.
+ */
 function salonCard(s, open) {
   const owner = s.owners[0];
   const status = statusOf(s);
+  const done = setupDone(s);
   const seen = relative(owner?.last_seen_at);
+  const bookings = [t('admin.b30', { n: s.stats.bookings_30d })];
+  if (s.stats.upcoming) bookings.push(t('admin.upcoming_n', { n: s.stats.upcoming }));
   return h(
     'button',
     { class: `salon-card ${status}`, type: 'button', onclick: () => open(s.id) },
+    h('div', { class: 'sc-avatar' }, salonIcon(s), h('span', { class: 'live-dot', 'aria-hidden': 'true' })),
+    h('div', { class: 'sc-id' }, h('div', { class: 'name truncate', text: pick(s, 'name') }), h('div', { class: 'link truncate', text: shortLink(s.url) })),
+    h('span', {
+      class: `pill sc-status ${status === 'suspended' ? 'off' : status === 'ready' ? 'ok' : 'warn'}`,
+      text: status === 'suspended' ? t('admin.f_suspended') : status === 'ready' ? t('admin.ready') : t('admin.setup_n', { n: done }),
+    }),
+    h('div', { class: 'sc-setup', 'aria-hidden': 'true' }, h('span', { class: 'segs' }, SETUP.map((k) => h('i', { class: s.setup[k] ? 'on' : '' }))), h('b', { class: 'num', text: `${done}/4` })),
     h(
       'div',
-      { class: 'sc-top' },
-      h('div', { class: 'sc-avatar' }, salonIcon(s), h('span', { class: 'live-dot', 'aria-hidden': 'true' })),
-      h('div', { class: 'grow' }, h('div', { class: 'name truncate', text: pick(s, 'name') }), h('div', { class: 'link truncate', text: bare(s.url) })),
-      h('span', {
-        class: `pill ${status === 'suspended' ? 'off' : status === 'ready' ? 'ok' : 'warn'}`,
-        text: status === 'suspended' ? t('admin.f_suspended') : status === 'ready' ? t('admin.ready') : t('admin.setup_n', { n: setupDone(s) }),
-      }),
+      { class: 'sc-line' },
+      h('span', { class: 'sc-book' }, icon('calendar'), h('span', { class: 'truncate', text: bookings.join(' · ') })),
+      h(
+        'span',
+        { class: 'sc-seen' },
+        icon('user'),
+        // Name and time apart: the name truncates, the time always shows in full.
+        ...(owner
+          ? [
+              // dir=auto: an Arabic name in English (or a Latin one in Arabic) is cut at its own end.
+              h('span', { class: 'truncate sc-who', dir: 'auto', text: owner.name || owner.phone }),
+              h('span', { class: 'sc-when' }, h('span', { class: 'sc-sep', text: getLang() === 'ar' ? '، ' : '· ' }), seen ?? t('admin.never')),
+            ]
+          : [h('span', { class: 'truncate', text: t('admin.no_owner') })]),
+        owner?.must_change_password ? h('span', { class: 'pill warn tiny', text: t('admin.temp_pw') }) : null,
+      ),
     ),
-    h('div', { class: 'sc-setup', 'aria-hidden': 'true' }, SETUP.map((k) => h('i', { class: s.setup[k] ? 'on' : '' }))),
-    h('div', { class: 'sc-meta' }, h('span', null, icon('calendar'), t('admin.b30', { n: s.stats.bookings_30d })), h('span', null, icon('clock'), t('admin.upcoming_n', { n: s.stats.upcoming }))),
-    owner
-      ? h(
-          'div',
-          { class: 'sc-owner' },
-          icon('user'),
-          h('span', { class: 'truncate', text: owner.name || owner.phone }),
-          h('span', { class: 'faint', text: '·' }),
-          h('span', { class: 'truncate', text: seen ? t('admin.seen', { when: seen }) : t('admin.never') }),
-          owner.must_change_password ? h('span', { class: 'pill warn tiny', text: t('admin.temp_pw') }) : null,
-        )
-      : null,
   );
 }
 
@@ -162,8 +231,21 @@ function salonsSection(salons, view, open) {
     suspended: (s) => !s.active,
   };
   const search = h('input', { type: 'search', class: 'search-input', value: view.query, placeholder: t('admin.search'), 'aria-label': t('admin.search'), autocomplete: 'off', enterkeyhint: 'search' });
-  const chips = h('div', { class: 'scroller filter-row', role: 'tablist' });
-  const grid = h('div', { class: 'salon-grid' });
+  const chips = h('div', { class: 'scroller filter-row', role: 'tablist', 'aria-label': t('admin.title') });
+  const results = h('div', { class: 'salon-results' });
+
+  // Cards or rows (wide screens only); remembered on this device.
+  const layoutBtn = (kind) => {
+    const btn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t(`admin.view_${kind}`), title: t(`admin.view_${kind}`), 'aria-pressed': String(view.layout === kind) }, glyph(kind));
+    btn.addEventListener('click', () => {
+      view.layout = kind;
+      saveLayout(kind);
+      for (const b of layoutBtns.children) b.setAttribute('aria-pressed', String(b === btn));
+      for (const g of results.querySelectorAll('.salon-grid')) g.classList.toggle('list', kind === 'list');
+    });
+    return btn;
+  };
+  const layoutBtns = h('div', { class: 'layout-toggle', role: 'group', 'aria-label': t('admin.view') }, layoutBtn('grid'), layoutBtn('list'));
 
   function matches(s) {
     const q = westernDigits(view.query).toLowerCase().replace(/\s+/g, '');
@@ -176,12 +258,43 @@ function salonsSection(salons, view, open) {
       'button',
       { class: `chip-btn ${view.filter === f ? 'on' : ''}`, type: 'button', role: 'tab', 'aria-selected': String(view.filter === f), onclick: () => { view.filter = f; renderChips(); renderGrid(); } },
       t(`admin.f_${f}`),
-      h('span', { class: 'chip-count num', text: String(counts[f]) }),
+      // An empty filter needs no "0" badge; it keeps the four filters within a phone's width.
+      counts[f] || f === 'all' ? h('span', { class: 'chip-count num', text: String(counts[f]) }) : null,
     )));
+  }
+  const listHead = () => h(
+    'div',
+    { class: 'salon-list-head', 'aria-hidden': 'true' },
+    h('span'),
+    h('span', { text: t('admin.col_salon') }),
+    h('span', { text: t('admin.setup') }),
+    h('span', { text: t('admin.col_bookings') }),
+    h('span', { text: t('admin.s_seen') }),
+    h('span', { text: t('admin.col_status') }),
+  );
+  function group(label, items, start, cls = '') {
+    return h(
+      'div',
+      { class: `salon-group ${cls}` },
+      label,
+      h('div', { class: `salon-grid ${view.layout === 'list' ? 'list' : ''}` }, listHead(), stagger(items.map((s) => salonCard(s, open)), Math.min(start, 8))),
+    );
   }
   function renderGrid() {
     const list = salons.filter((s) => keep[view.filter](s) && matches(s));
-    clear(grid, list.length ? stagger(list.map((s) => salonCard(s, open))) : h('p', { class: 'empty small', text: t('admin.no_match') }));
+    if (!list.length) {
+      clear(results, h('p', { class: 'empty small', text: t('admin.no_match') }));
+      return;
+    }
+    const byBookings = (a, b) => b.stats.bookings_30d - a.stats.bookings_30d || b.stats.upcoming - a.stats.upcoming;
+    const urgent = list.filter(needsAttention).sort((a, b) => setupDone(a) - setupDone(b) || byBookings(a, b));
+    const rest = list.filter((s) => !needsAttention(s)).sort(byBookings);
+    const label = (text, n, cls) => h('h3', { class: `group-label ${cls}` }, h('span', { text }), h('span', { class: 'chip-count num', text: String(n) }));
+    clear(
+      results,
+      urgent.length ? group(label(t('admin.attention'), urgent.length, 'warn'), urgent, 0, 'urgent') : null,
+      rest.length ? group(urgent.length ? label(t('admin.by_bookings'), rest.length, '') : null, rest, urgent.length) : null,
+    );
   }
   search.addEventListener('input', () => {
     view.query = search.value.trim();
@@ -191,15 +304,25 @@ function salonsSection(salons, view, open) {
   renderGrid();
   return h(
     'section',
-    { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', null, t('admin.title'), h('span', { class: 'count num', style: { marginInlineStart: '8px' }, text: String(salons.length) }))),
+    { class: 'section salons' },
+    h('div', { class: 'section-head' }, h('h2', null, t('admin.title'), h('span', { class: 'count num', text: String(salons.length) }))),
     h('label', { class: 'search-box' }, icon('search'), search),
-    chips,
-    grid,
+    h('div', { class: 'salon-tools' }, chips, layoutBtns),
+    results,
   );
 }
 
 // ---------------------------------------------------------------- sheets
+
+/** Keeps the confetti off a sheet: the canvas is clipped to everything around it. */
+function keepConfettiOff(canvas, panel) {
+  // Layout box, not the animated one: the sheet may still be sliding in.
+  const x = panel.offsetLeft;
+  const y = panel.offsetTop;
+  const w = panel.offsetWidth;
+  const ht = panel.offsetHeight;
+  canvas.style.clipPath = `polygon(evenodd, 0 0, 100% 0, 100% 100%, 0 100%, 0 0, ${x}px ${y}px, ${x + w}px ${y}px, ${x + w}px ${y + ht}px, ${x}px ${y + ht}px, ${x}px ${y}px)`;
+}
 
 /** Sign-in details to pass on: each copyable, all of it sendable on WhatsApp. */
 function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = false }) {
@@ -212,12 +335,19 @@ function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = fal
   const wa = waPhone
     ? h('a', { class: 'btn btn-primary sheen', href: `https://wa.me/${waNumber(waPhone)}?text=${encodeURIComponent(waText)}`, target: '_blank', rel: 'noopener' }, icon('chat'), t('admin.send_wa'))
     : null;
-  const panel = sheet({ title, body: h('div', null, intro ? h('p', { class: 'muted', style: { marginBottom: '14px' }, text: intro }) : null, list), actions: [done, wa] });
+  const panel = sheet({ title, body: h('div', null, intro ? h('p', { class: 'muted cred-intro', text: intro }) : null, list), actions: [done, wa] });
   done.addEventListener('click', () => panel.close());
-  if (celebrate) setTimeout(() => confetti(['#a855f7', '#6366f1', '#3b82f6', '#ffffff', '#f5d06f']), 250);
+  if (celebrate) {
+    setTimeout(() => {
+      if (!panel.el.isConnected) return;
+      confetti(['#a855f7', '#6366f1', '#3b82f6', '#ffffff', '#f5d06f']);
+      const canvas = document.body.lastElementChild;
+      if (canvas?.matches('canvas.confetti')) keepConfettiOff(canvas, panel.el);
+    }, 250);
+  }
 }
 
-/** The platform's own settings: its landing page, and the WhatsApp number salons reach it on. */
+/** The platform's own settings: its landing page, the WhatsApp number salons reach it on, signing out. */
 async function openPlatform(app) {
   let res;
   try {
@@ -227,11 +357,12 @@ async function openPlatform(app) {
     return;
   }
   const landing = `${location.protocol}//${baseHost()}`;
-  const phone = input({ name: 'contact_phone', type: 'tel', inputmode: 'tel', value: res.contact_phone, autocomplete: 'off' });
+  const phone = input({ name: 'contact_phone', type: 'tel', inputmode: 'tel', value: res.contact_phone, autocomplete: 'off', enterkeyhint: 'done' });
   const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
+  // Enter in the number saves (a form with one field would otherwise submit itself as a GET).
   const form = h(
     'form',
-    { novalidate: true },
+    { novalidate: true, onsubmit: (e) => { e.preventDefault(); save.click(); } },
     h(
       'a',
       { class: 'card platform-link', href: landing, target: '_blank', rel: 'noopener' },
@@ -241,11 +372,16 @@ async function openPlatform(app) {
     ),
     h('div', { style: { marginTop: '16px' } }, field(t('admin.contact_phone'), phone, { hint: t('admin.contact_phone_hint') })),
   );
-  const panel = sheet({ title: t('admin.platform'), body: form, actions: [save] });
+  const out = h('button', { class: 'platform-out', type: 'button' }, h('span', { class: 'tile' }, icon('logout', 'flip-rtl')), h('span', { class: 'grow', text: t('logout') }));
+  const panel = sheet({ title: t('admin.platform'), body: h('div', null, form, out), actions: [save] });
+  out.addEventListener('click', () => {
+    panel.close();
+    app.logout();
+  });
   save.addEventListener('click', () => busy(save, async () => {
     try {
-      const out = await api('PATCH', '/api/admin/platform', { contact_phone: phone.value });
-      app.ctx.tenant.contact_phone = out.contact_phone;
+      const saved = await api('PATCH', '/api/admin/platform', { contact_phone: phone.value });
+      app.ctx.tenant.contact_phone = saved.contact_phone;
       toast(t('saved'));
       panel.close();
     } catch (err) {
@@ -269,17 +405,16 @@ function openCreate(onCreated) {
     f.subdomain.value = f.subdomain.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
     url.textContent = `${location.protocol}//${f.subdomain.value || '…'}.${baseHost()}`;
   });
+  const create = h('button', { class: 'btn btn-primary', type: 'button', text: t('admin.create') });
   const form = h(
     'form',
-    { novalidate: true },
+    { class: 'create-form', novalidate: true, onsubmit: (e) => { e.preventDefault(); create.click(); } },
     field(t('admin.name_ar'), f.name_ar),
     field(t('admin.name_en'), f.name_en, { optional: true }),
     h('div', { style: { marginTop: '12px' } }, field(t('admin.subdomain'), f.subdomain, { hint: t('admin.subdomain_hint') }), url),
     h('div', { class: 'f-row', style: { marginTop: '18px' } }, field(t('admin.owner_phone'), f.owner_phone), field(t('admin.owner_name'), f.owner_name, { optional: true })),
     field(t('admin.owner_password'), f.owner_password, { hint: t('admin.owner_password_hint') }),
   );
-  form.addEventListener('submit', (e) => e.preventDefault());
-  const create = h('button', { class: 'btn btn-primary', type: 'button', text: t('admin.create') });
   const panel = sheet({ title: t('admin.new'), body: form, actions: [create] });
   create.addEventListener('click', () => busy(create, async () => {
     try {
@@ -319,6 +454,8 @@ async function openSalon(id, onChange) {
   }
   const body = h('div', { class: 'sd' });
   const panel = sheet({ title: pick(salon, 'name'), body, tall: true });
+  // On a wide screen the salon opens in a drawer beside the list, not over it.
+  panel.el.classList.add('drawer');
   const title = panel.el.querySelector('.sheet-head h2');
   const update = (next) => {
     salon = next;
@@ -331,6 +468,7 @@ async function openSalon(id, onChange) {
     const owner = salon.owners[0];
     const stats = salon.stats;
     const status = statusOf(salon);
+    const done = setupDone(salon);
 
     const copyLink = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('copy'), title: t('copy'), onclick: () => copy(salon.url) }, icon('copy'));
     const hero = h(
@@ -365,22 +503,43 @@ async function openSalon(id, onChange) {
       }
     });
 
-    const stat = (value, label) => h('div', { class: 'sd-stat' }, h('b', { text: value }), h('span', { text: label }));
-    const statsGrid = h(
-      'div',
-      { class: 'sd-stats' },
-      stat(fmtNumber(stats.bookings_30d), t('admin.s_bookings')),
-      stat(fmtNumber(stats.upcoming), t('admin.s_upcoming')),
-      stat(fmtNumber(stats.customers), t('admin.s_customers')),
-      stat(fmtNumber(stats.services), t('admin.s_services')),
-      stat(fmtNumber(stats.team), t('admin.s_team')),
-      stat(relative(owner?.last_seen_at) ?? '—', t('admin.s_seen')),
-    );
+    // A brand-new salon has nothing to count yet: one calm line (and a nudge) instead of a grid of zeros.
+    const quiet = !stats.bookings_30d && !stats.upcoming && !stats.customers && !stats.services && !stats.team;
+    let statsBlock;
+    if (quiet) {
+      const link = `${salon.url}/admin`;
+      statsBlock = h(
+        'div',
+        { class: 'sd-quiet' },
+        h('span', { class: 'sd-quiet-ic', 'aria-hidden': 'true' }, icon('sparkles')),
+        h('div', { class: 'grow' }, h('b', { text: t('admin.no_activity', { n: done }) }), h('span', { text: t('admin.no_activity_sub') })),
+        owner
+          ? h('a', {
+              class: 'btn btn-secondary btn-sm',
+              href: `https://wa.me/${waNumber(owner.phone)}?text=${encodeURIComponent(t('admin.wa_nudge', { name: owner.name || '', salon: pick(salon, 'name'), n: done, link }))}`,
+              target: '_blank',
+              rel: 'noopener',
+            }, icon('chat'), t('admin.nudge'))
+          : null,
+      );
+    } else {
+      const stat = (value, label, text = false) => h('div', { class: 'sd-stat' }, h('b', { class: text ? 'text' : 'num', text: value }), h('span', { text: label }));
+      statsBlock = h(
+        'div',
+        { class: 'sd-stats' },
+        stat(fmtNumber(stats.bookings_30d), t('admin.s_bookings')),
+        stat(fmtNumber(stats.upcoming), t('admin.s_upcoming')),
+        stat(fmtNumber(stats.customers), t('admin.s_customers')),
+        stat(fmtNumber(stats.services), t('admin.s_services')),
+        stat(fmtNumber(stats.team), t('admin.s_team')),
+        stat(relative(owner?.last_seen_at) ?? t('admin.never'), t('admin.s_seen'), true),
+      );
+    }
 
     const setup = h(
       'div',
       { class: 'sd-block' },
-      h('div', { class: 'eyebrow', text: `${t('admin.setup')} · ${setupDone(salon)}/4` }),
+      h('div', { class: 'eyebrow', text: `${t('admin.setup')} · ${done}/4` }),
       h('div', { class: 'sd-setup' }, SETUP.map((k) => h('div', { class: `sd-step ${salon.setup[k] ? 'done' : ''}` }, icon(salon.setup[k] ? 'checkCircle' : 'clock'), h('span', { text: t(`step.${k}`) })))),
     );
 
@@ -442,7 +601,7 @@ async function openSalon(id, onChange) {
     Object.values(f).forEach((el) => el.addEventListener('input', sync));
     const form = h(
       'form',
-      { class: 'sd-block', novalidate: true, onsubmit: (e) => e.preventDefault() },
+      { class: 'sd-block', novalidate: true, onsubmit: (e) => { e.preventDefault(); if (!save.disabled) save.click(); } },
       h('div', { class: 'eyebrow', text: t('admin.edit') }),
       field(t('admin.name_ar'), f.name_ar),
       field(t('admin.name_en'), f.name_en, { optional: true }),
@@ -465,7 +624,7 @@ async function openSalon(id, onChange) {
     }));
     sync();
 
-    clear(body, ...stagger([hero, links, live.el, statsGrid, setup, ownerBlock, form].filter(Boolean)));
+    clear(body, ...stagger([hero, links, live.el, statsBlock, setup, ownerBlock, form].filter(Boolean)));
   }
   render();
 }
@@ -473,31 +632,54 @@ async function openSalon(id, onChange) {
 // ---------------------------------------------------------------- page
 
 export function adminView(app) {
-  const view = { filter: 'all', query: '' };
-  const body = h(
-    'div',
-    null,
-    h('div', { class: 'skel', style: { height: '260px', borderRadius: '22px' } }),
+  const view = { filter: 'all', query: '', layout: savedLayout() };
+  const skeleton = () => [
+    h('div', { class: 'skel', style: { height: '300px', borderRadius: '22px' } }),
     h('div', { class: 'skel', style: { height: '120px', marginTop: '12px', borderRadius: '22px' } }),
-  );
+  ];
+  const body = h('div', null, ...skeleton());
+  let loaded = false;
 
   async function load() {
     try {
       const data = await api('GET', '/api/admin/salons');
+      loaded = true;
       clear(
         body,
         stagger([trendCard(data.series)]),
         kpis(data.totals),
         data.salons.length
           ? salonsSection(data.salons, view, (id) => openSalon(id, load))
-          : h('div', { class: 'card empty', style: { marginTop: '24px' } }, h('div', { class: 'tile' }, icon('store')), h('p', { text: t('admin.empty') })),
+          : h('div', { class: 'card empty admin-empty' }, h('div', { class: 'tile' }, icon('store')), h('p', { text: t('admin.empty') })),
       );
     } catch (err) {
-      toastError(err);
+      // A refresh after an edit keeps the dashboard; a first load that fails says so, with a way to try again.
+      if (loaded) toastError(err);
+      else {
+        clear(body, h(
+          'div',
+          { class: 'card empty load-fail' },
+          h('div', { class: 'tile' }, icon('alert')),
+          h('p', { text: errorText(err) }),
+          h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => { clear(body, ...skeleton()); load(); } }),
+        ));
+      }
     }
     appReady();
   }
   load();
+
+  const header = h(
+    'header',
+    { class: 's-header' },
+    h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(app.ctx.tenant, 'name') }), h('div', { class: 'sub', text: t('login.platform') }))),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('admin.platform'), title: t('admin.platform'), onclick: () => openPlatform(app) }, icon('gear')),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
+  );
+  // The bar turns to glass once the page moves under it.
+  const onScroll = () => header.classList.toggle('scrolled', scrollY > 6);
+  addEventListener('scroll', onScroll, { passive: true });
+  app.onUnmount(() => removeEventListener('scroll', onScroll));
 
   return h(
     'div',
@@ -505,22 +687,16 @@ export function adminView(app) {
     h(
       'div',
       { class: 's-main' },
-      h(
-        'header',
-        { class: 's-header' },
-        h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(app.ctx.tenant, 'name') }), h('div', { class: 'sub', text: t('login.platform') }))),
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('admin.platform'), title: t('admin.platform'), onclick: () => openPlatform(app) }, icon('gear')),
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
-        h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('logout'), title: t('logout'), onclick: () => app.logout() }, icon('logout', 'flip-rtl')),
-      ),
+      header,
       h(
         'main',
-        { class: 's-page', style: { paddingBottom: '48px' } },
+        { class: 's-page' },
         h(
           'div',
           { class: 's-head' },
           h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t('admin.dash_title') }), h('p', { class: 's-sub', text: t('admin.dash_sub') })),
-          h('button', { class: 'btn btn-primary btn-sm sheen', type: 'button', onclick: () => openCreate(load) }, icon('plus'), t('admin.new')),
+          // On a phone this floats at the bottom, in reach while the list scrolls.
+          h('button', { class: 'btn btn-primary btn-sm sheen new-salon', type: 'button', onclick: () => openCreate(load) }, icon('plus'), t('admin.new')),
         ),
         body,
       ),

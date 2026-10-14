@@ -2,8 +2,8 @@
 // desktop), the current page, and a live preview of the salon's app. All pages share
 // one store, so the setup progress, badges and preview follow every save.
 import { api } from '../api.js';
-import { appIcon, appReady, clear, h, icon, sheet, toastError } from '../dom.js';
-import { pick, t } from '../i18n.js';
+import { appIcon, appReady, clear, h, icon, sheet } from '../dom.js';
+import { errorText, pick, t } from '../i18n.js';
 import { homeScreen, miniApp, phone } from '../preview.js';
 import { applyColors } from '../theme.js';
 import { homePage } from './manage-home.js';
@@ -27,19 +27,52 @@ let cache = null;
 
 // ---------------------------------------------------------------- live updates
 // One stream for the whole studio; the current page subscribes while it is shown.
+// The browser retries a dropped connection by itself, but gives up for good on an
+// error response (a proxy's 502 during a restart, a lapsed session): then we retry
+// with backoff. After any gap the listeners get { resync: true } and reload, so
+// bookings that arrived meanwhile are not missed.
 let events = null;
+let retryTimer = null;
+let retryDelay = 2000;
+let stale = false;
 const listeners = new Set();
+const emit = (data) => {
+  for (const fn of listeners) fn(data);
+};
 function connectEvents() {
-  if (events || typeof EventSource === 'undefined') return;
-  events = new EventSource('/api/manage/events');
-  events.addEventListener('booking', (e) => {
-    const data = JSON.parse(e.data);
-    for (const fn of listeners) fn(data);
+  if (events || retryTimer || typeof EventSource === 'undefined') return;
+  const es = (events = new EventSource('/api/manage/events'));
+  es.addEventListener('booking', (e) => {
+    try {
+      emit(JSON.parse(e.data));
+    } catch {}
+  });
+  es.addEventListener('open', () => {
+    retryDelay = 2000;
+    if (stale) {
+      stale = false;
+      emit({ resync: true });
+    }
+  });
+  es.addEventListener('error', () => {
+    stale = true;
+    if (es.readyState !== EventSource.CLOSED) return; // a drop: the browser reconnects
+    es.close();
+    if (events === es) events = null;
+    retryTimer = setTimeout(() => {
+      retryTimer = null;
+      connectEvents();
+    }, retryDelay);
+    retryDelay = Math.min(retryDelay * 2, 60_000);
   });
 }
 
 export const clearManageCache = () => {
   cache = null;
+  clearTimeout(retryTimer);
+  retryTimer = null;
+  stale = false;
+  retryDelay = 2000;
   events?.close();
   events = null;
 };
@@ -77,7 +110,7 @@ export function setupSteps(store) {
 /** Segmented "App / Icon" switch with a phone underneath. */
 function previewPanel(store, scaleFor) {
   let mode = 'app';
-  const holder = h('div');
+  const holder = h('div', { class: 'pv-phone' });
   const tabs = h(
     'div',
     { class: 'segmented preview-tabs', role: 'radiogroup' },
@@ -185,7 +218,7 @@ export function manageView(app, pageId) {
 
   const view = h(
     'div',
-    { class: 'studio' },
+    { class: 'studio', 'data-page': page.id },
     h(
       'aside',
       { class: 's-side' },
@@ -248,9 +281,10 @@ export function manageView(app, pageId) {
   addEventListener('resize', onResize);
   app.onUnmount(() => removeEventListener('resize', onResize));
 
-  if (cache) {
-    queueMicrotask(show);
-  } else {
+  // The first load: on failure, say why and offer to try again in place (an installed
+  // app has no reload button). Later refreshes keep the screen and only toast.
+  function start() {
+    clear(content, skeleton());
     Promise.all([load(), loadAttention()])
       .then(([data]) => {
         cache = data;
@@ -258,9 +292,16 @@ export function manageView(app, pageId) {
         show();
       })
       .catch((err) => {
-        toastError(err);
+        const retry = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: start }, icon('undo'), t('retry'));
+        clear(content, h('div', { class: 'card empty load-error rise', role: 'alert' }, h('div', { class: 'tile' }, icon('alert')), h('p', { text: errorText(err) }), retry));
         appReady();
       });
   }
+  // Back online after a failed first load: try again by itself.
+  const onOnline = () => content.querySelector('.load-error') && start();
+  addEventListener('online', onOnline);
+  app.onUnmount(() => removeEventListener('online', onOnline));
+  if (cache) queueMicrotask(show);
+  else start();
   return view;
 }

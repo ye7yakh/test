@@ -170,10 +170,17 @@ export function requireOwner(ctx: Ctx): number {
 
 // ---------------------------------------------------------------- login rate limit
 
-// Failed logins per client address and per phone number within a window. In memory
-// because the API runs as one process; a restart only forgives recent failures.
+// Password guesses within a window, counted per client address, per address and
+// account together, and per account from anywhere. In memory because the API runs
+// as one process; a restart only forgives recent failures.
+//
+// The tight limit is on the (address, account) pair, so someone guessing at a number
+// blocks only themselves, never the real owner signing in from their own phone. The
+// per-account limit across all addresses is a loose backstop against guessing spread
+// over many addresses. A correct password never skips a limit that has been reached:
+// that would let guessing go on without any cap.
 const WINDOW_MS = 15 * 60 * 1000;
-const LIMITS = { ip: 30, phone: 8 };
+const LIMITS = { ip: 30, ipPhone: 8, phone: 100 };
 const failures = new Map<string, { count: number; resetAt: number }>();
 
 function bucket(key: string) {
@@ -186,22 +193,43 @@ function bucket(key: string) {
   return b;
 }
 
+const limitKeys = (ip: string, phoneKey: string) =>
+  [
+    [`ip:${ip}`, LIMITS.ip],
+    [`ipphone:${ip}|${phoneKey}`, LIMITS.ipPhone],
+    [`phone:${phoneKey}`, LIMITS.phone],
+  ] as const;
+
+/**
+ * Refuses an attempt once a limit is reached, otherwise counts it straight away,
+ * before the caller awaits the (slow) password check: a burst of parallel guesses
+ * cannot all pass the check before the first failure is recorded. A wrong password
+ * then needs nothing more; a right one gives the attempt back (loginSucceeded).
+ */
 export function assertLoginAllowed(ip: string, phoneKey: string): void {
-  const byIp = bucket(`ip:${ip}`);
-  const byPhone = bucket(`phone:${phoneKey}`);
-  if (byIp.count >= LIMITS.ip || byPhone.count >= LIMITS.phone) {
-    const retry = Math.ceil((Math.max(byIp.resetAt, byPhone.resetAt) - Date.now()) / 1000);
+  const buckets = limitKeys(ip, phoneKey).map(([key, max]) => ({ b: bucket(key), max }));
+  const full = buckets.filter(({ b, max }) => b.count >= max);
+  if (full.length) {
+    const retry = Math.ceil((Math.max(...full.map(({ b }) => b.resetAt)) - Date.now()) / 1000);
     throw Object.assign(new HttpError(429, 'too_many_attempts'), { retryAfter: retry });
   }
+  for (const { b } of buckets) b.count++;
 }
 
-export function recordLoginFailure(ip: string, phoneKey: string): void {
-  bucket(`ip:${ip}`).count++;
-  bucket(`phone:${phoneKey}`).count++;
+/** The password was right: this attempt was no guess, and this address's earlier misses for the account are forgiven. */
+export function loginSucceeded(ip: string, phoneKey: string): void {
+  for (const key of [`ip:${ip}`, `phone:${phoneKey}`]) {
+    const b = failures.get(key);
+    if (b && b.count > 0) b.count--;
+  }
+  failures.delete(`ipphone:${ip}|${phoneKey}`);
 }
 
+/** Forgives every failure for an account, from every address (the admin has just reset its password). */
 export function clearLoginFailures(phoneKey: string): void {
   failures.delete(`phone:${phoneKey}`);
+  const suffix = `|${phoneKey}`;
+  for (const key of failures.keys()) if (key.startsWith('ipphone:') && key.endsWith(suffix)) failures.delete(key);
 }
 
 setInterval(() => {

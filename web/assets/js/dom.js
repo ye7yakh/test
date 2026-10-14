@@ -203,22 +203,100 @@ export async function busy(button, fn) {
   }
 }
 
+// ---------------------------------------------------------------- overlays
+
+// Sheets and viewers live on <body>, outside the screen that opened them. Each open
+// one is a layer: the page behind the top layer is inert (no Tab, no clicks, hidden
+// from screen readers), the router closes every layer before it shows another screen,
+// and where the browser has CloseWatcher the phone's Back gesture closes the top layer
+// instead of leaving the screen.
+const layers = [];
+// Live regions keep speaking while a layer is open.
+const STAYS_LIVE = '.toast, [aria-live], [role=status], [role=alert]';
+
+function watchBack(close) {
+  if (typeof CloseWatcher !== 'function') return null;
+  try {
+    const watcher = new CloseWatcher();
+    watcher.onclose = () => close();
+    return watcher;
+  } catch {
+    return null;
+  }
+}
+
+// Each layer handles Escape itself (only the top one closes). Cancelling the key stops
+// the browser from also treating it as Back for a CloseWatcher, which would close a
+// second layer with the same key press.
+addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && layers.length) e.preventDefault();
+}, true);
+
+/**
+ * Registers an open overlay. `close` closes it and must be safe to call twice. With
+ * `el` (the overlay's element on <body>) everything else on the page is inert while
+ * it is open. Returns `untrack`, which the overlay's own close calls first.
+ */
+export function trackOverlay(close, el) {
+  const self = el?.closest('body > *') ?? el;
+  const behind = self ? [...document.body.children].filter((c) => c !== self && !c.inert && !c.matches(STAYS_LIVE)) : [];
+  for (const c of behind) c.inert = true;
+  const layer = { close, behind, watcher: watchBack(close) };
+  layer.untrack = () => {
+    const i = layers.indexOf(layer);
+    if (i < 0) return;
+    layers.splice(i, 1);
+    layer.watcher?.destroy();
+    // Closed while another layer sits above it: the page stays inert until that one closes.
+    const above = layers[i];
+    if (above) above.behind.push(...layer.behind);
+    else for (const c of layer.behind) c.inert = false;
+  };
+  layers.push(layer);
+  return layer.untrack;
+}
+
+/**
+ * Closes every open overlay, top first, and says how many there were. The router calls
+ * it before it shows another screen.
+ */
+export function closeOverlays() {
+  const open = [...layers].reverse();
+  for (const layer of open) {
+    try {
+      layer.close();
+    } catch (err) {
+      console.error(err);
+    }
+    layer.untrack();
+  }
+  return open.length;
+}
+
+/** The page scrolls again once no sheet or viewer is left on it. */
+function unlockScroll() {
+  if (!document.querySelector('.sheet-backdrop, .proof-viewer')) document.body.style.overflow = '';
+}
+
 // ---------------------------------------------------------------- sheet (modal)
 
 const finePointer = () => matchMedia('(pointer: fine)').matches;
+const escapeHandled = new WeakSet();
 
 /**
  * Opens a bottom sheet (a centred dialog on wide screens). Escape, the close
- * button, a tap on the backdrop or a swipe down on the handle close it.
+ * button, a tap on the backdrop, a swipe down on the handle or the phone's Back
+ * gesture close it. Focus moves into it (to `focus` when given) and comes back to
+ * where it was when it closes.
  */
-export function sheet({ title, body, actions = [], onClose, tall = false }) {
+export function sheet({ title, body, actions = [], onClose, tall = false, focus }) {
   const previous = document.activeElement;
   const closeBtn = h('button', { class: 'icon-btn plain', type: 'button', 'aria-label': t('close') }, icon('x'));
   const head = h('div', { class: 'sheet-head' }, h('h2', { text: title }), closeBtn);
   const handle = h('div', { class: 'sheet-handle' });
   const panel = h(
     'div',
-    { class: `sheet${tall ? ' tall' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title },
+    { class: `sheet${tall ? ' tall' : ''}`, role: 'dialog', 'aria-modal': 'true', 'aria-label': title, tabindex: '-1' },
     handle,
     head,
     h('div', { class: 'sheet-body' }, body),
@@ -226,22 +304,30 @@ export function sheet({ title, body, actions = [], onClose, tall = false }) {
   );
   const backdrop = h('div', { class: 'sheet-backdrop' }, panel);
   let closed = false;
+  let untrack = () => {};
 
   const close = () => {
     if (closed) return;
     closed = true;
+    untrack();
     document.removeEventListener('keydown', onKey);
+    // On its way out its buttons no longer act; the backdrop still catches a second tap.
+    panel.inert = true;
     panel.classList.add('closing');
     backdrop.classList.add('closing');
     setTimeout(() => {
       backdrop.remove();
-      if (!document.querySelector('.sheet-backdrop')) document.body.style.overflow = '';
+      unlockScroll();
     }, reducedMotion() ? 0 : 260);
-    previous?.focus?.({ preventScroll: true });
+    if (previous?.isConnected) previous.focus?.({ preventScroll: true });
     onClose?.();
   };
+  // One Escape closes one layer: the top one, whichever sheet hears the key first.
   const onKey = (e) => {
-    if (e.key === 'Escape' && backdrop === [...document.querySelectorAll('.sheet-backdrop')].pop()) close();
+    if (e.key !== 'Escape' || e.isComposing || escapeHandled.has(e)) return;
+    if (backdrop !== [...document.querySelectorAll('.sheet-backdrop:not(.closing), .proof-viewer:not(.closing)')].pop()) return;
+    escapeHandled.add(e);
+    close();
   };
   closeBtn.addEventListener('click', close);
   backdrop.addEventListener('click', (e) => {
@@ -276,8 +362,12 @@ export function sheet({ title, body, actions = [], onClose, tall = false }) {
   document.addEventListener('keydown', onKey);
   document.body.style.overflow = 'hidden';
   document.body.append(backdrop);
-  // Only desktop gets auto-focus: on phones it would throw the keyboard over the sheet.
-  if (finePointer()) panel.querySelector('.sheet-body input, .sheet-body textarea')?.focus({ preventScroll: true });
+  untrack = trackOverlay(close, backdrop);
+  // Focus moves into the sheet, so keys act on it and not on what opened it. A text
+  // field gets it only with a mouse: on phones it would throw the keyboard over the sheet.
+  const start = focus ?? (finePointer() ? panel.querySelector('.sheet-body input, .sheet-body textarea') : null);
+  start?.focus({ preventScroll: true });
+  if (!panel.contains(document.activeElement)) panel.focus({ preventScroll: true });
   return { close, el: panel };
 }
 
@@ -287,11 +377,13 @@ export function confirmDelete({ title = t('confirm.title'), message = t('confirm
     let answered = false;
     const yes = h('button', { class: 'btn btn-danger', type: 'button', text: yesText });
     const no = h('button', { class: 'btn btn-secondary', type: 'button', text: t('cancel') });
+    // Focus starts on the safe answer, so a second Enter never deletes by accident.
     const s = sheet({
       title,
       body: h('p', { class: 'muted', text: message }),
       actions: [no, yes],
       onClose: () => answered || resolve(false),
+      focus: no,
     });
     yes.style.flex = '1';
     yes.addEventListener('click', () => {

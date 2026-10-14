@@ -131,9 +131,11 @@ export async function resolveHost(hostHeader: string | undefined): Promise<HostC
 
 export type OfflineHost =
   | { kind: 'moved'; tenant: Tenant; subdomain: string; port: string }
-  | { kind: 'suspended'; tenant: Tenant; name_ar: string; name_en: string };
+  | { kind: 'suspended'; tenant: Tenant; name_ar: string; name_en: string; port: string }
+  /** A well-formed salon link on this platform that no salon has (a typo, a deleted salon). */
+  | { kind: 'unknown'; tenant: Tenant; port: string };
 
-/** A salon host that did not resolve: a renamed salon's earlier link, or a suspended salon. */
+/** A salon host that did not resolve: a renamed salon's earlier link, a suspended salon, or nobody's. */
 export async function offlineHost(hostHeader: string | undefined): Promise<OfflineHost | null> {
   const parsed = await parseHost(hostHeader);
   if (!parsed || parsed.sub === null) return null;
@@ -142,13 +144,33 @@ export async function offlineHost(hostHeader: string | undefined): Promise<Offli
     'select name_ar, name_en from salons where tenant_id = $1 and subdomain = $2 and not active',
     [tenant.id, sub],
   );
-  if (suspended) return { kind: 'suspended', tenant, ...suspended };
+  if (suspended) return { kind: 'suspended', tenant, ...suspended, port };
   const moved = await one<{ subdomain: string }>(
     `select s.subdomain from salon_aliases a join salons s on s.id = a.salon_id
       where a.tenant_id = $1 and a.subdomain = $2`,
     [tenant.id, sub],
   );
-  return moved ? { kind: 'moved', tenant, subdomain: moved.subdomain, port } : null;
+  return moved ? { kind: 'moved', tenant, subdomain: moved.subdomain, port } : { kind: 'unknown', tenant, port };
+}
+
+/**
+ * The salon a typed link points at, by its current subdomain: `demo`, `demo.brand.com`
+ * or `https://demo.brand.com/admin` all give `demo`, and a renamed salon's earlier
+ * link gives its current one. Null when no salon has it.
+ */
+export async function findSalonLink(tenant: Tenant, typed: string): Promise<string | null> {
+  let s = typed.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, '');
+  s = s.split(/[/?#:\s]/)[0]!.replace(/\.$/, '');
+  if (s.endsWith(`.${tenant.domain}`)) s = s.slice(0, -(tenant.domain.length + 1));
+  if (!/^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$/.test(s)) return null;
+  const row = await one<{ subdomain: string }>(
+    `select subdomain from salons where tenant_id = $1 and subdomain = $2
+     union all
+     select s.subdomain from salon_aliases a join salons s on s.id = a.salon_id where a.tenant_id = $1 and a.subdomain = $2
+     limit 1`,
+    [tenant.id, s],
+  );
+  return row?.subdomain ?? null;
 }
 
 export function salonUrl(proto: string, host: HostContext, subdomain: string): string {

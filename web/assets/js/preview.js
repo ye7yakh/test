@@ -1,8 +1,8 @@
 // A live picture of the salon's app, drawn from the owner's data: a phone showing
 // the app itself, and a phone home screen with the salon's icon among the others.
 // Everything reads the salon colours from CSS variables, so previews follow edits.
-import { appIcon, h, icon, salonIcon } from './dom.js';
-import { fmtDuration, fmtPrice, pick, t } from './i18n.js';
+import { h, icon, salonIcon } from './dom.js';
+import { fmtDuration, fmtPrice, fmtTime, pick, t } from './i18n.js';
 import { nowIn, openStatus } from './time.js';
 
 /** Wraps screen content in a phone frame, scaled to fit where it is shown. */
@@ -24,6 +24,9 @@ export function phone(screen, { scale = 1 } = {}) {
   );
 }
 
+/** The ring of little mirror lights around the icon, as on the salon's page and launch screen. */
+const lights = () => h('div', { class: 'mini-lights' }, Array.from({ length: 18 }, (_, i) => h('i', { style: { '--i': String(i) } })));
+
 /** The salon's customer app, in miniature. */
 export function miniApp({ salon, services, staff, hours }) {
   const name = pick(salon, 'name');
@@ -31,6 +34,11 @@ export function miniApp({ salon, services, staff, hours }) {
   const status = openStatus(hours, nowIn(salon.timezone));
   const active = services.filter((s) => s.active !== false);
   const team = staff.filter((m) => m.active !== false);
+  const hasHours = Object.values(hours ?? {}).some((d) => (d ?? []).length > 0);
+  // Open all day has no closing time worth showing.
+  const until = status.open && status.until !== '24:00' && status.until !== '00:00' ? status.until : null;
+  // The hero's round buttons, as the page shows them (share alone moves to the top).
+  const actions = [salon.phone ? 'phone' : null, salon.phone ? 'chat' : null, salon.address ? 'pin' : null, 'share'].filter(Boolean);
   return h(
     'div',
     { class: `mini ${salon.page_theme === 'day' ? 'day' : ''}` },
@@ -38,10 +46,11 @@ export function miniApp({ salon, services, staff, hours }) {
       'div',
       { class: `mini-hero ${salon.cover_url ? 'has-cover' : ''}` },
       salon.cover_url ? h('img', { class: 'cover', src: salon.cover_url, alt: '' }) : null,
-      h('div', { class: 'mini-mirror' }, appIcon(salon.logo_url)),
+      h('div', { class: 'mini-mirror' }, lights(), salonIcon(salon)),
       h('div', { class: 't', text: name }),
       about ? h('div', { class: 'a', text: about }) : null,
-      h('div', { class: `st ${status.open ? '' : 'closed'}`, text: status.open ? t('preview.open_now') : t('preview.closed') }),
+      hasHours ? h('div', { class: `st ${status.open ? '' : 'closed'}`, text: until ? t('pub.open_now', { time: fmtTime(until) }) : status.open ? t('preview.open_now') : t('preview.closed') }) : null,
+      actions.length > 1 ? h('div', { class: 'mini-actions' }, actions.map((name_) => h('span', null, icon(name_)))) : null,
     ),
     h(
       'div',
@@ -90,7 +99,7 @@ export function splashScreen({ salon }) {
   return h(
     'div',
     { class: `mini-splash ${salon.page_theme === 'day' ? 'day' : ''}` },
-    h('div', { class: 'mk' }, salonIcon(salon)),
+    h('div', { class: 'mk' }, lights(), salonIcon(salon)),
     h('div', { class: 'nm', text: pick(salon, 'name') }),
   );
 }

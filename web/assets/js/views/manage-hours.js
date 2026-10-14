@@ -51,7 +51,7 @@ export function hoursPage(store, app) {
     null,
     h('div', { class: 's-head' }, h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t('hours.title') }), h('p', { class: 's-sub', text: t('hours.sub') }), h('div', { style: { marginTop: '12px' } }, status))),
     stagger([
-      h('section', null, h('div', { class: 'section-head' }, h('h2', { class: 'row', style: { gap: '8px' } }, icon('wand'), t('hours.presets'))), h('div', { class: 'scroller' }, presets)),
+      h('section', null, h('div', { class: 'section-head' }, h('h2', { class: 'row', style: { gap: '8px' } }, icon('wand'), t('hours.presets'))), h('div', { class: 'scroller fit' }, presets)),
       h('section', { class: 'section' }, h('div', { class: 'card flush' }, editor.el)),
     ]),
   );

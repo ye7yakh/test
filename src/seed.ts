@@ -3,7 +3,7 @@
 //
 //   SEED_DOMAIN=localhost SEED_ADMIN_PHONE=+962790000000 SEED_ADMIN_PASSWORD=... npm run seed
 import sharp from 'sharp';
-import { hashPassword } from './auth.js';
+import { hashPassword, normalizePhone } from './auth.js';
 import { one, pool, query, tx } from './db.js';
 import { defaultWeek, saveSalonWeek } from './hours.js';
 import { intakeImage, renderPortrait, saveMedia } from './media.js';
@@ -19,8 +19,21 @@ const domain = (env.SEED_DOMAIN ?? 'localhost').toLowerCase();
 const brandName = env.SEED_BRAND_NAME ?? 'Salonak';
 const brandNameAr = env.SEED_BRAND_NAME_AR ?? 'صالونك';
 const adminPhone = env.SEED_ADMIN_PHONE ?? '+962790000000';
-// The landing page's WhatsApp button; the admin can change it later in the dashboard.
-const contactPhone = env.SEED_CONTACT_PHONE ?? adminPhone;
+const callingCode = env.SEED_CALLING_CODE ?? '962';
+// The platform's public contact: the landing page's WhatsApp button and the legal
+// pages' "contact us". Never the super admin's sign-in number by default, which would
+// tell everyone the dashboard's username: in production there is no button until
+// SEED_CONTACT_PHONE is set or the admin sets one in the dashboard. A laptop shows the
+// dev admin's. A re-seed changes a stored contact only when SEED_CONTACT_PHONE is set.
+const contactGiven = !!env.SEED_CONTACT_PHONE?.trim();
+const contactPhone = contactGiven ? normalizePhone(env.SEED_CONTACT_PHONE, callingCode) : isProd ? '' : adminPhone;
+if (contactPhone === null) {
+  console.error('SEED_CONTACT_PHONE is not a phone number.');
+  process.exit(1);
+}
+if (contactGiven && contactPhone === normalizePhone(adminPhone, callingCode)) {
+  console.warn("SEED_CONTACT_PHONE is the super admin's sign-in number, and it is shown on the landing page. Use another number.");
+}
 const adminPassword = env.SEED_ADMIN_PASSWORD ?? 'admin-pass-123';
 const demo = (env.SEED_DEMO ?? (isProd ? 'false' : 'true')) === 'true';
 
@@ -29,9 +42,10 @@ async function main() {
     `insert into tenants (domain, name, name_ar, contact_phone, default_calling_code, default_timezone, default_currency)
      values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (domain) do update set name = excluded.name, name_ar = excluded.name_ar,
-       contact_phone = case when tenants.contact_phone = '' then excluded.contact_phone else tenants.contact_phone end
+       -- What the admin chose (even no contact at all) stays, unless the seed names one.
+       contact_phone = case when $8::boolean then excluded.contact_phone else tenants.contact_phone end
      returning id, default_timezone, default_currency`,
-    [domain, brandName, brandNameAr, contactPhone, env.SEED_CALLING_CODE ?? '962', env.SEED_TIMEZONE ?? 'Asia/Amman', env.SEED_CURRENCY ?? 'JOD'],
+    [domain, brandName, brandNameAr, contactPhone, callingCode, env.SEED_TIMEZONE ?? 'Asia/Amman', env.SEED_CURRENCY ?? 'JOD', contactGiven],
   );
   await query(
     `insert into users (tenant_id, phone, name, password_hash, is_super_admin)

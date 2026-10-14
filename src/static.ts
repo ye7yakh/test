@@ -3,7 +3,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { iconVersion, pageColor, shareVersion, startupImageLinks, STUDIO_BG, studioColor } from './brand.js';
+import { heroColor, heroIsDark, iconVersion, shareVersion, startupImageLinks, STUDIO_BG, studioColor } from './brand.js';
 import { brandVars } from './colors.js';
 import { config } from './config.js';
 import { query } from './db.js';
@@ -71,8 +71,9 @@ const escapeHtml = (s: string) =>
 /** The apps index.html can open: the salon's two, and the platform's two. */
 export type Page = 'customer' | 'owner' | 'admin' | 'landing';
 
-const BOOKING_PATH = /^\/b\/[A-Za-z0-9_-]{16,64}\/?$/;
-const OWNER_PATH = /^\/admin(?:\/[a-z]*)?$/;
+// No trailing slashes: server.ts sends /admin/bookings/ to /admin/bookings first.
+const BOOKING_PATH = /^\/b\/[A-Za-z0-9_-]{16,64}$/;
+const OWNER_PATH = /^\/admin(?:\/[a-z]+)?$/;
 
 /** This request's scheme and port, for links to the platform's other hosts. */
 export function hostOrigin(ctx: Ctx, hostname: string): string {
@@ -83,13 +84,15 @@ export function hostOrigin(ctx: Ctx, hostname: string): string {
 /**
  * Which app a path opens, or where it lives now. A salon's link: the customers' app
  * (the salon page, /book, and each booking at /b/<token>) and the owner's at /admin.
- * The platform: its landing page on the bare domain, its dashboard on admin.
+ * The platform: its landing page on the bare domain, its dashboard on admin. An owner
+ * who types the bare domain's /admin gets the door to their own salon's dashboard
+ * (owner-door.ts); the platform's dashboard is only reached by its own hostname.
  */
-export function pageFor(ctx: Ctx): { page: Page } | { redirect: string } | null {
+export function pageFor(ctx: Ctx): { page: Page } | { redirect: string } | { door: true } | null {
   const path = ctx.url.pathname;
-  const { site, tenant } = ctx.host;
+  const { site } = ctx.host;
   if (site === 'salon') {
-    if (path === '/' || path === '/book' || path === '/book/' || BOOKING_PATH.test(path)) return { page: 'customer' };
+    if (path === '/' || path === '/book' || BOOKING_PATH.test(path)) return { page: 'customer' };
     if (OWNER_PATH.test(path)) return { page: 'owner' };
     if (path === '/login') return { redirect: '/admin/login' };
     // Where the owner's app lived before it moved to /admin.
@@ -98,12 +101,22 @@ export function pageFor(ctx: Ctx): { page: Page } | { redirect: string } | null 
   }
   if (site === 'admin') return path === '/' ? { page: 'admin' } : null;
   if (path === '/') return { page: 'landing' };
-  if (path === '/admin' || path === '/login') return { redirect: `${hostOrigin(ctx, `admin.${tenant.domain}`)}/` };
+  if (path === '/admin' || path === '/login' || OWNER_PATH.test(path)) return { door: true };
   return null;
 }
 
 const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-const hhmm = (min: number) => (min >= 1440 ? '23:59' : `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`);
+/** Minutes from the day's midnight as HH:MM; past midnight wraps (1560 is 02:00). */
+const hhmm = (min: number) => {
+  const m = ((min % 1440) + 1440) % 1440;
+  return `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+};
+/**
+ * A range's closing time as search engines read it. Past midnight it is simply earlier
+ * than the opening (16:00–02:00). One ending at midnight, or running a full 24 hours,
+ * closes the minute before (00:00–23:59 is Google's "open 24 hours").
+ */
+const closes = (open: number, close: number) => hhmm(close % 1440 === 0 || close - open >= 1440 ? close - 1 : close);
 const COUNTRIES: Record<string, string> = { '962': 'JO', '966': 'SA', '971': 'AE', '965': 'KW', '974': 'QA', '973': 'BH', '968': 'OM', '20': 'EG' };
 
 /** JSON for a <script> block: nothing in it can close the element. */
@@ -151,7 +164,7 @@ async function salonDetails(ctx: Ctx, salon: Salon, origin: string, image: strin
       '@type': 'OpeningHoursSpecification',
       dayOfWeek: `https://schema.org/${DAYS[r.weekday]}`,
       opens: hhmm(r.open_min),
-      closes: hhmm(r.close_min),
+      closes: closes(r.open_min, r.close_min),
     })),
   };
 }
@@ -174,15 +187,17 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
     const v = iconVersion(salon);
     const prefix = owner ? 'owner-' : '';
     const studio = studioColor(salon);
-    theme = owner ? studio : pageColor(salon);
+    // The customers' app opens on its hero (the night, or the main colour by day).
+    theme = owner ? studio : heroColor(salon);
     attrs = [
       `data-theme="${owner ? 'studio' : 'public'}"`,
       `data-page="${salon.page_theme}"`,
       `data-studio="${salon.studio_theme}"`,
       owner ? 'data-app="owner"' : '',
     ].filter(Boolean).join(' ');
-    // A dark page runs under the status bar; a light one keeps the bar its own.
-    const statusBar = owner || salon.page_theme === 'night' ? 'black-translucent' : 'default';
+    // A dark top (the night, or a dark main colour by day, kept under the bar as a
+    // band) runs under the status bar; otherwise the bar stays opaque with dark text.
+    const statusBar = owner || heroIsDark(salon) ? 'black-translucent' : 'default';
     head = [
       `<link rel="manifest" href="/${owner ? 'admin' : 'manifest'}.webmanifest">`,
       `<link rel="icon" href="/icons/icon-192.png?v=${v}">`,
@@ -221,16 +236,21 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
   }
   const colors = brandVars(salon?.color_primary ?? '#1f2a37', salon?.color_accent ?? '#c8a15a');
   const vars = `:root{${Object.entries(colors).map(([k, val]) => `${k}:${val}`).join(';')}}`;
+  const fills: Record<string, string> = {
+    title: escapeHtml(title),
+    theme,
+    head: head.join('\n'),
+    vars: `<style nonce="${nonce}">${vars}</style>`,
+    // The landing page's scenes have their own stylesheet; the apps never load it.
+    css: page === 'landing' ? '<link rel="stylesheet" href="/assets/landing.css">' : '',
+    splash,
+  };
+  // One pass, with functions: what a salon wrote ("5$'", "{{head}}") goes in as written,
+  // never read as a replacement pattern or searched again for placeholders.
   const html = template.body
     .toString('utf8')
-    .replace('data-theme="{{mode}}"', attrs)
-    .replaceAll('{{title}}', escapeHtml(title))
-    .replaceAll('{{theme}}', theme)
-    .replace('{{head}}', head.join('\n'))
-    .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
-    // The landing page's scenes have their own stylesheet; the apps never load it.
-    .replace('{{css}}', page === 'landing' ? '<link rel="stylesheet" href="/assets/landing.css">' : '')
-    .replace('{{splash}}', splash);
+    .replace('data-theme="{{mode}}"', () => attrs)
+    .replace(/\{\{(title|theme|head|vars|css|splash)\}\}/g, (_, key: string) => fills[key]!);
   // The platform's pages show each salon's app icon, served from the salon's own subdomain.
   const salonIcons = salon ? '' : ` ${requestProto(ctx.req, config.trustProxy)}://*.${tenant.domain}${ctx.host.port ? `:${ctx.host.port}` : ''}`;
   ctx.res.writeHead(200, {

@@ -1,7 +1,7 @@
 // Boot and routing. The server tells us which host we are on (a salon, the platform's
 // landing page or its dashboard) and who is logged in; the path picks the screen.
 import { api } from './api.js';
-import { h, clear } from './dom.js';
+import { appReady, clear, closeOverlays, h, icon, toast } from './dom.js';
 import { applyLang, setLang, getLang, t } from './i18n.js';
 import { applyLooks, reducedMotion, setTheme } from './theme.js';
 import { loginView } from './views/login.js';
@@ -73,15 +73,25 @@ const app = {
   },
 };
 
+/** A full-screen message with a button that loads the page again. */
+function failScreen(message) {
+  return h('div', { class: 'boot' }, h('div', { class: 'stack center fail', role: 'alert' },
+    h('span', { class: 'fail-mark', 'aria-hidden': 'true' }, icon('alert')),
+    h('p', { text: message }),
+    h('button', { class: 'btn btn-primary', type: 'button', onclick: () => location.reload() }, icon('undo'), t('retry')),
+  ));
+}
+
 /** A view whose code loads on demand: the boot spinner until it arrives. */
 function lazyView(load) {
   const holder = h('div', { class: 'boot' }, h('div', { class: 'spinner' }));
   load()
     .then((view) => holder.replaceWith(view))
-    .catch(() => clear(holder, h('div', { class: 'stack center' },
-      h('p', { text: t('err.network') }),
-      h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => location.reload() }),
-    )));
+    .catch((err) => {
+      console.error(err);
+      holder.replaceWith(failScreen(t('err.network')));
+      appReady();
+    });
   return holder;
 }
 
@@ -119,19 +129,46 @@ function navDirection() {
   return from >= 0 && to >= 0 && from !== to ? (to > from ? 'forward' : 'back') : '';
 }
 
+// The address the current screen was drawn for (a change of #hash alone keeps it).
+let shown = null;
+
 function render() {
   const next = build();
   if (next.redirect) return app.go(next.redirect, { replace: true });
+  shown = location.pathname + location.search;
+  // Sheets and viewers belong to the screen that opened them. Closing one may point the
+  // address elsewhere (the /book sheet goes back to /); the screen being shown keeps it.
+  const here = location.href;
+  // A sheet its own code closed just before (a language switch, a booking sent) is still
+  // sliding away on the page: it counts too, or the cross-fade would freeze a copy of it.
+  const hadOverlays = closeOverlays() > 0 || !!document.querySelector('.sheet-backdrop, .proof-viewer');
+  if (location.href !== here) history.replaceState(history.state, '', here);
   document.documentElement.dataset.nav = navDirection();
   const swap = () => {
-    for (const fn of unmount) fn();
+    for (const fn of unmount) {
+      try {
+        fn();
+      } catch (err) {
+        console.error(err);
+      }
+    }
     unmount = [];
     setTheme(next.theme);
-    clear(root, next.view());
+    let view;
+    try {
+      view = next.view();
+    } catch (err) {
+      // A screen that fails to draw says so, with a way out, instead of leaving the last one half torn down.
+      console.error(err);
+      view = failScreen(t('err.server_error'));
+      appReady();
+    }
+    clear(root, view);
     window.scrollTo(0, 0);
   };
-  // A soft cross-fade between screens where the browser supports it.
-  if (document.startViewTransition && !reducedMotion() && root.firstElementChild && !root.querySelector('.boot')) {
+  // A soft cross-fade between screens where the browser supports it (not while a sheet
+  // slides away: the fade would hold a still copy of it).
+  if (document.startViewTransition && !reducedMotion() && !hadOverlays && root.firstElementChild && !root.querySelector('.boot')) {
     document.startViewTransition(swap);
   } else {
     swap();
@@ -172,17 +209,16 @@ async function boot() {
     app.ctx = await api('GET', '/api/context');
   } catch {
     releaseSplash();
-    clear(
-      root,
-      h('div', { class: 'boot' }, h('div', { class: 'stack center' },
-        h('p', { text: t('err.network') }),
-        h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => location.reload() }),
-      )),
-    );
+    clear(root, failScreen(t('err.network')));
+    // An installed app has no reload button: try again by itself once the phone is back online.
+    addEventListener('online', () => location.reload(), { once: true });
     return;
   }
   if (app.ctx.salon) applyLooks(app.ctx.salon);
-  window.addEventListener('popstate', render);
+  // Back and Forward draw the screen for the new address; a #hash change alone is left to the browser.
+  window.addEventListener('popstate', () => {
+    if (location.pathname + location.search !== shown) render();
+  });
   // Links within the app change screens without a page load. Links to the other app,
   // other sites, new tabs and downloads are left to the browser.
   document.addEventListener('click', (e) => {
@@ -191,13 +227,19 @@ async function boot() {
     if (!a || (a.target && a.target !== '_self') || a.hasAttribute('download')) return;
     const url = new URL(a.href, location.href);
     if (url.origin !== location.origin || !APP_PATH.test(url.pathname) || isOwnerPath(url.pathname) !== ownerApp) return;
+    // A jump within this screen (#section) is the browser's to scroll to.
+    if (a.getAttribute('href').startsWith('#') || (url.hash && url.pathname === location.pathname && url.search === location.search)) return;
     e.preventDefault();
     app.go(url.pathname + url.search);
   });
+  // Signed out elsewhere (or the session ran out): back to the login, once, even when
+  // several requests fail together, and say why.
   window.addEventListener('session-expired', () => {
+    if (!app.ctx.user) return;
     app.ctx.user = null;
     clearManageCache();
     app.go(ownerApp ? '/admin/login' : '/', { replace: true });
+    toast(t('err.login_required'), 'error');
   });
   render();
   if ('serviceWorker' in navigator && app.ctx.kind === 'salon') {

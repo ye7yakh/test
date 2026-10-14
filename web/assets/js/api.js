@@ -7,9 +7,15 @@ export class ApiError extends Error {
   }
 }
 
+// A read that hangs (a dead mobile connection, a captive portal) gives up after this
+// long as a network error, so the screen can offer to try again instead of spinning.
+// Writes wait for the browser: giving up on one the server may have done invites a repeat.
+const READ_TIMEOUT_MS = 30000;
+
 /** JSON in, JSON out. Pass a Blob as the body to upload it raw. */
 export async function api(method, path, body) {
   const init = { method, headers: {}, credentials: 'same-origin' };
+  if (method === 'GET' && typeof AbortSignal.timeout === 'function') init.signal = AbortSignal.timeout(READ_TIMEOUT_MS);
   if (body instanceof Blob) {
     init.body = body;
     init.headers['Content-Type'] = body.type || 'application/octet-stream';
@@ -18,12 +24,20 @@ export async function api(method, path, body) {
     init.headers['Content-Type'] = 'application/json';
   }
   let res;
+  let text;
   try {
     res = await fetch(path, init);
+    // Read in full here: a connection that drops mid-answer is a network error, not an empty success.
+    text = await res.text();
   } catch {
     throw new ApiError(0, 'network');
   }
-  const data = await res.json().catch(() => ({}));
+  let data = {};
+  try {
+    if (text) data = JSON.parse(text) ?? {};
+  } catch {
+    // Not JSON (a proxy's error page): the status alone decides.
+  }
   if (!res.ok) {
     if (res.status === 401 && data.error === 'login_required') window.dispatchEvent(new Event('session-expired'));
     throw new ApiError(res.status, data.error || 'server_error', data.field);

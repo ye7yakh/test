@@ -122,16 +122,62 @@ const ICONS: Record<string, { size: number; padding: number }> = {
   'apple-touch-icon.png': { size: 180, padding: 0.12 },
 };
 
-// Rendered icons and launch screens, keyed by everything that affects them. Bounded.
-const imageCache = new Map<string, Buffer>();
-async function cached(key: string, make: () => Promise<Buffer>): Promise<Buffer> {
-  let png = imageCache.get(key);
-  if (!png) {
-    png = await make();
-    if (imageCache.size > 400) imageCache.delete(imageCache.keys().next().value!);
-    imageCache.set(key, png);
+// Rendered icons, share cards and launch screens, keyed by everything that affects
+// them. The cache holds the promise, so a burst of requests for one picture renders it
+// once; it forgets the least recently used pictures past a byte budget, and never
+// keeps a failure.
+const CACHE_BYTES = 64 * 1024 * 1024;
+const imageCache = new Map<string, { p: Promise<Buffer>; bytes: number }>();
+let cacheBytes = 0;
+function cached(key: string, make: () => Promise<Buffer>): Promise<Buffer> {
+  const hit = imageCache.get(key);
+  if (hit) {
+    // Most recently used goes last.
+    imageCache.delete(key);
+    imageCache.set(key, hit);
+    return hit.p;
   }
-  return png;
+  const entry = { p: make(), bytes: 0 };
+  imageCache.set(key, entry);
+  entry.p.then(
+    (img) => {
+      if (imageCache.get(key) !== entry) return;
+      entry.bytes = img.length;
+      cacheBytes += img.length;
+      for (const [k, e] of imageCache) {
+        if (cacheBytes <= CACHE_BYTES) break;
+        // Oldest first; pictures still being made stay.
+        if (e.bytes) {
+          imageCache.delete(k);
+          cacheBytes -= e.bytes;
+        }
+      }
+    },
+    () => {
+      if (imageCache.get(key) === entry) imageCache.delete(key);
+    },
+  );
+  return entry.p;
+}
+
+// At most two pictures render at once, so a burst of cache misses cannot take every
+// libuv thread from logins (scrypt) and uploads. Only the drawing itself holds a turn:
+// a maker waits for the pictures it builds on (the icon on a share card) before
+// taking one, so turns are never held while waiting for another.
+const RENDER_TURNS = 2;
+let rendering = 0;
+const waiting: (() => void)[] = [];
+async function render<T>(draw: () => Promise<T>): Promise<T> {
+  if (rendering < RENDER_TURNS) rendering++;
+  else await new Promise<void>((resolve) => waiting.push(resolve));
+  try {
+    return await draw();
+  } finally {
+    // Hand the turn straight to the next in line, or give it back.
+    const next = waiting.shift();
+    if (next) next();
+    else rendering--;
+  }
 }
 
 /** The salon's icon at a size, with the dashboard badge for the owner's app. */
@@ -140,8 +186,10 @@ async function salonIcon(salon: Salon, name: string, owner: boolean): Promise<Bu
   return cached(`icon:${salon.id}:${iconVersion(salon)}:${name}:${owner}`, async () => {
     const mediaId = salon.icon_media_id ?? salon.logo_media_id;
     const art = mediaId ? await loadMediaBytes(pool, salon.id, mediaId) : null;
-    const png = await renderIcon(spec.size, { bg: iconBackground(salon), art, fill: !!salon.icon_media_id, padding: spec.padding });
-    return owner ? addOwnerBadge(png, spec.size, name.startsWith('maskable')) : png;
+    return render(async () => {
+      const png = await renderIcon(spec.size, { bg: iconBackground(salon), art, fill: !!salon.icon_media_id, padding: spec.padding });
+      return owner ? addOwnerBadge(png, spec.size, name.startsWith('maskable')) : png;
+    });
   });
 }
 
@@ -158,7 +206,7 @@ async function icon(ctx: Ctx, file = ctx.params.name ?? '') {
   if (!ICONS[name] || (owner && (!salon || name === 'favicon.ico'))) throw new HttpError(404, 'not_found');
   const png = salon
     ? await salonIcon(salon, name, owner)
-    : await cached(`platform:${name}`, () => renderPlatformIcon(ICONS[name]!.size, name.startsWith('maskable') ? 0.1 : 0));
+    : await cached(`platform:${name}`, () => render(() => renderPlatformIcon(ICONS[name]!.size, name.startsWith('maskable') ? 0.1 : 0)));
   sendImage(ctx, png, 86400);
 }
 
@@ -168,23 +216,32 @@ async function shareImage(ctx: Ctx) {
   const jpg = salon
     ? await cached(`share:${salon.id}:${shareVersion(salon)}`, async () => {
         const night = salon.page_theme !== 'day';
-        return renderShareCard({
+        const icon = await salonIcon(salon, 'icon-512.png', false);
+        const cover = salon.cover_media_id ? await loadMediaBytes(pool, salon.id, salon.cover_media_id) : null;
+        return render(() => renderShareCard({
           bg: pageColor(salon),
           glows: night ? [accentForDark(salon.color_accent), accentForDark(salon.color_primary)] : [salon.color_accent, salon.color_primary],
-          icon: await salonIcon(salon, 'icon-512.png', false),
-          cover: salon.cover_media_id ? await loadMediaBytes(pool, salon.id, salon.cover_media_id) : null,
-        });
+          icon,
+          cover,
+        }));
       })
-    : await cached('share:platform', async () => renderShareCard({ bg: STUDIO_BG, glows: ['#8b5cf6', '#3b82f6'], icon: await renderPlatformIcon(512), cover: null }));
+    : await cached('share:platform', () => render(async () => renderShareCard({ bg: STUDIO_BG, glows: ['#8b5cf6', '#3b82f6'], icon: await renderPlatformIcon(512), cover: null })));
   sendImage(ctx, jpg, 86400, 'image/jpeg');
 }
 
-/** Salon pages and the landing page are for search engines; dashboards and bookings are not. */
+/**
+ * Salon pages and the landing page are for search engines; dashboards and bookings are
+ * not. Both pages draw themselves in the browser from /api/context (and the salon page
+ * from /api/public/salon), so crawlers must be able to fetch those two to see anything;
+ * the rest of the API stays closed. The owner's /admin is left open so crawlers can read
+ * its noindex; API answers carry X-Robots-Tag: noindex (server.ts).
+ */
 function robots(ctx: Ctx) {
+  const api = ['Allow: /api/context', 'Allow: /api/public/salon', 'Disallow: /api/'];
   const rules =
     ctx.host.site === 'admin' ? ['Disallow: /']
-    : ctx.host.salon ? ['Disallow: /admin', 'Disallow: /b/', 'Disallow: /api/']
-    : ['Disallow: /api/'];
+    : ctx.host.salon ? ['Disallow: /b/', ...api]
+    : api;
   ctx.res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8', 'Cache-Control': 'public, max-age=3600' });
   ctx.res.end(['User-agent: *', ...rules, ''].join('\n'));
 }
@@ -196,9 +253,10 @@ async function splash(ctx: Ctx) {
   if (!m || !SPLASH_SIZES.has(`${m[2]}x${m[3]}`)) throw new HttpError(404, 'not_found');
   const owner = !!m[1];
   const [width, height] = [Number(m[2]), Number(m[3])];
-  const png = await cached(`splash:${salon.id}:${splashVersion(salon, owner)}:${width}x${height}`, async () =>
-    renderSplash(width, height, owner ? studioColor(salon) : pageColor(salon), await salonIcon(salon, 'icon-512.png', false)),
-  );
+  const png = await cached(`splash:${salon.id}:${splashVersion(salon, owner)}:${width}x${height}`, async () => {
+    const icon = await salonIcon(salon, 'icon-512.png', false);
+    return render(() => renderSplash(width, height, owner ? studioColor(salon) : pageColor(salon), icon));
+  });
   // The URL carries a version of everything in the picture.
   sendImage(ctx, png, 31536000);
 }
@@ -206,7 +264,8 @@ async function splash(ctx: Ctx) {
 async function media(ctx: Ctx) {
   const salon = requireSalon(ctx);
   const id = ctx.params.id ?? '';
-  if (!/^[0-9a-f-]{36}$/.test(id)) throw new HttpError(404, 'not_found');
+  // Exactly a uuid (8-4-4-4-12), as gen_random_uuid writes it, so Postgres always reads it.
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(id)) throw new HttpError(404, 'not_found');
   const row = await one<{ content_type: string; bytes: Buffer }>(
     'select content_type, bytes from media where salon_id = $1 and id = $2',
     [salon.id, id],

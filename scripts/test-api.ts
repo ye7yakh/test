@@ -7,9 +7,11 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import sharp from 'sharp';
 import { hashPassword } from '../src/auth.js';
-import { purgeProofs } from '../src/booking.js';
+import { addDays, availability, clock, createBooking, purgeProofs } from '../src/booking.js';
 import { dayBase, nightBase } from '../src/colors.js';
-import { pool, query } from '../src/db.js';
+import { pool, query, tx } from '../src/db.js';
+import { renderPortrait } from '../src/media.js';
+import type { Salon } from '../src/tenancy.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
 // TEST_DOMAIN and TEST_PORT let two runs share a machine without touching each other.
@@ -73,6 +75,13 @@ class Client {
   del = (host: string, path: string) => this.request(host, 'DELETE', path);
   upload = (host: string, path: string, raw: Buffer, type = 'image/jpeg') => this.request(host, 'PUT', path, { raw, type });
   login = (host: string, phone: string, password: string) => this.post(host, '/api/auth/login', { phone, password });
+}
+
+/** The same client, seen as coming from its own address (the test api trusts X-Forwarded-For). */
+function fromAddress(c: Client, addr: string): Client {
+  const request = c.request.bind(c);
+  c.request = (host, method, path, opts = {}) => request(host, method, path, { ...opts, headers: { 'X-Forwarded-For': addr, ...opts.headers } });
+  return c;
 }
 
 // ---------------------------------------------------------------- tiny test runner
@@ -185,7 +194,11 @@ async function tests(adminCreds: { phone: string; password: string }) {
 
   section('Hosts');
   expectStatus(await anon.get('nothing.example:1', '/healthz'), 200, 'health check needs no tenant');
-  expectStatus(await anon.get(hostOf('nosuchsalon'), '/api/context'), 404, 'unknown salon subdomain');
+  expectStatus(await anon.get(hostOf('nosuchsalon'), '/api/context'), 404, 'unknown salon subdomain', 'not_found');
+  const typo = await anon.get(hostOf('nosuchsalon'), '/book', { Accept: 'text/html' });
+  const typoHtml = typo.body.toString('utf8');
+  expect(typo.status === 404 && String(typo.headers['content-type']).startsWith('text/html') && typoHtml.includes('لا يوجد صالون بهذا الرابط') && typoHtml.includes(`href="http://${LANDING}/"`), "a mistyped salon link in a browser: a page that says so, with the way to the platform", { status: typo.status, type: typo.headers['content-type'] });
+  expect(String((await anon.get('nothing.example', '/', { Accept: 'text/html' })).headers['content-type']).startsWith('text/plain'), 'a host on no platform still gets the plain answer');
   expectStatus(await anon.get(`x.y.${DOMAIN}`, '/api/context'), 404, 'nested subdomain');
   const pctx = await anon.get(PLATFORM, '/api/context');
   expect(pctx.json?.kind === 'platform' && pctx.json.user === null, 'admin. is the platform dashboard', pctx.json);
@@ -295,6 +308,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const ownerIcon = await anon.get(A, '/icons/owner-icon-512.png');
   expect((await pngSize(plainIcon)) === '512x512' && (await pngSize(ownerIcon)) === '512x512' && !plainIcon.body.equals(ownerIcon.body), "the owner's icon carries a badge so the two apps are told apart");
   expect((await pngSize(await anon.get(A, '/icons/owner-apple-touch-icon.png'))) === '180x180', 'owner icon for iPhone home screens');
+  const iconBurst = await Promise.all(Array.from({ length: 6 }, () => anon.get(A, '/icons/owner-maskable-512.png')));
+  expect(iconBurst.every((r) => r.status === 200 && r.body.equals(iconBurst[0]!.body)), 'six requests at once for an icon not made yet: all served, the same picture');
   expectStatus(await anon.get(A, '/icons/owner-favicon.ico'), 404, 'no owner favicon');
   const ownerIndex = await anon.get(A, '/admin');
   const ownerHtml = ownerIndex.body.toString('utf8');
@@ -402,6 +417,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
     photo.headers,
   );
   expectStatus(await anon.get(B, withPhoto?.photo_url), 404, "A's photo is not served on B's host");
+  expectStatus(await anon.get(A, `/media/${'-'.repeat(36)}`), 404, 'a media id that is not a uuid is simply not found', 'not_found');
   expectStatus(await ownerA.upload(A, `/api/manage/staff/${ahmadId}/photo`, Buffer.from('<?php echo 1; ?>')), 415, 'text posing as a JPEG', 'unsupported_image');
   const fakePng = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('<script>alert(1)</script>')]);
   expectStatus(await ownerA.upload(A, `/api/manage/staff/${ahmadId}/photo`, fakePng, 'image/png'), 415, 'PNG header with junk after it', 'unsupported_image');
@@ -417,6 +433,24 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const newPhoto = (await ownerA.get(A, '/api/manage/staff')).json.staff.find((s: any) => s.id === ahmadId).photo_url;
   expect(newPhoto && newPhoto !== oldPhoto, 'team photos re-rendered in the new style');
   expectStatus(await anon.get(A, oldPhoto), 404, 'old rendering deleted');
+  // Rendering happens outside any transaction; each photo is swapped in only if the
+  // style it was drawn in is still the salon's.
+  await ownerA.upload(A, `/api/manage/staff/${khalidId}/photo`, await portraitJpeg(800, 1100, '#557799'));
+  const [warmed, monoed] = await Promise.all([ownerA.patch(A, '/api/manage/salon', { photo_style: 'warm' }), ownerA.patch(A, '/api/manage/salon', { photo_style: 'mono' })]);
+  const look = (await ownerA.get(A, '/api/manage/salon')).json?.salon;
+  const photographed = ((await ownerA.get(A, '/api/manage/staff')).json?.staff ?? []).filter((s: any) => s.photo_url);
+  let inStyle = 0;
+  for (const s of photographed) {
+    const [styled, original] = await Promise.all([anon.get(A, s.photo_url), anon.get(A, s.original_photo_url)]);
+    if ((await renderPortrait(original.body, look.photo_style, look.color_accent)).bytes.equals(styled.body)) inStyle++;
+  }
+  const leftOver = (await query<{ n: number }>(
+    `select count(*)::int as n from media m where m.salon_id = $1
+        and not exists (select 1 from staff s where m.id in (s.photo_id, s.photo_original_id))
+        and not exists (select 1 from salons x where m.id in (x.logo_media_id, x.cover_media_id, x.icon_media_id))`,
+    [created.json?.id],
+  ))[0]?.n;
+  expect(warmed.status === 200 && monoed.status === 200 && photographed.length === 2 && inStyle === 2 && leftOver === 0, 'two style changes at once: every photo ends in the style saved last, nothing left over', { style: look?.photo_style, photos: photographed.length, inStyle, leftOver });
 
   section('Public page');
   expectStatus(await ownerA.patch(A, `/api/manage/staff/${khalidId}`, { active: false }), 200, 'pause a team member');
@@ -430,8 +464,13 @@ async function tests(adminCreds: { phone: string; password: string }) {
 
   section('Addresses and link previews');
   const someToken = 'x'.repeat(24);
-  for (const path of ['/book', '/book/', `/b/${someToken}`, '/admin/', '/admin/login', '/admin/bookings']) {
+  for (const path of ['/book', `/b/${someToken}`, '/admin', '/admin/login', '/admin/bookings']) {
     expectStatus(await anon.get(A, path), 200, `${path} opens the app`);
+  }
+  // One address per page: a trailing slash leads to it, query kept, never off this host.
+  for (const [from, to] of [['/book/', '/book'], ['/admin/', '/admin'], ['/admin/bookings/', '/admin/bookings'], [`/b/${someToken}/`, `/b/${someToken}`], ['/privacy/?lang=en', '/privacy?lang=en'], ['/terms//', '/terms'], ['/.//evil.example/', '/evil.example']]) {
+    const moved = await anon.get(A, from!);
+    expect(moved.status === 301 && moved.headers.location === to, `${from} leads to ${to}`, { status: moved.status, location: moved.headers.location });
   }
   const bookingIndex = (await anon.get(A, `/b/${someToken}`)).body.toString('utf8');
   expect(bookingIndex.includes('content="noindex"') && !bookingIndex.includes('og:title'), "a customer's own booking stays out of search results and link previews");
@@ -448,21 +487,62 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(og('title') === 'صالون أ' && og('url') === `http://${A}/` && shareUrl.startsWith(`http://${A}/share.jpg?v=`) && salonHtml.includes('<meta name="description"') && salonHtml.includes(`<link rel="canonical" href="http://${A}/">`), "a shared salon link shows the salon's name, a description and a picture", { title: og('title'), image: shareUrl });
   const ld = JSON.parse(/<script type="application\/ld\+json" nonce="[^"]+">(.*?)<\/script>/s.exec(salonHtml)?.[1] ?? 'null');
   expect(ld?.['@type'] === 'HealthAndBeautyBusiness' && ld.name === 'صالون أ' && ld.url === `http://${A}/` && ld.openingHoursSpecification?.length > 0, 'search engines get the salon as a local business with its opening hours', ld);
+  const ldOf = (html: string) => JSON.parse(/<script type="application\/ld\+json" nonce="[^"]+">(.*?)<\/script>/s.exec(html)?.[1] ?? 'null');
+  const hoursOf = (data: any, day: string) => (data?.openingHoursSpecification ?? []).filter((s: any) => s.dayOfWeek.endsWith(day)).map((s: any) => `${s.opens}-${s.closes}`).join(',');
+  expect(hoursOf(ld, 'Sunday') === '10:00-14:00,16:00-02:00', 'a range past midnight closes at its real time (16:00–02:00), not 23:59', hoursOf(ld, 'Sunday'));
+  const roundTheClock = WEEK('10:00', '14:00');
+  roundTheClock[0] = [{ open: '00:00', close: '00:00' }];
+  roundTheClock[1] = [{ open: '18:00', close: '00:00' }];
+  await ownerA.put(A, '/api/manage/hours', { hours: roundTheClock });
+  const clockLd = ldOf((await anon.get(A, '/')).body.toString('utf8'));
+  expect(hoursOf(clockLd, 'Sunday') === '00:00-23:59' && hoursOf(clockLd, 'Monday') === '18:00-23:59', 'open all day reads 00:00–23:59, and closing at midnight 23:59', [hoursOf(clockLd, 'Sunday'), hoursOf(clockLd, 'Monday')]);
+  await ownerA.put(A, '/api/manage/hours', { hours: split });
+  // What a salon writes goes into the page as written: "$'" or "{{head}}" are not patterns.
+  const tricky = `قص من 5$' و$& و$\` و$$ {{head}} {{splash}}`;
+  await ownerA.patch(A, '/api/manage/salon', { about_ar: tricky, name_en: 'Salon $&$1 A' });
+  const trickyHtml = (await anon.get(A, '/')).body.toString('utf8');
+  const trickyLd = ldOf(trickyHtml);
+  const escaped = tricky.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+  const times = (s: string) => trickyHtml.split(s).length - 1;
+  expect(
+    trickyLd?.description === tricky && trickyLd.alternateName === 'Salon $&$1 A' && trickyHtml.includes(`<meta name="description" content="${escaped}">`) &&
+      trickyHtml.includes('<title>صالون أ</title>') && /<style nonce="[^"]+">:root\{/.test(trickyHtml) && trickyHtml.includes('<div id="app"><div class="boot splash">') &&
+      times('<script type="module"') === 1 && times('</html>') === 1,
+    "a salon's text with $ signs and {{…}} goes into the page exactly as written, and the page stays whole",
+    { description: trickyLd?.description },
+  );
+  await ownerA.patch(A, '/api/manage/salon', { about_ar: '', name_en: 'Salon A' });
   const shareLink = new URL(shareUrl || 'http://x/');
   const share = await anon.get(A, shareLink.pathname + shareLink.search);
   const shareMeta = share.status === 200 ? await sharp(share.body).metadata() : null;
   expect(share.headers['content-type'] === 'image/jpeg' && shareMeta?.width === 1200 && shareMeta.height === 630, 'the shared-link picture is a 1200x630 JPEG', { status: share.status, size: shareMeta && `${shareMeta.width}x${shareMeta.height}` });
   const robots = async (host: string) => (await anon.get(host, '/robots.txt')).body.toString('utf8');
   const salonRobots = await robots(A);
-  expect(salonRobots.includes('Disallow: /admin') && salonRobots.includes('Disallow: /b/'), "search engines skip a salon's dashboard and its customers' bookings", salonRobots);
-  expect((await robots(PLATFORM)).includes('Disallow: /\n') && !(await robots(LANDING)).includes('Disallow: /\n'), 'and the whole platform dashboard, but not the landing page');
+  // The salon page and the landing page draw themselves from the API: crawlers may fetch those two calls.
+  const fetchable = (txt: string) => txt.includes('Allow: /api/context\n') && txt.includes('Allow: /api/public/salon\n') && txt.includes('Disallow: /api/\n');
+  expect(salonRobots.includes('Disallow: /b/') && fetchable(salonRobots) && !salonRobots.includes('Disallow: /admin'), "search engines skip customers' bookings and the rest of the API, but can render the salon page; /admin is left to its noindex", salonRobots);
+  expect((await robots(PLATFORM)).includes('Disallow: /\n') && !(await robots(LANDING)).includes('Disallow: /\n') && fetchable(await robots(LANDING)), 'and the whole platform dashboard, but not the landing page');
+  expect((await anon.get(A, '/api/public/salon')).headers['x-robots-tag'] === 'noindex', 'API answers are never search results themselves');
   const landing = await anon.get(LANDING, '/');
   const landingHtml = landing.body.toString('utf8');
   expect(landing.status === 200 && landingHtml.includes('data-site="landing"') && landingHtml.includes('og:title') && landingHtml.includes(`content="http://${LANDING}/share.jpg"`), 'the landing page, with its own link preview');
   const platformShare = await anon.get(LANDING, '/share.jpg');
   expect(platformShare.status === 200 && (await sharp(platformShare.body).metadata()).width === 1200, "the platform's own shared-link picture");
-  const toDashboard = await anon.get(LANDING, '/admin');
-  expect(toDashboard.status === 302 && toDashboard.headers.location === `http://${PLATFORM}/`, "the landing page's /admin leads to the dashboard", toDashboard.headers.location);
+  // Owners who type the platform's /admin are looking for their own salon's dashboard.
+  const door = await anon.get(LANDING, '/admin');
+  const doorHtml = door.body.toString('utf8');
+  const doorCsp = String(door.headers['content-security-policy']);
+  expect(door.status === 200 && doorHtml.includes('<form method="get" action="/admin">') && doorHtml.includes('name="salon"') && doorHtml.includes('content="noindex"') && !doorHtml.includes(`admin.${DOMAIN}`) && !door.headers.location,
+    "the landing page's /admin asks for the salon's link, and never leads to the platform's dashboard", { status: door.status, location: door.headers.location });
+  expect(!doorCsp.includes('unsafe-inline') && doorCsp.includes(`form-action 'self' http://*.${DOMAIN}:${PORT}`) && !doorHtml.includes('<script'), 'a page with no scripts and a nonce for its style');
+  for (const typed of [subA, `${subA.toUpperCase()}.${DOMAIN}`, `http://${A}/admin`]) {
+    const go = await anon.get(LANDING, `/admin?salon=${encodeURIComponent(typed)}`);
+    expect(go.status === 302 && go.headers.location === `http://${A}/admin`, `"${typed}" leads to that salon's dashboard`, { status: go.status, location: go.headers.location });
+  }
+  const nobody = await anon.get(LANDING, '/admin?salon=nobody-here');
+  const nobodyHtml = nobody.body.toString('utf8');
+  expect(nobody.status === 404 && nobodyHtml.includes('value="nobody-here"') && nobodyHtml.includes('role="alert"') && nobodyHtml.includes('aria-invalid="true"'), 'a link nobody has: the form again, as typed, with the reason');
+  expect((await anon.get(LANDING, '/login')).status === 200 && (await anon.get(LANDING, '/admin/login')).status === 200, '/login and /admin/login on the landing page show the same');
   const dashboardHtml = (await anon.get(PLATFORM, '/')).body.toString('utf8');
   expect(dashboardHtml.includes('data-site="admin"') && dashboardHtml.includes('content="noindex"'), 'the dashboard stays out of search results');
   const settings = await admin.get(PLATFORM, '/api/admin/platform');
@@ -470,6 +550,9 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '12' }), 400, 'the contact must be a phone number', 'invalid');
   const contact = await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '0795551234' });
   expect(contact.json?.contact_phone === '+962795551234' && (await anon.get(LANDING, '/api/context')).json?.tenant.contact_phone === '+962795551234', 'a local number is stored in full, and the landing page uses it at once', contact.json);
+  const doorBoth = (await anon.get(LANDING, '/admin')).body.toString('utf8');
+  expect(doorBoth.includes('href="https://wa.me/962795551234"') && ['إلى لوحة صالوني', 'Open my dashboard', 'نسيت الرابط؟', 'Forgot it? WhatsApp us', 'مثل <bdi', 'For example <bdi'].every((s) => doorBoth.includes(s)),
+    "the owners' /admin says its button, its WhatsApp link and its example in Arabic and in English");
   expectStatus(await anon.patch(PLATFORM, '/api/admin/platform', { contact_phone: '' }), 401, 'only the admin changes it');
   expectStatus(await ownerA.patch(A, '/api/admin/platform', { contact_phone: '' }), 404, "no platform settings on a salon's link", 'not_found');
   expectStatus(await anon.get(LANDING, '/api/admin/salons'), 404, 'nor any admin tools on the landing page', 'not_found');
@@ -488,6 +571,28 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const noContact = (await anon.get(LANDING, '/privacy')).body.toString('utf8');
   expect(!noContact.includes('wa.me') && noContact.includes('حقوقك') && !noContact.includes('{contact}'), 'without a contact number, the sentences pointing to it are left out');
   await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '0795551234' });
+
+  section('Seeding a brand');
+  // The contact is public (landing page, legal pages, /api/context); the admin's phone is the dashboard's username.
+  const seedDomain = `seed-${DOMAIN}`;
+  const seed = (extra: Record<string, string> = {}) => new Promise<number>((resolve) => {
+    const env = { ...process.env, NODE_ENV: 'production', SEED_DOMAIN: seedDomain, SEED_ADMIN_PHONE: '+962791230000', SEED_ADMIN_PASSWORD: 'seed-admin-pass-1', SEED_DEMO: 'false', SEED_CONTACT_PHONE: '', ...extra };
+    spawn(process.execPath, ['--import', 'tsx', 'src/seed.ts'], { env, stdio: 'ignore' }).on('exit', (code) => resolve(code ?? 1));
+  });
+  const seededContact = async () => (await query<{ contact_phone: string }>('select contact_phone from tenants where domain = $1', [seedDomain]))[0]?.contact_phone;
+  const dropSeeded = async () => {
+    await query('delete from users where tenant_id in (select id from tenants where domain = $1)', [seedDomain]);
+    await query('delete from tenants where domain = $1', [seedDomain]);
+  };
+  await dropSeeded();
+  try {
+    expect((await seed()) === 0 && (await seededContact()) === '', "a production seed does not publish the super admin's sign-in number");
+    expect((await seed({ SEED_CONTACT_PHONE: '0795550101' })) === 0 && (await seededContact()) === '+962795550101', 'SEED_CONTACT_PHONE sets the contact, stored in full');
+    await query("update tenants set contact_phone = '' where domain = $1", [seedDomain]);
+    expect((await seed()) === 0 && (await seededContact()) === '', 'a contact the admin removed stays removed on the next seed');
+  } finally {
+    await dropSeeded();
+  }
 
   section('Deleting');
   expectStatus(await ownerA.del(A, `/api/manage/services/${beardId}`), 200, 'delete a service');
@@ -510,6 +615,19 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const target = new Client();
   for (let i = 0; i < 8; i++) await target.login(A, phoneA, `guess-${i}`);
   expectStatus(await target.login(A, phoneA, 'new-pass-123'), 429, 'locked after 8 failures, even with the right password', 'too_many_attempts');
+  // The lock is on that address and that account: whoever guesses cannot lock the owner out.
+  expectStatus(await fromAddress(new Client(), '10.7.0.1').login(A, phoneA, 'new-pass-123'), 200, 'the owner still signs in from their own address');
+  // Guesses fired all at once are counted as each one starts, not when its slow password check fails.
+  const burst = fromAddress(new Client(), '10.7.0.2');
+  const volley = await Promise.all(Array.from({ length: 20 }, (_, i) => burst.login(A, '0790000777', `volley-${i}`)));
+  const wrong = volley.filter((r) => r.status === 401).length;
+  const refused = volley.filter((r) => r.status === 429 && r.json?.error === 'too_many_attempts').length;
+  expect(wrong === 8 && refused === 12, '20 parallel guesses: 8 are checked, the rest refused', { wrong, refused });
+  // Guessing the current password while signed in counts like guessing at the login.
+  const guessing = { 'X-Forwarded-For': '10.7.0.3' };
+  for (let i = 0; i < 8; i++) await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: `guess-${i}`, next: 'owner-b-new-1' }, headers: guessing });
+  expectStatus(await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: 'owner-b-pass', next: 'owner-b-new-1' }, headers: guessing }), 429, 'changing the password: 8 wrong current passwords, then locked', 'too_many_attempts');
+  expectStatus(await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: 'nope', next: 'owner-b-new-1' }, headers: { 'X-Forwarded-For': '10.7.0.4' } }), 400, 'only from that address', 'wrong_password');
 
   section('Suspending a salon');
   expectStatus(await admin.patch(PLATFORM, `/api/admin/salons/${created.json?.id}`, { active: false }), 200, 'suspend salon A');
@@ -541,6 +659,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const redirect = await anon.get(A, '/some/page?x=1');
   expect(redirect.status === 302 && redirect.headers.location === `http://${A2}/some/page?x=1` && redirect.headers['cache-control'] === 'no-store', 'the old link sends people to the same page on the new one', { status: redirect.status, location: redirect.headers.location });
   expectStatus(await anon.request(A, 'POST', '/api/public/bookings', { json: {} }), 404, 'writes to an old link are not redirected');
+  const doorOld = await anon.get(LANDING, `/admin?salon=${subA}`);
+  expect(doorOld.status === 302 && doorOld.headers.location === `http://${A2}/admin`, "an owner who types the salon's earlier link reaches its dashboard on the new one", doorOld.headers.location);
   expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: subA, name_ar: 'x', owner_phone: '0790001234', owner_password: 'whatever-123' }), 409, 'an old link is not given to another salon', 'subdomain_taken');
   const back = await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { subdomain: subA });
   expect(back.status === 200 && back.json.salon.subdomain === subA && back.json.salon.old_links.includes(`http://${A2}`) && !back.json.salon.old_links.includes(`http://${A}`), 'moving back to its own earlier link', back.json?.salon?.old_links);
@@ -550,6 +670,15 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const page = await anon.get(A, '/');
   expect(page.status === 503 && page.body.toString().includes('صالون أ الجديد') && /no-store/.test(String(page.headers['cache-control'])), 'customers see a calm "unavailable" page while suspended', { status: page.status });
   expectStatus(await anon.get(A, '/api/public/salon'), 404, 'and the API is closed', 'suspended');
+  // Every page a browser opens there says the same, not raw JSON: the shared /book link,
+  // a customer's booking link from WhatsApp, the owner's installed app.
+  for (const path of ['/book', `/b/${someToken}`, '/admin', '/admin/login']) {
+    const r = await anon.get(A, path, { Accept: 'text/html' });
+    expect(r.status === 503 && String(r.headers['content-type']).startsWith('text/html') && r.body.toString('utf8').includes('صالون أ الجديد') && r.headers['retry-after'] === '3600', `${path} in a browser: the same calm page`, { status: r.status, type: r.headers['content-type'] });
+  }
+  const suspendedPolicy = await anon.get(A, '/privacy?lang=en');
+  expect(suspendedPolicy.status === 302 && suspendedPolicy.headers.location === `http://${LANDING}/privacy?lang=en`, "the policies are read on the platform's own domain", suspendedPolicy.headers.location);
+  expectStatus(await anon.get(A, '/icons/icon-192.png'), 404, 'icons and other files are simply gone', 'not_found');
   expectStatus(await anon.get(A2, '/'), 302, 'an old link still leads there');
   await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { active: true });
 
@@ -611,13 +740,7 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   section('Availability');
   // Each customer gets their own address so the per-address booking limit stays out of the way.
   let ip = 10;
-  const customer = () => {
-    const c = new Client();
-    const addr = `10.9.0.${ip++}`;
-    const request = c.request.bind(c);
-    c.request = (host, method, path, opts = {}) => request(host, method, path, { ...opts, headers: { 'X-Forwarded-For': addr, ...opts.headers } });
-    return c;
-  };
+  const customer = () => fromAddress(new Client(), `10.9.0.${ip++}`);
   const guest = customer();
   const days = await guest.get(K, `/api/public/days?service_id=${cut}`);
   expectStatus(days, 200, 'next two weeks');
@@ -646,6 +769,20 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   const b2 = await book(customer(), { name: 'علي', phone: '0781111111' });
   expect(b2.status === 201 && b2.json.booking.staff.id !== b1.json.booking.staff.id, 'the same time goes to the other barber', b2.json);
   expectStatus(await book(customer(), { name: 'سعد', phone: '0772222222' }), 409, 'nobody left at 10:00', 'slot_taken');
+  // Two people asking for "anyone" at the very same moment: each gets a barber.
+  const [twinA, twinB] = await Promise.all([
+    book(customer(), { time: 1320, name: 'منى', phone: '0791230001' }),
+    book(customer(), { time: 1320, name: 'لينا', phone: '0791230002' }),
+  ]);
+  expect(twinA.status === 201 && twinB.status === 201 && twinA.json.booking.staff.id !== twinB.json.booking.staff.id, '"anyone" twice at the same moment: both booked, one barber each', [twinA.json, twinB.json]);
+  // Someone else books with a number the salon knows, under another name.
+  const sameNumber = await book(customer(), { time: 1380, name: 'أحمد', phone: '0781111111' });
+  const b2Later = (await owner.get(K, `/api/manage/bookings?date=${tomorrow}`)).json?.bookings.find((b: any) => b.id === b2.json?.booking.id);
+  const knownAs = async () => (await query<{ name: string }>(`select c.name from customers c join salons s on s.id = c.salon_id where s.subdomain = $1 and c.phone = '+962781111111'`, [sub]))[0]?.name;
+  expect(sameNumber.status === 201 && sameNumber.json.booking.customer.name === 'أحمد' && b2Later?.customer.name === 'علي' && (await knownAs()) === 'علي', "a booking with a known number does not rename that customer's other bookings", { b2: b2Later?.customer, now: sameNumber.json?.booking?.customer });
+  const byOwner = await owner.post(K, '/api/manage/bookings', { service_id: cut, date: tomorrow, time: 1410, name: 'علي سالم', phone: '0781111111' });
+  const b2Again = (await owner.get(K, `/api/manage/bookings?date=${tomorrow}`)).json?.bookings.find((b: any) => b.id === b2.json?.booking.id);
+  expect(byOwner.status === 201 && (await knownAs()) === 'علي سالم' && b2Again?.customer.name === 'علي', "the owner's own entry updates the customer, earlier bookings keep their names", { owner: byOwner.json?.booking?.customer, b2: b2Again?.customer });
   const after = await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`);
   expect(!after.json?.slots.some((s: any) => s.min === 600) && after.json.slots.some((s: any) => s.min === 630), '10:00 is gone, 10:30 is still free');
   expect(!after.json?.slots.some((s: any) => s.min === 585), 'a 30-minute service cannot start at 9:45 either');
@@ -677,6 +814,17 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expect(colourBooking.json?.booking.deposit === '1.5', 'the deposit never exceeds the price', colourBooking.json?.booking);
   const held = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${pending?.staff.id}&date=${tomorrow}`);
   expect(!held.json?.slots.some((s: any) => s.min === 720), 'a held slot is not offered to anyone else');
+  // A long payment window on a visit that starts soon: the hold ends when the visit starts.
+  // (The first time a customer can take is 30-45 minutes away; late at night, the next
+  // midnight, up to an hour away.)
+  await owner.patch(K, '/api/manage/salon', { payment_window_min: 120 });
+  const soonDay = (await guest.get(K, `/api/public/days?service_id=${cut}`)).json?.days.find((d: any) => d.slots > 0)?.date;
+  const soonSlot = (await guest.get(K, `/api/public/availability?service_id=${cut}&date=${soonDay}`)).json?.slots[0];
+  const soon = await book(customer(), { date: soonDay, time: soonSlot?.min, name: 'سريع', phone: '0795550123' });
+  const soonHold = (await query<{ gap: string }>('select extract(epoch from start_at - expires_at) as gap from bookings where id = $1', [soon.json?.booking.id]))[0];
+  expect(soon.status === 201 && soon.json.booking.status === 'pending_payment' && Number(soonHold?.gap) === 0 && soon.json.booking.expires_in_s <= 60 * 60, 'a 2-hour payment window ends when a visit within the hour starts', { hold: soonHold, booking: soon.json?.booking });
+  await guest.post(K, `/api/public/bookings/${soon.json?.token}/cancel`);
+  await owner.patch(K, '/api/manage/salon', { payment_window_min: 30 });
 
   section('Payment screenshot');
   const t1 = d1.json?.token;
@@ -685,15 +833,28 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: Buffer.from('%PDF-1.4 not an image'), type: 'image/png' }), 415, 'a file that is not an image', 'unsupported_image');
   expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'text/plain' }), 415, 'a non-image content type', 'unsupported_image');
   const up = await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'image/png' });
-  expect(up.status === 200 && up.json.booking.proof_url?.startsWith(`/api/public/bookings/${t1}/proof?v=`) && up.json.booking.status === 'pending_payment', 'customer uploads the transfer screenshot', up.json);
+  expect(up.status === 200 && up.json.booking.proof_url?.startsWith(`/api/public/bookings/${t1}/proof?v=`) && up.json.booking.status === 'payment_sent' && up.json.booking.expires_in_s === null, 'customer uploads the transfer screenshot: in time, it holds the booking for the owner to check', up.json);
   const mine = await guest.get(K, up.json?.booking.proof_url);
   expect(mine.status === 200 && mine.headers['content-type'] === 'image/webp' && /private/.test(String(mine.headers['cache-control'])), 'the customer can see their upload, re-encoded and privately cached', mine.headers);
   const sent = await guest.post(K, `/api/public/bookings/${t1}/sent`, { note: 'نور أحمد - بنك الإسكان' });
   expect(sent.status === 200 && sent.json.booking.status === 'payment_sent' && sent.json.booking.payment_note === 'نور أحمد - بنك الإسكان', 'customer says the transfer is sent');
-  expectStatus(await guest.post(K, `/api/public/bookings/${t1}/sent`, {}), 409, 'saying it twice', 'not_pending');
+  const twice = await guest.post(K, `/api/public/bookings/${t1}/sent`, { note: 'نور أحمد - بنك الإسكان' });
+  expect(twice.status === 200 && twice.json.booking.status === 'payment_sent', 'saying it again only updates the note', twice.json);
+  // The deadline passes between the upload (the slow request) and the "sent" after it.
+  const race = await book(customer(), { time: 1050, name: 'دانة', phone: '0795550456' });
+  const raceUp = await guest.request(K, 'PUT', `/api/public/bookings/${race.json?.token}/proof`, { raw: receipt, type: 'image/png' });
+  await query(`update bookings set expires_at = now() - interval '1 second' where id = $1`, [race.json?.booking.id]);
+  const lateSent = await guest.post(K, `/api/public/bookings/${race.json?.token}/sent`, { note: 'دانة' });
+  expect(raceUp.status === 200 && lateSent.status === 200 && lateSent.json.booking.status === 'payment_sent' && lateSent.json.booking.payment_note === 'دانة', 'a receipt uploaded in time keeps the booking, even when "sent" arrives after the deadline', lateSent.json);
   const overview = await owner.get(K, '/api/manage/bookings/overview');
   const waitingRow = overview.json?.attention.find((b: any) => b.id === pending.id);
   expect(waitingRow?.status === 'payment_sent' && overview.json.counts[tomorrow] >= 3, 'the owner sees what needs checking and the day counts', overview.json);
+  expect(overview.json?.attention.some((b: any) => b.id === race.json?.booking.id), 'including the payment whose "sent" came late');
+  const order = (overview.json?.attention ?? []).map((b: any) => `${b.status} ${b.date} ${b.start}`);
+  const lastSent = order.map((x: string) => x.startsWith('payment_sent')).lastIndexOf(true);
+  const firstHold = order.findIndex((x: string) => x.startsWith('pending_payment'));
+  const sentOnly = order.slice(0, lastSent + 1);
+  expect(firstHold > lastSent && lastSent >= 1 && sentOnly.every((x: string, i: number) => i === 0 || sentOnly[i - 1]! <= x), 'transfers to check come first, soonest first, then unpaid holds', order);
   expect(waitingRow?.proof_url === `/api/manage/bookings/${pending.id}/proof?v=${up.json?.booking.proof_url.split('v=')[1]}`, 'with a link to the screenshot', waitingRow);
   const ownerView = await owner.get(K, waitingRow?.proof_url);
   expect(ownerView.status === 200 && ownerView.headers['content-type'] === 'image/webp' && ownerView.body.equals(mine.body), 'the owner opens the screenshot to review it');
@@ -708,8 +869,21 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   const confirmed = await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'confirmed' });
   expect(confirmed.status === 200 && confirmed.json.booking.status === 'confirmed', 'owner confirms the money arrived');
   expect((await guest.get(K, `/api/public/bookings/${d1.json?.token}`)).json?.booking.status === 'confirmed', 'the customer sees it confirmed');
+  // Tomorrow's visit: a stray tap must not free its chair for someone else.
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'no_show' }), 409, "tomorrow's visit cannot be marked a no-show", 'bad_transition');
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'completed' }), 409, 'nor done', 'bad_transition');
+  const stillHeld = await guest.get(K, `/api/public/availability?service_id=${cut}&staff_id=${pending.staff.id}&date=${tomorrow}`);
+  expect(!stillHeld.json?.slots.some((s: any) => s.min === 720), 'so its time stays taken');
+  // As if the day had come and gone.
+  await query(`update bookings set start_at = start_at - interval '3 days', end_at = end_at - interval '3 days' where id = $1`, [pending.id]);
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'no_show' }), 200, 'a visit that has begun can be a no-show');
+  expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'confirmed' }), 200, 'undo');
   expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'completed' }), 200, 'mark as done');
   expectStatus(await owner.patch(K, `/api/manage/bookings/${pending.id}`, { status: 'cancelled' }), 409, 'done bookings cannot be cancelled', 'bad_transition');
+  // Someone who arrives early can be marked done up to an hour before their time.
+  const soonFree = (await owner.get(K, `/api/manage/availability?service_id=${cut}&date=${soonDay}`)).json?.slots[0];
+  const early = await owner.post(K, '/api/manage/bookings', { service_id: cut, date: soonDay, time: soonFree?.min, name: 'مبكر', phone: '0790000456' });
+  expect(early.status === 201 && (await owner.patch(K, `/api/manage/bookings/${early.json.booking.id}`, { status: 'completed' })).status === 200, 'a visit starting within the hour can be marked done (an early arrival)', early.json);
   expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${t1}/proof`, { raw: receipt, type: 'image/png' }), 409, 'no new screenshot once decided', 'not_pending');
 
   section('Rejected payment');
@@ -726,6 +900,18 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   const purged = await purgeProofs(pool);
   expect(purged >= 1 && (await owner.get(K, `/api/manage/bookings/${r1.json?.booking.id}/proof`)).status === 404, 'screenshots are deleted a week after the decision', { purged });
   expectStatus(await owner.get(K, `/api/manage/bookings/${pending.id}/proof`), 200, 'recent ones are kept');
+
+  section('Payments nobody decided');
+  // The race booking above is still waiting for the owner. Its visit came and went.
+  const raceId = race.json?.booking.id;
+  await query(`update bookings set start_at = start_at - interval '2 days', end_at = end_at - interval '2 days' where id = $1`, [raceId]);
+  const stillThere = (await owner.get(K, '/api/manage/bookings/overview')).json?.attention.find((b: any) => b.id === raceId);
+  expect(stillThere?.status === 'payment_sent' && stillThere.upcoming === false, 'a payment still to check stays in the list after the visit, until the owner decides', stillThere);
+  expectStatus(await guest.request(K, 'PUT', `/api/public/bookings/${race.json?.token}/proof`, { raw: receipt, type: 'image/png' }), 409, 'no new screenshot once the visit has begun', 'not_pending');
+  await query(`update bookings set start_at = start_at - interval '8 days', end_at = end_at - interval '8 days' where id = $1`, [raceId]);
+  await purgeProofs(pool);
+  const afterWeek = (await owner.get(K, '/api/manage/bookings/overview')).json?.attention.find((b: any) => b.id === raceId);
+  expect((await owner.get(K, `/api/manage/bookings/${raceId}/proof`)).status === 404 && afterWeek?.proof_url === null, "a week after the visit its bank screenshot is deleted; the booking stays for the owner to settle", afterWeek);
 
   section('Holds that run out');
   const d2 = await book(customer(), { time: 780, name: 'ليث', phone: '0797777777' });
@@ -750,6 +936,32 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expectStatus(await other.ownerB.patch(other.B, `/api/manage/bookings/${manual.json?.booking.id}`, { status: 'cancelled' }), 404, "another salon's owner cannot touch it");
   expectStatus(await guest.get(K, `/api/manage/bookings?date=${tomorrow}`), 401, 'the schedule needs the owner');
   expectStatus(await owner.del(K, `/api/manage/staff/${rami}`), 409, 'a barber with bookings cannot be deleted (pause instead)', 'in_use');
+  // "Arrived" is tapped as the visit starts: the customer sits in the chair until it
+  // ends, so that time is not offered to anyone else, and Undo can bring it back.
+  // (A salon of its own, open around the clock, with one barber and an hour's service.)
+  const m = await smallSalon(admin, 'm', WEEK('00:00', '00:00'), 60);
+  const mToday = (await guest.get(m.host, `/api/public/days?service_id=${m.serviceId}`)).json?.today as string;
+  const ownerFirst = async (date: string) => (await m.owner.get(m.host, `/api/manage/availability?service_id=${m.serviceId}&date=${date}`)).json?.slots?.[0];
+  let visitDate = mToday;
+  let visitAt = await ownerFirst(visitDate);
+  // Too late tonight for an hour's visit: the first is at midnight, still within the hour.
+  if (!visitAt) {
+    visitDate = addDays(mToday, 1);
+    visitAt = await ownerFirst(visitDate);
+  }
+  const visitStart = visitAt?.min as number;
+  const visit = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, date: visitDate, time: visitStart, name: 'حاضر', phone: '0790000789' });
+  const arrived = await m.owner.patch(m.host, `/api/manage/bookings/${visit.json?.booking.id}`, { status: 'completed' });
+  expect(visit.status === 201 && arrived.status === 200 && arrived.json.booking.status === 'completed', 'the owner marks a visit starting now as arrived', arrived.json ?? visit.json);
+  const during = await guest.get(m.host, `/api/public/availability?service_id=${m.serviceId}&staff_id=${m.staffId}&date=${visitDate}`);
+  expect(during.status === 200 && !during.json.slots.some((s: any) => s.min < visitStart + 60 && s.min + 60 > visitStart),
+    'the chair stays taken until the visit ends', { start: visitStart, slots: during.json?.slots?.slice(0, 3).map((s: any) => s.time) });
+  expectStatus(await customer().post(m.host, '/api/public/bookings', { service_id: m.serviceId, date: visitDate, time: visitStart + 30, name: 'متأخر', phone: '0790000790' }), 409, 'nobody can book into it', 'slot_taken');
+  const undone = await m.owner.patch(m.host, `/api/manage/bookings/${visit.json?.booking.id}`, { status: 'confirmed' });
+  expect(undone.status === 200 && undone.json.booking.status === 'confirmed', 'and Undo brings the visit back', undone.json);
+
+  await lateNightTests(admin, customer);
+  await clockChangeTests(admin);
 
   section('Booking limits');
   const busy = customer();
@@ -762,6 +974,119 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   await owner.patch(K, '/api/manage/salon', { booking_enabled: false });
   expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`), 403, 'online booking switched off', 'booking_closed');
   expect(createdK.status === 201, 'booking salon was created');
+}
+
+/** A new salon with one barber and a 30- (or other) minute service, open on `week`. */
+async function smallSalon(admin: Client, prefix: string, week: { open: string; close: string }[][], durationMin = 30) {
+  const sub = `${prefix}${run}`;
+  const host = hostOf(sub);
+  const phone = `07${String(Date.now() + prefix.charCodeAt(0)).slice(-8)}`;
+  await admin.post(PLATFORM, '/api/admin/salons', { subdomain: sub, name_ar: `صالون ${prefix}`, owner_phone: phone, owner_password: `owner-${prefix}-pass` });
+  const owner = new Client();
+  await owner.login(host, phone, `owner-${prefix}-pass`);
+  const staffId = (await owner.post(host, '/api/manage/staff', { name_ar: 'باسل' })).json?.id as number;
+  const serviceId = (await owner.post(host, '/api/manage/services', { name_ar: 'قص', duration_min: durationMin, price: '5' })).json?.id as number;
+  await owner.put(host, '/api/manage/hours', { hours: week });
+  return { sub, host, owner, staffId, serviceId };
+}
+
+/** Bookings for the rest of a late opening, once the clock has passed midnight. */
+async function lateNightTests(admin: Client, customer: () => Client) {
+  section('After midnight');
+  // A time zone where it is just past midnight right now, so "now" is real and not faked
+  // (one the database knows too: Node also lists old names some tz databases leave out).
+  const known = new Set((await query<{ name: string }>('select name from pg_timezone_names')).map((r) => r.name));
+  const zone = Intl.supportedValuesOf('timeZone').filter((z) => known.has(z)).find((z) => {
+    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: z, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+    return hour === 0 || hour === 1;
+  });
+  const n = await smallSalon(admin, 'n', WEEK('18:00', '04:00'));
+  const moved = await n.owner.patch(n.host, '/api/manage/salon', { timezone: zone });
+  expect(!!zone && moved.status === 200, `a salon open 18:00–04:00 in ${zone}, where it is past midnight now`, moved.json);
+  const guest = customer();
+  const days = await guest.get(n.host, `/api/public/days?service_id=${n.serviceId}`);
+  const today = days.json?.today as string;
+  const night = days.json?.days[0];
+  expect(days.status === 200 && night?.date === addDays(today, -1) && night.slots > 0 && night.late_night === true && days.json.days[1].date === today,
+    'the days start with what is left of last night, marked as such', days.json?.days?.slice(0, 2));
+  // Still fourteen chips (two even rows): the last day ahead gives way, but can be booked.
+  expect(days.json?.days.length === 14 && days.json.days[13].date === addDays(today, 12), 'the strip keeps its fourteen days', days.json?.days?.map((d: any) => d.date));
+  expectStatus(await guest.get(n.host, `/api/public/availability?service_id=${n.serviceId}&date=${addDays(today, 13)}`), 200, 'the day it left out is still open for booking');
+  const tail = await guest.get(n.host, `/api/public/availability?service_id=${n.serviceId}&date=${night?.date}`);
+  expect(tail.status === 200 && tail.json.slots.length > 0 && tail.json.slots.every((s: any) => s.next_day && s.min >= 1440 && s.min + 30 <= 1680),
+    'only its times after midnight, up to closing', { status: tail.status, slots: tail.json?.slots?.map((s: any) => s.time) });
+  const first = tail.json?.slots?.[0];
+  const late = await guest.post(n.host, '/api/public/bookings', { service_id: n.serviceId, date: night?.date, time: first?.min, name: 'سهران', phone: '0791239876' });
+  expect(late.status === 201 && late.json.booking.date === today && late.json.booking.start === clock(first?.min ?? 0),
+    "a customer books tonight's time; it reads as today's date", late.json);
+  const ownerSlots = await n.owner.get(n.host, `/api/manage/availability?service_id=${n.serviceId}&date=${night?.date}`);
+  const walkInAt = ownerSlots.json?.slots?.[0];
+  const walkIn = await n.owner.post(n.host, '/api/manage/bookings', { service_id: n.serviceId, date: night?.date, time: walkInAt?.min, name: 'زبون ليلي', phone: '0791239875' });
+  expect(ownerSlots.status === 200 && walkIn.status === 201 && walkIn.json.booking.date === today, 'the owner records a walk-in in the same late hours', walkIn.json ?? ownerSlots.json);
+  expectStatus(await guest.get(n.host, `/api/public/availability?service_id=${n.serviceId}&date=${addDays(today, -2)}`), 400, 'the night before last is gone', 'invalid');
+  expectStatus(await n.owner.post(n.host, '/api/manage/bookings', { service_id: n.serviceId, date: addDays(today, -2), time: 1500, name: 'قديم', phone: '0791239874' }), 400, 'for the owner too', 'invalid');
+}
+
+/** Salons where clocks change: slots are real instants, and every one offered can be booked. */
+async function clockChangeTests(admin: Client) {
+  section('Clock changes');
+  const d = await smallSalon(admin, 'd', WEEK('20:00', '04:00'), 60);
+  await d.owner.patch(d.host, '/api/manage/salon', { timezone: 'Europe/Berlin' });
+  const salon = (await query<Salon>('select * from salons where subdomain = $1', [d.sub]))[0]!;
+  // The Saturday before the last Sunday of March (clocks go forward at 02:00) and of
+  // October (back at 03:00), whichever come next.
+  const saturdayBefore = (month: number) => {
+    const soon = addDays(new Date().toISOString().slice(0, 10), 2);
+    for (let y = new Date().getUTCFullYear(); ; y++) {
+      const last = new Date(Date.UTC(y, month, 0));
+      const sunday = addDays(last.toISOString().slice(0, 10), -last.getUTCDay());
+      if (addDays(sunday, -1) > soon) return addDays(sunday, -1);
+    }
+  };
+  const slotsOn = async (date: string) => (await availability(pool, salon, { serviceId: d.serviceId, staffId: null, date, lead: 0 })).slots.map((s) => s.min);
+  const bookAt = (date: string, min: number) =>
+    tx((db) => createBooking(db, salon, { serviceId: d.serviceId, staffId: null, date, min, name: 'ساعة', phone: `+96279${String(min).padStart(7, '0')}`, source: 'owner', lead: 0 }));
+  const tryAt = async (date: string, min: number) => {
+    // Books in a transaction that is then undone: does the database accept this slot?
+    const undo = new Error('undo');
+    try {
+      await tx(async (db) => {
+        await createBooking(db, salon, { serviceId: d.serviceId, staffId: null, date, min, name: 'تجربة', phone: '+962790001111', source: 'owner', lead: 0 });
+        throw undo;
+      });
+    } catch (err) {
+      return err === undo ? 'ok' : (err as { code?: string }).code ?? String(err);
+    }
+    return 'kept';
+  };
+  const allBookable = async (date: string) => {
+    const failed: string[] = [];
+    for (const min of await slotsOn(date)) {
+      const r = await tryAt(date, min);
+      if (r !== 'ok') failed.push(`${clock(min)} ${r}`);
+    }
+    return failed;
+  };
+
+  const spring = saturdayBefore(3);
+  const before = await slotsOn(spring);
+  expect([1560, 1575, 1590, 1605].every((m) => !before.includes(m)) && before.includes(1545) && before.includes(1620),
+    `${spring}, clocks go forward: 02:00–02:59 do not exist and are not offered`, before.filter((m) => m >= 1500).map(clock));
+  const at3 = await bookAt(spring, 1620);
+  const springAfter = await slotsOn(spring);
+  const shown = (await query<{ start: string }>(`select to_char(start_at at time zone 'Europe/Berlin', 'HH24:MI') as start from bookings where id = $1`, [at3.id]))[0]?.start;
+  expect(shown === '03:00' && !springAfter.includes(1545) && springAfter.includes(1500),
+    'with 03:00 booked, 01:45 (an hour later is 03:45) is taken; 01:00 still fits', { shown, slots: springAfter.filter((m) => m >= 1440).map(clock) });
+  const springBad = await allBookable(spring);
+  expect(springBad.length === 0, 'every time offered that night can really be booked', springBad);
+
+  const autumn = saturdayBefore(10);
+  await bookAt(autumn, 1530); // 01:30 summer time, for an hour: until the first 02:30
+  const autumnSlots = await slotsOn(autumn);
+  expect(autumnSlots.includes(1560) && !autumnSlots.includes(1500) && autumnSlots.includes(1470),
+    `${autumn}, clocks go back: the second 02:00 is free after a booking that ends at the first 02:30`, autumnSlots.filter((m) => m >= 1440).map(clock));
+  const autumnBad = await allBookable(autumn);
+  expect(autumnBad.length === 0, 'and every time offered can really be booked', autumnBad);
 }
 
 main().catch(async (err) => {

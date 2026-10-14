@@ -3,13 +3,12 @@ import { requireOwner } from '../auth.js';
 import { one, pool, query, tx } from '../db.js';
 import { loadSalonWeek, parseWeek, saveSalonWeek } from '../hours.js';
 import { ok, readJson, type Ctx, type Router } from '../http.js';
-import { deleteMedia, intakeImage, mediaUrl, PHOTO_STYLES, readImageUpload, saveMedia } from '../media.js';
+import { deleteMedia, intakeImage, loadMediaBytes, mediaUrl, PHOTO_STYLES, readImageUpload, renderPortrait, saveMedia } from '../media.js';
 import { iconVersion } from '../brand.js';
-import { SALON_COLUMNS, type Salon } from '../tenancy.js';
+import { SALON_COLUMNS, type PhotoStyle, type Salon } from '../tenancy.js';
 import { bool, color, currency, CURRENCIES, Input, int, oneOf, price, text, timezone } from '../validate.js';
 import { HttpError } from '../http.js';
 import { SERVICE_ICONS } from './services.js';
-import { rerenderTeamPhotos } from './staff.js';
 
 async function salonBody(salonId: number) {
   const s = (await one<Salon>(`select ${SALON_COLUMNS} from salons where id = $1`, [salonId]))!;
@@ -53,18 +52,69 @@ async function updateSalon(ctx: Ctx) {
   if (requiresCliq && !(fields.cliq_alias ?? current.cliq_alias)) throw new HttpError(400, 'required', 'cliq_alias');
   // Keys come from the object above, never from the request.
   const entries = Object.entries(fields).filter(([, v]) => v !== undefined);
-  await tx(async (db) => {
+  // The look the photos had, read under the same lock as the change, so two quick
+  // changes in a row each compare with what the other left.
+  const was = await tx(async (db) => {
+    const row = await one<{ photo_style: PhotoStyle; color_accent: string }>('select photo_style, color_accent from salons where id = $1 for no key update', [salonId], db);
     if (entries.length) {
       const sets = entries.map(([k], i) => `${k} = $${i + 2}`).join(', ');
       await query(`update salons set ${sets}, updated_at = now() where id = $1`, [salonId, ...entries.map(([, v]) => v)], db);
     }
-    const style = fields.photo_style ?? current.photo_style;
-    const accent = fields.color_accent ?? current.color_accent;
-    if (style !== current.photo_style || (style === 'brand' && accent !== current.color_accent)) {
-      await rerenderTeamPhotos(db, salonId, style, accent);
-    }
+    return row!;
   });
+  const style = fields.photo_style ?? was.photo_style;
+  const accent = fields.color_accent ?? was.color_accent;
+  // Saved first; the photos follow, outside that transaction, and the reply waits for them.
+  if (style !== was.photo_style || (style === 'brand' && accent !== was.color_accent)) {
+    await rerenderTeamPhotos(salonId, style, accent);
+  }
   ok(ctx, await salonBody(salonId));
+}
+
+/**
+ * Re-renders every team photo from its original after the salon's photo style or
+ * accent changes. The rendering (a quarter of a second a photo) runs with no
+ * transaction open and no locks held, two at a time; each finished photo is then
+ * swapped in by its own short transaction, unless something newer got there first:
+ * another change of style (that change renders its own), or a new photo or a removed
+ * one for that team member.
+ */
+async function rerenderTeamPhotos(salonId: number, style: PhotoStyle, accent: string): Promise<void> {
+  const rows = await query<{ id: number; photo_original_id: string }>(
+    'select id, photo_original_id from staff where salon_id = $1 and photo_original_id is not null order by id',
+    [salonId],
+  );
+  const restyle = async (row: (typeof rows)[number]) => {
+    const original = await loadMediaBytes(pool, salonId, row.photo_original_id);
+    if (!original) return;
+    const styled = await renderPortrait(original, style, accent);
+    await tx(async (db) => {
+      const look = await one<{ photo_style: PhotoStyle; color_accent: string }>(
+        'select photo_style, color_accent from salons where id = $1 for share',
+        [salonId],
+        db,
+      );
+      if (!look || look.photo_style !== style || (style === 'brand' && look.color_accent !== accent)) return;
+      const member = await one<{ photo_id: string | null; photo_original_id: string | null }>(
+        'select photo_id, photo_original_id from staff where salon_id = $1 and id = $2 for update',
+        [salonId, row.id],
+        db,
+      );
+      if (!member || member.photo_original_id !== row.photo_original_id) return;
+      const styledId = await saveMedia(db, salonId, styled);
+      await query('update staff set photo_id = $3, updated_at = now() where salon_id = $1 and id = $2', [salonId, row.id, styledId], db);
+      await deleteMedia(db, salonId, [member.photo_id]);
+    });
+  };
+  let next = 0;
+  const worker = async () => {
+    while (next < rows.length) {
+      const row = rows[next++]!;
+      // The style is saved already: one photo that fails keeps its earlier look, the rest go on.
+      await restyle(row).catch((err) => console.error(`restyle photo of staff ${row.id}`, err));
+    }
+  };
+  await Promise.all([worker(), worker()]);
 }
 
 // The salon's pictures: logo, cover banner and its own app icon. Each is a file

@@ -1,7 +1,7 @@
 // Home: where the owner lands. How ready the app is, what to do next, a glance at
 // the salon, and the link to share once it is ready.
 import { api } from '../api.js';
-import { avatar, clear, confetti, countUp, h, icon, ring, stagger, toast } from '../dom.js';
+import { avatar, clear, confetti, countUp, h, icon, stagger, toast } from '../dom.js';
 import { fmtTime, pick, t } from '../i18n.js';
 import { miniApp, phone } from '../preview.js';
 import { nowIn, openStatus, toMin } from '../time.js';
@@ -19,7 +19,8 @@ function greeting(store, app) {
   );
 }
 
-async function shareLink(store) {
+/** Shares the salon's link (the system sheet on phones), or copies it. */
+export async function shareLink(store) {
   const url = location.origin;
   const text = t('home.share_text', { name: pick(store.salon, 'name') });
   if (navigator.share) {
@@ -55,10 +56,20 @@ function heroCard(store, app, steps) {
     : h(
         'div',
         { class: 'content' },
-        ring(done / steps.length, { size: 84 }),
+        // Four steps, four bars: what is done and what is left, at a glance.
+        h(
+          'div',
+          { class: 'setup-meter', role: 'progressbar', 'aria-label': t('home.progress'), 'aria-valuemin': '0', 'aria-valuemax': String(steps.length), 'aria-valuenow': String(done), 'aria-valuetext': `${done}/${steps.length}` },
+          h('div', { class: 'bars', 'aria-hidden': 'true' }, steps.map((s, i) => h('i', { class: i < done ? 'on' : i === done ? 'next' : '', style: { '--i': String(i) } }))),
+          h('b', { class: 'num', 'aria-hidden': 'true', text: `${done}/${steps.length}` }),
+        ),
         h('h2', { text: t('home.progress') }),
         h('p', { text: t('home.left', { n: steps.length - done }) }),
-        h('div', { class: 'actions' }, h('a', { class: 'btn btn-primary btn-sm sheen', href: `/admin/${next.page}` }, t('home.continue'), icon('arrow', 'flip-ltr'))),
+        h(
+          'div',
+          { class: 'actions' },
+          h('a', { class: 'btn btn-primary btn-sm sheen', href: `/admin/${next.page}`, 'aria-label': t('home.next_step', { step: t(`step.${next.id}`) }) }, icon(next.icon), h('span', { class: 'truncate', text: t(`step.${next.id}`) }), icon('arrow', 'flip-ltr')),
+        ),
       );
   return h(
     'section',
@@ -68,17 +79,28 @@ function heroCard(store, app, steps) {
   );
 }
 
+/** The setup steps, numbered; the next one stands out, done ones step back. */
 function stepsCard(steps) {
+  const next = steps.find((s) => !s.done);
   return h(
     'section',
-    { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', { text: t('home.steps') }), h('span', { class: 'count', text: `${steps.filter((s) => s.done).length}/${steps.length}` })),
-    h('div', { class: 'card flush steps' }, stagger(steps.map((s) => h(
-      'a',
-      { class: `step ${s.done ? 'done' : ''}`, href: `/admin/${s.page}` },
-      h('div', { class: 'tile' }, icon(s.done ? 'check' : s.icon)),
-      h('div', { class: 'grow' }, h('div', { class: 'title', text: t(`step.${s.id}`) }), h('div', { class: 'sub', text: t(`step.${s.id}_sub`) })),
-      h('span', { class: 'state' }, icon(s.done ? 'checkCircle' : 'chevron', s.done ? '' : 'flip-ltr')),
+    { class: 'section steps-section' },
+    h('div', { class: 'section-head' }, h('h2', { text: t('home.steps') }), h('span', { class: 'count num', text: `${steps.filter((s) => s.done).length}/${steps.length}` })),
+    h('ol', { class: 'card flush steps' }, stagger(steps.map((s, i) => h(
+      'li',
+      null,
+      h(
+        'a',
+        { class: `step ${s.done ? 'done' : ''} ${s === next ? 'next' : ''}`, href: `/admin/${s.page}`, 'aria-current': s === next ? 'step' : null },
+        h('div', { class: 'tile' }, icon(s.done ? 'check' : s.icon), s.done ? null : h('span', { class: 'step-n num', 'aria-hidden': 'true', text: String(i + 1) })),
+        h(
+          'div',
+          { class: 'grow' },
+          h('div', { class: 'title' }, h('span', { text: t(`step.${s.id}`) }), s === next ? h('span', { class: 'next-pill', text: t('home.next_pill') }) : null),
+          h('div', { class: 'sub', text: t(`step.${s.id}_sub`) }),
+        ),
+        s.done ? null : h('span', { class: 'state' }, icon('chevron', 'flip-ltr')),
+      ),
     )), 1)),
   );
 }
@@ -90,7 +112,7 @@ function glance(store, app) {
   const go = (page) => () => app.go(`/admin/${page}`);
   return h(
     'section',
-    { class: 'section' },
+    { class: 'section glance-section' },
     h('div', { class: 'section-head' }, h('h2', { text: t('home.glance') })),
     h(
       'div',
@@ -123,7 +145,7 @@ function glance(store, app) {
 /** Today's visits, the next one, and deposits waiting for a check. Filled in once loaded. */
 function todayCard(store) {
   const card = h('a', { class: 'card today-card', href: '/admin/bookings' }, h('div', { class: 'skel', style: { height: '52px' } }));
-  const section = h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: t('home.today') }), h('a', { class: 'link-btn', href: '/admin/bookings', text: t('home.open_schedule') })), card);
+  const section = h('section', { class: 'section today-section' }, h('div', { class: 'section-head' }, h('h2', { text: t('home.today') }), h('a', { class: 'link-btn', href: '/admin/bookings', text: t('home.open_schedule') })), card);
   Promise.all([api('GET', '/api/manage/bookings'), api('GET', '/api/manage/bookings/overview?days=1')])
     .then(([day, overview]) => {
       const live = day.bookings.filter((b) => ['pending_payment', 'payment_sent', 'confirmed', 'completed'].includes(b.status));
@@ -157,7 +179,7 @@ function installCard(store, app) {
   try {
     if (localStorage.getItem(key) === '1') return null;
   } catch {}
-  const actions = h('div', { class: 'row', style: { gap: '8px' } });
+  const actions = h('div', { class: 'row actions' });
   const sub = h('div', { class: 'card-sub' });
   const card = h(
     'section',
@@ -180,7 +202,7 @@ function installCard(store, app) {
       if (await app.install()) card.remove();
       else render();
     });
-    clear(actions, later, install);
+    clear(actions, install, later);
     card.hidden = !app.canInstall() && !app.isIOS;
   };
   render();
@@ -198,11 +220,12 @@ function linkCard(store) {
   const share = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('share'), onclick: () => shareLink(store) }, icon('share'));
   return h(
     'section',
-    { class: 'section' },
+    { class: 'section link-section' },
+    h('div', { class: 'section-head' }, h('h2', { text: t('home.link') })),
     h(
       'div',
       { class: 'card stack' },
-      h('div', { class: 'row' }, h('div', { class: 'tile' }, icon('link')), h('div', { class: 'grow' }, h('div', { class: 'card-title', text: t('home.link') }), h('div', { class: 'card-sub', text: t('home.link_sub') }))),
+      h('div', { class: 'row' }, h('div', { class: 'tile' }, icon('link')), h('div', { class: 'grow card-sub', text: t('home.link_sub') })),
       h('div', { class: 'link-box' }, h('span', { class: 'url', text: location.host }), copy, share),
     ),
   );
@@ -231,15 +254,12 @@ export function homePage(store, app) {
         h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: t('home.temp_pw_btn'), onclick: () => openSettings(store, app, { focusPassword: true }) }),
       )
     : null;
-  return h(
-    'div',
-    null,
-    tempPassword,
-    stagger([greeting(store, app), heroCard(store, app, steps)]),
-    installCard(store, app),
-    store.services.some((s) => s.active) ? todayCard(store) : null,
-    ready ? linkCard(store) : stepsCard(steps),
-    glance(store, app),
-    ready ? stepsCard(steps) : linkCard(store),
-  );
+  const today = store.services.some((s) => s.active) ? todayCard(store) : null;
+  // Setting up: what is next and nothing else in the way. Ready: today first and the
+  // link to share right after it (they sit side by side on a wide screen, so the DOM,
+  // focus and reading order match what is seen), then the salon at a glance.
+  const parts = ready
+    ? [today, linkCard(store), tempPassword, installCard(store, app), glance(store, app)]
+    : [tempPassword, stepsCard(steps), today, installCard(store, app)];
+  return h('div', { class: `home-bento ${ready ? 'is-ready' : 'is-setup'}` }, stagger([greeting(store, app), heroCard(store, app, steps)]), parts);
 }

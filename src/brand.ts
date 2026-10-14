@@ -1,7 +1,7 @@
 // The salon's brand kit as the two installable apps use it: the customers' app on
 // the salon's link and the owner's app on /admin. Icons, launch screens, the picture
 // a shared link shows and the colours around them all come from the salon's settings.
-import { dayBase, nightBase } from './colors.js';
+import { dayBase, nightBase, onColor } from './colors.js';
 import type { Salon } from './tenancy.js';
 
 export const STUDIO_BG = '#0a0918';
@@ -26,6 +26,21 @@ export const iconVersion = (s: Salon) => `${s.icon_media_id ?? s.logo_media_id ?
 
 /** The customers' page background (night or day). */
 export const pageColor = (s: Salon) => (s.page_theme === 'day' ? dayBase(s.color_primary) : nightBase(s.color_primary));
+
+/**
+ * What the customers' app opens on: its hero. At night that is the page itself; by
+ * day the light page rises over a hero in the salon's main colour (or its cover
+ * photo), so the bars and the launch screen take the main colour.
+ */
+export const heroColor = (s: Salon) => (s.page_theme === 'day' ? s.color_primary : nightBase(s.color_primary));
+
+/**
+ * A dark top that is always under the iPhone status bar, so its white text stays
+ * readable once the page scrolls: the night, or a dark main colour by day (the page
+ * keeps a band of it under the bar, see app.css). Never a cover photo: by day the
+ * light bar and pages slide under the status bar once the customer scrolls.
+ */
+export const heroIsDark = (s: Salon) => s.page_theme !== 'day' || onColor(s.color_primary) === '#ffffff';
 
 /** The owner's dashboard background: the platform's studio, or the salon's night. */
 export const studioColor = (s: Salon) => (s.studio_theme === 'brand' ? nightBase(s.color_primary) : STUDIO_BG);

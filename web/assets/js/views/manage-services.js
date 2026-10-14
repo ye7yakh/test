@@ -16,11 +16,19 @@ function withServices(store, services) {
   };
 }
 
-function priceInput(value, attrs = {}) {
+// Browsers without field-sizing get the width set as the price is typed.
+const SIZES_ITSELF = typeof CSS !== 'undefined' && CSS.supports?.('field-sizing', 'content');
+
+function priceInput(value, attrs = {}, { grow = false } = {}) {
   const el = h('input', { name: 'price', inputmode: 'decimal', autocomplete: 'off', value, placeholder: '0', ...attrs });
+  const fit = () => {
+    if (grow && !SIZES_ITSELF) el.style.width = `${Math.max(1.4, el.value.length * 0.62 + 0.4)}em`;
+  };
   el.addEventListener('input', () => {
     el.value = westernDigits(el.value).replace(/[^\d.]/g, '');
+    fit();
   });
+  fit();
   return el;
 }
 
@@ -31,7 +39,7 @@ function openEditor(store, service, onSaved) {
   let chosenIcon = s.icon;
   let duration = s.duration_min;
 
-  const iconPicker = h('div', { class: 'scroller emoji-picker', role: 'radiogroup', 'aria-label': t('services.icon') });
+  const iconPicker = h('div', { class: 'scroller fit emoji-picker', role: 'radiogroup', 'aria-label': t('services.icon') });
   const renderIcons = () => clear(iconPicker, icons.map((e) => h('button', {
     class: `emoji-opt ${e === chosenIcon ? 'on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(e === chosenIcon), text: e,
     onclick: () => { chosenIcon = e; renderIcons(); },
@@ -43,7 +51,7 @@ function openEditor(store, service, onSaved) {
   const desc = input({ name: 'description_ar', value: s.description_ar, maxlength: 300 });
 
   const durationValue = h('span', { class: 'v num' });
-  const durationChips = h('div', { class: 'scroller' });
+  const durationChips = h('div', { class: 'scroller fit' });
   const renderDuration = () => {
     durationValue.textContent = fmtDuration(duration);
     clear(durationChips, DURATIONS.map((m) => h('button', { class: `chip-btn num ${m === duration ? 'on' : ''}`, type: 'button', text: t('unit.min_short', { n: m }), onclick: () => { duration = m; renderDuration(); } })));
@@ -54,7 +62,7 @@ function openEditor(store, service, onSaved) {
   };
   renderDuration();
 
-  const price = priceInput(s.price ? String(Number(s.price)) : '');
+  const price = priceInput(s.price ? String(Number(s.price)) : '', {}, { grow: true });
   const from = switchRow(t('services.from'), t('services.from_sub'), s.price_is_from);
   const active = switchRow(t('services.bookable'), t('services.bookable_sub'), s.active);
   const who = chips(store.staff.map((m) => ({ id: m.id, label: pick(m, 'name'), img: m.photo_url })), s.staff_ids);
@@ -122,14 +130,15 @@ function openTemplates(store, typeId, onSaved) {
   const existing = new Set(store.services.map((s) => s.name_ar.trim()));
   const rows = SERVICE_TEMPLATES[typeId].map((tpl) => {
     const check = h('input', { type: 'checkbox', checked: !existing.has(tpl.ar), 'aria-label': tpl.ar });
-    const price = priceInput('', { class: 'price-mini', 'aria-label': t('services.tpl_price'), placeholder: t('services.tpl_price') });
+    const name = pick({ name_ar: tpl.ar, name_en: tpl.en }, 'name');
+    const price = priceInput('', { class: 'price-mini', 'aria-label': `${t('services.tpl_price')} · ${name}`, placeholder: t('services.tpl_price') });
     const row = h(
       'div',
       { class: 'tpl-row' },
       h('label', { class: 'check' }, check, h('span', null, icon('check'))),
       h('div', { class: 'tile emoji-tile', text: tpl.icon }),
-      h('div', { class: 'grow' }, h('div', { style: { fontWeight: '500' }, text: pick({ name_ar: tpl.ar, name_en: tpl.en }, 'name') }), h('div', { class: 'small muted', text: fmtDuration(tpl.min) })),
-      price,
+      h('div', { class: 'grow' }, h('div', { style: { fontWeight: '500' }, text: name }), h('div', { class: 'small muted', text: fmtDuration(tpl.min) })),
+      h('label', { class: 'price-mini-wrap' }, price, h('span', { class: 'cur', 'aria-hidden': 'true', text: currencySymbol(store.salon.currency) })),
     );
     const sync = () => {
       row.classList.toggle('off', !check.checked);
@@ -212,7 +221,8 @@ export function servicesPage(store) {
   function render() {
     const services = store.services;
     const staffById = new Map(store.staff.map((m) => [m.id, m]));
-    const add = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('services.add'), title: t('services.add'), onclick: () => openEditor(store, null, setServices) }, icon('plus'));
+    // The empty page has its own "add it yourself" link, so the head only adds once there is a menu.
+    const add = services.length ? h('button', { class: 'btn btn-secondary btn-sm head-add', type: 'button', title: t('services.add'), onclick: () => openEditor(store, null, setServices) }, icon('plus'), t('add')) : null;
     const head = h(
       'div',
       { class: 's-head' },
@@ -273,7 +283,7 @@ export function servicesPage(store) {
         'section',
         { class: 'section' },
         h('div', { class: 'section-head' }, h('h2', { class: 'row', style: { gap: '8px' } }, icon('wand'), t('services.more'))),
-        h('div', { class: 'scroller' }, typeButtons('chip-btn')),
+        h('div', { class: 'scroller fit' }, typeButtons('chip-btn')),
       ),
     );
   }
