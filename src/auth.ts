@@ -67,7 +67,7 @@ export type Role = 'admin' | 'owner' | 'staff' | 'customer';
 
 export interface Session {
   tokenHash: Buffer;
-  user: { id: number; name: string; phone: string; is_super_admin: boolean };
+  user: { id: number; name: string; phone: string; is_super_admin: boolean; must_change_password: boolean };
   role: Role;
 }
 
@@ -109,13 +109,24 @@ export async function destroySession(ctx: Ctx): Promise<void> {
   setCookie(ctx.res, '', 0);
 }
 
+// "Last seen" for the admin: written at most once an hour per person and salon.
+const seenWritten = new Map<string, number>();
+function touchLastSeen(salonId: number, userId: number): void {
+  const key = `${salonId}:${userId}`;
+  if (Date.now() - (seenWritten.get(key) ?? 0) < 3600_000) return;
+  seenWritten.set(key, Date.now());
+  query('update salon_members set last_seen_at = now() where salon_id = $1 and user_id = $2', [salonId, userId]).catch((e) =>
+    console.error('last seen', e),
+  );
+}
+
 /** Loads the session for this request. It must have been created on this same host. */
 export async function loadSession(cookieHeader: string | undefined, host: HostContext): Promise<Session | null> {
   const token = readCookie(cookieHeader);
   if (!token || token.length > 100) return null;
   const tokenHash = hashToken(token);
-  const row = await one<{ id: number; name: string; phone: string; is_super_admin: boolean; role: string | null }>(
-    `select u.id, u.name, u.phone, u.is_super_admin, m.role
+  const row = await one<{ id: number; name: string; phone: string; is_super_admin: boolean; must_change_password: boolean; role: string | null }>(
+    `select u.id, u.name, u.phone, u.is_super_admin, u.must_change_password, m.role
        from sessions s
        join users u on u.id = s.user_id
        left join salon_members m on m.user_id = u.id and m.salon_id = s.salon_id
@@ -126,9 +137,10 @@ export async function loadSession(cookieHeader: string | undefined, host: HostCo
   if (!row) return null;
   const role: Role = row.is_super_admin ? 'admin' : row.role === 'owner' ? 'owner' : row.role === 'staff' ? 'staff' : 'customer';
   if (!host.salon && role !== 'admin') return null;
+  if (host.salon && (role === 'owner' || role === 'staff')) touchLastSeen(host.salon.id, row.id);
   return {
     tokenHash,
-    user: { id: row.id, name: row.name, phone: row.phone, is_super_admin: row.is_super_admin },
+    user: { id: row.id, name: row.name, phone: row.phone, is_super_admin: row.is_super_admin, must_change_password: row.must_change_password },
     role,
   };
 }

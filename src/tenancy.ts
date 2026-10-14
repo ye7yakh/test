@@ -77,7 +77,14 @@ export const SALON_COLUMNS = `id, tenant_id, subdomain, name_ar, name_en, about_
   booking_enabled, cliq_required, cliq_alias, cliq_name, deposit_kind, trim_scale(deposit_amount)::text as deposit_amount,
   payment_window_min`;
 
-export async function resolveHost(hostHeader: string | undefined): Promise<HostContext | null> {
+interface ParsedHost {
+  tenant: Tenant;
+  /** null on the platform host (bare domain, www., admin.). */
+  sub: string | null;
+  port: string;
+}
+
+async function parseHost(hostHeader: string | undefined): Promise<ParsedHost | null> {
   if (!hostHeader) return null;
   const m = /^([a-z0-9.-]+?)\.?(?::(\d{1,5}))?$/i.exec(hostHeader.trim());
   if (!m) return null;
@@ -85,18 +92,48 @@ export async function resolveHost(hostHeader: string | undefined): Promise<HostC
   const port = m[2] ?? '';
 
   for (const tenant of await tenants()) {
-    if (hostname === tenant.domain) return { tenant, salon: null, port };
+    if (hostname === tenant.domain) return { tenant, sub: null, port };
     if (!hostname.endsWith(`.${tenant.domain}`)) continue;
     const sub = hostname.slice(0, -(tenant.domain.length + 1));
-    if (PLATFORM_PREFIXES.has(sub)) return { tenant, salon: null, port };
+    if (PLATFORM_PREFIXES.has(sub)) return { tenant, sub: null, port };
     if (sub.includes('.')) return null;
-    const salon = await one<Salon>(
-      `select ${SALON_COLUMNS} from salons where tenant_id = $1 and subdomain = $2 and active`,
-      [tenant.id, sub],
-    );
-    return salon ? { tenant, salon, port } : null;
+    return { tenant, sub, port };
   }
   return null;
+}
+
+export async function resolveHost(hostHeader: string | undefined): Promise<HostContext | null> {
+  const parsed = await parseHost(hostHeader);
+  if (!parsed) return null;
+  const { tenant, sub, port } = parsed;
+  if (sub === null) return { tenant, salon: null, port };
+  const salon = await one<Salon>(
+    `select ${SALON_COLUMNS} from salons where tenant_id = $1 and subdomain = $2 and active`,
+    [tenant.id, sub],
+  );
+  return salon ? { tenant, salon, port } : null;
+}
+
+export type OfflineHost =
+  | { kind: 'moved'; tenant: Tenant; subdomain: string; port: string }
+  | { kind: 'suspended'; tenant: Tenant; name_ar: string; name_en: string };
+
+/** A salon host that did not resolve: a renamed salon's earlier link, or a suspended salon. */
+export async function offlineHost(hostHeader: string | undefined): Promise<OfflineHost | null> {
+  const parsed = await parseHost(hostHeader);
+  if (!parsed || parsed.sub === null) return null;
+  const { tenant, sub, port } = parsed;
+  const suspended = await one<{ name_ar: string; name_en: string }>(
+    'select name_ar, name_en from salons where tenant_id = $1 and subdomain = $2 and not active',
+    [tenant.id, sub],
+  );
+  if (suspended) return { kind: 'suspended', tenant, ...suspended };
+  const moved = await one<{ subdomain: string }>(
+    `select s.subdomain from salon_aliases a join salons s on s.id = a.salon_id
+      where a.tenant_id = $1 and a.subdomain = $2`,
+    [tenant.id, sub],
+  );
+  return moved ? { kind: 'moved', tenant, subdomain: moved.subdomain, port } : null;
 }
 
 export function salonUrl(proto: string, host: HostContext, subdomain: string): string {

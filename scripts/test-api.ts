@@ -213,6 +213,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(/HttpOnly/.test(setCookie) && /SameSite=Lax/.test(setCookie) && !/Domain=/i.test(setCookie), 'session cookie is HttpOnly, SameSite, host-only', setCookie);
   const ctxA = await ownerA.get(A, '/api/context');
   expect(ctxA.json?.user?.role === 'owner' && ctxA.json.salon.subdomain === subA, 'context says owner of salon A', ctxA.json);
+  expect(ctxA.json?.user?.must_change_password === true, "the admin's password is temporary: the owner is asked to choose their own");
   expectStatus(await ownerB.login(B, phoneB, 'owner-b-pass'), 200, 'owner B logs in');
   const fresh = (await ownerB.get(B, '/api/manage/salon')).json;
   expect(fresh?.salon.currency === 'JOD' && fresh.salon.timezone === 'Asia/Amman', 'new salons are in JD on Amman time', fresh?.salon);
@@ -406,6 +407,56 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expectStatus(await anon.get(A, '/api/public/salon'), 200, 'back online');
   const list = await admin.get(PLATFORM, '/api/admin/salons');
   expect(list.json?.salons.length === 2 && list.json.salons.every((s: any) => s.owners.length === 1), 'admin sees both salons with owners', list.json);
+
+  section('Admin tools');
+  const idA = created.json?.id as number;
+  const rowA = list.json?.salons.find((s: any) => s.id === idA);
+  expect(list.json?.series.length === 30 && list.json.totals.salons === 2 && list.json.totals.active === 2, 'platform totals and 30 days of new bookings', list.json?.totals);
+  expect(typeof rowA?.stats.bookings_30d === 'number' && typeof rowA.setup.brand === 'boolean' && rowA.icon_url === `http://${A}/icons/icon-192.png`, 'each salon with its activity and setup progress', rowA);
+  expect(!!rowA?.owners[0]?.last_seen_at, "when the owner last used the studio", rowA?.owners);
+  const detail = await admin.get(PLATFORM, `/api/admin/salons/${idA}`);
+  expect(detail.status === 200 && detail.json.salon.id === idA && detail.json.salon.old_links.length === 0, 'salon detail', detail.json);
+  expectStatus(await admin.get(PLATFORM, '/api/admin/salons/999999999'), 404, 'unknown salon');
+  expectStatus(await anon.get(PLATFORM, `/api/admin/salons/${idA}`), 401, 'detail needs the admin');
+
+  const subA2 = `a2${run}`;
+  const A2 = hostOf(subA2);
+  expectStatus(await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { subdomain: subB }), 409, "another salon's link", 'subdomain_taken');
+  expectStatus(await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { subdomain: 'www' }), 400, 'a reserved link', 'invalid');
+  expectStatus(await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { name_ar: '' }), 400, 'a salon needs a name', 'invalid');
+  const moved = await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { subdomain: subA2.toUpperCase(), name_ar: 'صالون أ الجديد' });
+  expect(moved.status === 200 && moved.json.salon.subdomain === subA2 && moved.json.salon.name_ar === 'صالون أ الجديد' && moved.json.salon.old_links.includes(`http://${A}`), 'move to a new link and rename', moved.json?.salon);
+  expectStatus(await anon.get(A2, '/api/public/salon'), 200, 'the new link works');
+  const redirect = await anon.get(A, '/some/page?x=1');
+  expect(redirect.status === 302 && redirect.headers.location === `http://${A2}/some/page?x=1` && redirect.headers['cache-control'] === 'no-store', 'the old link sends people to the same page on the new one', { status: redirect.status, location: redirect.headers.location });
+  expectStatus(await anon.request(A, 'POST', '/api/public/bookings', { json: {} }), 404, 'writes to an old link are not redirected');
+  expectStatus(await admin.post(PLATFORM, '/api/admin/salons', { subdomain: subA, name_ar: 'x', owner_phone: '0790001234', owner_password: 'whatever-123' }), 409, 'an old link is not given to another salon', 'subdomain_taken');
+  const back = await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { subdomain: subA });
+  expect(back.status === 200 && back.json.salon.subdomain === subA && back.json.salon.old_links.includes(`http://${A2}`) && !back.json.salon.old_links.includes(`http://${A}`), 'moving back to its own earlier link', back.json?.salon?.old_links);
+  expectStatus(await anon.get(A, '/api/public/salon'), 200, 'the original link works again');
+
+  await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { active: false });
+  const page = await anon.get(A, '/');
+  expect(page.status === 503 && page.body.toString().includes('صالون أ الجديد') && /no-store/.test(String(page.headers['cache-control'])), 'customers see a calm "unavailable" page while suspended', { status: page.status });
+  expectStatus(await anon.get(A, '/api/public/salon'), 404, 'and the API is closed', 'suspended');
+  expectStatus(await anon.get(A2, '/'), 302, 'an old link still leads there');
+  await admin.patch(PLATFORM, `/api/admin/salons/${idA}`, { active: true });
+
+  const reset1 = await admin.post(PLATFORM, `/api/admin/salons/${idA}/reset-password`);
+  const temp1 = reset1.json?.password as string;
+  const readable = /^[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}-[a-hjkmnp-z2-9]{4}$/;
+  expect(reset1.status === 200 && readable.test(temp1) && reset1.json.owner.phone.endsWith(phoneA.slice(1)), 'a readable temporary password for the owner', reset1.json);
+  expectStatus(await new Client().login(A, phoneA, 'new-pass-123'), 401, 'the old password stops working', 'bad_credentials');
+  const rescued = new Client();
+  expectStatus(await rescued.login(A, phoneA, temp1), 200, 'the owner signs in with it, even after being locked out');
+  expect((await rescued.get(A, '/api/context')).json?.user?.must_change_password === true, 'and is asked to choose their own');
+  const temp2 = (await admin.post(PLATFORM, `/api/admin/salons/${idA}/reset-password`)).json?.password;
+  expect(temp2 && temp2 !== temp1, 'every reset gives a different password');
+  expectStatus(await rescued.get(A, '/api/manage/salon'), 401, 'a reset signs the owner out everywhere');
+  await rescued.login(A, phoneA, temp2);
+  expectStatus(await rescued.post(A, '/api/auth/password', { current: temp2, next: 'owner-a-final-1' }), 200, 'they pick their own');
+  expect((await rescued.get(A, '/api/context')).json?.user?.must_change_password === false, 'no longer temporary');
+  expectStatus(await anon.post(PLATFORM, `/api/admin/salons/${idA}/reset-password`), 401, 'only the admin can reset passwords');
 
   await bookingTests(admin, { B, ownerB });
 }

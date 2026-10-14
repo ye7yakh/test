@@ -20,7 +20,7 @@ function contextBody(ctx: Ctx) {
     kind: ctx.host.salon ? 'salon' : 'platform',
     tenant: { name: ctx.host.tenant.name, calling_code: ctx.host.tenant.default_calling_code },
     salon: ctx.host.salon ? salonSummary(ctx.host.salon) : null,
-    user: s ? { id: s.user.id, name: s.user.name, phone: s.user.phone, role: s.role } : null,
+    user: s ? { id: s.user.id, name: s.user.name, phone: s.user.phone, role: s.role, must_change_password: s.user.must_change_password } : null,
   };
 }
 
@@ -58,7 +58,8 @@ async function changePassword(ctx: Ctx) {
   if (!row || typeof body.current !== 'string' || !(await verifyPassword(body.current, row.password_hash))) {
     throw new HttpError(400, 'wrong_password', 'current');
   }
-  await query('update users set password_hash = $2 where id = $1', [ctx.session.user.id, await hashPassword(next)]);
+  // Their own password now, so any temporary one the admin set is gone.
+  await query('update users set password_hash = $2, must_change_password = false where id = $1', [ctx.session.user.id, await hashPassword(next)]);
   // Sign out every other device.
   await query('delete from sessions where user_id = $1 and token_hash <> $2', [ctx.session.user.id, ctx.session.tokenHash]);
   ok(ctx);
