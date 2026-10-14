@@ -228,6 +228,8 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
     .replaceAll('{{theme}}', theme)
     .replace('{{head}}', head.join('\n'))
     .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
+    // The landing page's scenes have their own stylesheet; the apps never load it.
+    .replace('{{css}}', page === 'landing' ? '<link rel="stylesheet" href="/assets/landing.css">' : '')
     .replace('{{splash}}', splash);
   // The platform's pages show each salon's app icon, served from the salon's own subdomain.
   const salonIcons = salon ? '' : ` ${requestProto(ctx.req, config.trustProxy)}://*.${tenant.domain}${ctx.host.port ? `:${ctx.host.port}` : ''}`;

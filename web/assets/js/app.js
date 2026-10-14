@@ -9,7 +9,6 @@ import { salonPage } from './views/salon-page.js';
 import { bookingPage } from './views/booking.js';
 import { clearManageCache, manageView, PAGES } from './views/manage.js';
 import { adminView } from './views/admin.js';
-import { landingView } from './views/landing.js';
 
 const root = document.getElementById('app');
 let unmount = [];
@@ -74,6 +73,18 @@ const app = {
   },
 };
 
+/** A view whose code loads on demand: the boot spinner until it arrives. */
+function lazyView(load) {
+  const holder = h('div', { class: 'boot' }, h('div', { class: 'spinner' }));
+  load()
+    .then((view) => holder.replaceWith(view))
+    .catch(() => clear(holder, h('div', { class: 'stack center' },
+      h('p', { text: t('err.network') }),
+      h('button', { class: 'btn btn-primary', type: 'button', text: t('retry'), onclick: () => location.reload() }),
+    )));
+  return holder;
+}
+
 function route() {
   const [name = '', ...rest] = location.pathname.replace(/^\/+|\/+$/g, '').split('/');
   return { name, rest };
@@ -82,7 +93,8 @@ function route() {
 function build() {
   const { name, rest } = route();
   const ctx = app.ctx;
-  if (ctx.kind === 'landing') return { theme: 'studio', view: () => landingView(app) };
+  // The landing page is only ever on the bare domain: its code loads only there.
+  if (ctx.kind === 'landing') return { theme: 'studio', view: () => lazyView(() => import('./views/landing.js').then((m) => m.landingView(app))) };
   if (ctx.kind === 'platform') return { theme: 'studio', view: () => (ctx.user ? adminView(app) : loginView(app)) };
   if (ownerApp) {
     const tab = rest[0] || 'home';
