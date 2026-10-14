@@ -8,6 +8,7 @@ import http from 'node:http';
 import sharp from 'sharp';
 import { hashPassword } from '../src/auth.js';
 import { purgeProofs } from '../src/booking.js';
+import { nightBase } from '../src/colors.js';
 import { pool, query } from '../src/db.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
@@ -256,7 +257,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(platformIndex.body.toString('utf8').includes('data-theme="studio" data-platform="1"') && platformCsp.includes(`img-src 'self' blob: data: http://*.${DOMAIN}:${PORT}`), 'platform host is the studio and may show salon icons');
   const manifest = await anon.get(A, '/manifest.webmanifest');
   const m = JSON.parse(manifest.body.toString('utf8'));
-  expect(m.name === 'صالون أ' && m.theme_color === '#0f3d3e' && m.dir === 'rtl' && m.icons.length === 3, 'per-salon manifest', m);
+  // The app opens on the salon's night page, so the splash screen and bars match it.
+  expect(m.name === 'صالون أ' && m.theme_color === nightBase('#0f3d3e') && m.background_color === m.theme_color && m.dir === 'rtl' && m.icons.length === 3, 'per-salon manifest', m);
   const icon = await anon.get(A, m.icons[2].src);
   const iconMeta = icon.status === 200 ? await sharp(icon.body).metadata() : null;
   expect(icon.headers['content-type'] === 'image/png' && iconMeta?.width === 512, 'maskable icon rendered from the logo', { status: icon.status });

@@ -92,7 +92,7 @@ function previewPanel(store, scaleFor) {
   );
   function render() {
     const state = store.previewState();
-    clear(holder, phone(mode === 'app' ? miniApp(state) : homeScreen(state), { scale: scaleFor(), status: mode === 'app' ? 'light' : 'white' }));
+    clear(holder, phone(mode === 'app' ? miniApp(state) : homeScreen(state), { scale: scaleFor() }));
   }
   render();
   return { el: h('div', null, tabs, holder), render };

@@ -7,7 +7,7 @@ import { reducedMotion, setTheme } from './theme.js';
 import { loginView } from './views/login.js';
 import { salonPage } from './views/salon-page.js';
 import { bookingPage } from './views/booking.js';
-import { clearManageCache, manageView } from './views/manage.js';
+import { clearManageCache, manageView, PAGES } from './views/manage.js';
 import { adminView } from './views/admin.js';
 
 const root = document.getElementById('app');
@@ -61,9 +61,22 @@ function build() {
   return { theme: 'public', view: () => salonPage(app) };
 }
 
+// Which studio tab was shown last, so a tab change can slide the right way.
+const TAB_ORDER = PAGES.map((p) => p.id);
+let lastTab = null;
+function navDirection() {
+  const { name, rest } = route();
+  const tab = name === 'manage' && app.ctx.kind === 'salon' ? rest[0] || 'home' : null;
+  const from = TAB_ORDER.indexOf(lastTab);
+  const to = TAB_ORDER.indexOf(tab);
+  lastTab = tab;
+  return from >= 0 && to >= 0 && from !== to ? (to > from ? 'forward' : 'back') : '';
+}
+
 function render() {
   const next = build();
   if (next.redirect) return app.go(next.redirect);
+  document.documentElement.dataset.nav = navDirection();
   const swap = () => {
     for (const fn of unmount) fn();
     unmount = [];

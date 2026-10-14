@@ -19,8 +19,8 @@ const STYLE_FILTERS = {
 
 function stage(store) {
   const slides = [
-    { id: 'app', caption: t('brand.slide_app'), screen: () => miniApp(store.previewState()), status: 'light' },
-    { id: 'home', caption: t('brand.slide_home'), screen: () => homeScreen(store.previewState()), status: 'white' },
+    { id: 'app', caption: t('brand.slide_app'), screen: () => miniApp(store.previewState()) },
+    { id: 'home', caption: t('brand.slide_home'), screen: () => homeScreen(store.previewState()) },
   ];
   const holders = slides.map(() => h('div'));
   const track = h('div', { class: 'stage-track' }, slides.map((s, i) => h('div', { class: 'stage-slide' }, holders[i], h('div', { class: 'caption', text: s.caption }))));
@@ -29,7 +29,7 @@ function stage(store) {
     const i = Math.round(Math.abs(track.scrollLeft) / track.clientWidth);
     dots.forEach((d, j) => d.classList.toggle('on', i === j));
   }, { passive: true });
-  const render = () => slides.forEach((s, i) => clear(holders[i], phone(s.screen(), { scale: 0.62, status: s.status })));
+  const render = () => slides.forEach((s, i) => clear(holders[i], phone(s.screen(), { scale: 0.62 })));
   render();
   return { el: h('section', { class: 'stage brand-stage' }, track, h('div', { class: 'stage-dots' }, dots)), render };
 }

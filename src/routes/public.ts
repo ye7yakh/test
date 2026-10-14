@@ -1,5 +1,6 @@
 // What customers (and anyone) can see on a salon's subdomain: the salon page data,
 // the per-salon PWA manifest and icons, and the salon's images.
+import { nightBase } from '../colors.js';
 import { loadSalonWeek } from '../hours.js';
 import { one, query, pool } from '../db.js';
 import { HttpError, ok, type Ctx, type Router } from '../http.js';
@@ -78,8 +79,9 @@ function manifest(ctx: Ctx) {
     start_url: '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#ffffff',
-    theme_color: salon.color_primary,
+    // The app opens on the salon's night page, so its splash screen matches.
+    background_color: nightBase(salon.color_primary),
+    theme_color: nightBase(salon.color_primary),
     icons: [
       { src: `/icons/icon-192.png?v=${v}`, sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: `/icons/icon-512.png?v=${v}`, sizes: '512x512', type: 'image/png', purpose: 'any' },

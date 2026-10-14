@@ -6,7 +6,7 @@ import { fmtDuration, fmtPrice, pick, t } from './i18n.js';
 import { nowIn, openStatus } from './time.js';
 
 /** Wraps screen content in a phone frame, scaled to fit where it is shown. */
-export function phone(screen, { scale = 1, status = 'light' } = {}) {
+export function phone(screen, { scale = 1 } = {}) {
   return h(
     'div',
     { class: 'phone-wrap', style: { '--scale': String(scale) } },
@@ -17,7 +17,7 @@ export function phone(screen, { scale = 1, status = 'light' } = {}) {
         'div',
         { class: 'phone-screen' },
         h('div', { class: 'phone-island' }),
-        h('div', { class: 'phone-status', style: { color: status === 'light' ? 'var(--on-primary)' : '#fff' } }, h('span', { text: '9:41' }), h('span', { class: 'bars' }, h('b'), h('i'))),
+        h('div', { class: 'phone-status' }, h('span', { text: '9:41' }), h('span', { class: 'bars' }, h('b'), h('i'))),
         screen,
       ),
     ),
@@ -37,7 +37,7 @@ export function miniApp({ salon, services, staff, hours }) {
     h(
       'div',
       { class: 'mini-hero' },
-      appIcon(salon.logo_url),
+      h('div', { class: 'mini-mirror' }, appIcon(salon.logo_url)),
       h('div', { class: 't', text: name }),
       about ? h('div', { class: 'a', text: about }) : null,
       h('div', { class: `st ${status.open ? '' : 'closed'}`, text: status.open ? t('preview.open_now') : t('preview.closed') }),
@@ -58,11 +58,11 @@ export function miniApp({ salon, services, staff, hours }) {
       team.length
         ? [
             h('div', { class: 'mini-h', style: { marginTop: '14px' }, text: t('preview.team') }),
-            h('div', { class: 'mini-team' }, team.slice(0, 4).map((m) => h(
+            h('div', { class: 'mini-team' }, team.slice(0, 3).map((m) => h(
               'div',
               null,
               m.photo_url ? h('img', { src: m.photo_url, alt: '' }) : h('div', { class: 'ph' }, icon('user')),
-              h('div', { class: 'truncate', text: pick(m, 'name') }),
+              h('div', { class: 'nm truncate', text: pick(m, 'name') }),
             ))),
           ]
         : null,

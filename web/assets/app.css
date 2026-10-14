@@ -26,6 +26,7 @@
 
 :root {
   --primary: #1f2a37; --on-primary: #fff; --accent: #c8a15a; --on-accent: #111;
+  --night: #0a0b10; --accent-lift: #c8a15a; --on-accent-lift: #111;
   --font: 'Readex', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
   --emoji: 'Apple Color Emoji', 'Segoe UI Emoji', 'Noto Color Emoji', sans-serif;
   --ease-out: cubic-bezier(.16, 1, .3, 1);
@@ -54,17 +55,22 @@
   --shadow: 0 1px 0 rgb(255 255 255 / .04) inset, 0 14px 34px -18px rgb(3 0 20 / .9);
   --shadow-lg: 0 30px 60px -24px rgb(3 0 20 / .95);
 }
+/* The salon's page: its own night. The base is the salon's main colour deep in
+   near-black (--night); the light is its accent (--accent-lift, lightened only if it
+   would not read). Both come from the server with the first paint. */
 [data-theme='public'] {
-  color-scheme: light;
-  --brand: var(--primary); --on-brand: var(--on-primary);
-  --bg: #f5f4f1; --bg-2: #fff;
-  --surface: #fff; --surface-2: #f7f6f3; --surface-3: #efede8;
-  --line: #e7e3dc; --line-2: #dcd7ce;
-  --text: #1b1b1b; --text-2: #6b6760; --text-3: #9a958d;
-  --danger: #c62828; --ok: #1e7d3a; --warn: #b45309; --info: #1d4ed8;
-  --glass: rgb(255 255 255 / .8);
-  --shadow: 0 1px 2px rgb(0 0 0 / .04), 0 8px 24px -12px rgb(0 0 0 / .12);
-  --shadow-lg: 0 24px 50px -20px rgb(0 0 0 / .3);
+  color-scheme: dark;
+  --brand: var(--accent-lift); --on-brand: var(--on-accent-lift);
+  --grad: linear-gradient(135deg, color-mix(in srgb, var(--accent-lift), #fff 24%), var(--accent-lift) 48%, color-mix(in srgb, var(--accent-lift), #000 16%));
+  --grad-soft: color-mix(in srgb, var(--accent-lift) 16%, transparent);
+  --bg: var(--night); --bg-2: color-mix(in srgb, var(--night), #fff 5%);
+  --surface: color-mix(in srgb, var(--night), #fff 7%); --surface-2: color-mix(in srgb, var(--night), #fff 10%); --surface-3: color-mix(in srgb, var(--night), #fff 15%);
+  --line: rgb(255 255 255 / .08); --line-2: rgb(255 255 255 / .15);
+  --text: #f7f4ef; --text-2: rgb(247 244 239 / .7); --text-3: rgb(247 244 239 / .46);
+  --danger: #ff7a7a; --ok: #4ade80; --warn: #fbbf24; --info: #93c5fd;
+  --glass: color-mix(in srgb, var(--night) 70%, transparent);
+  --shadow: 0 1px 0 rgb(255 255 255 / .05) inset, 0 16px 36px -20px rgb(0 0 0 / .85);
+  --shadow-lg: 0 30px 60px -24px rgb(0 0 0 / .95);
 }
 :root {
   --brand-soft: color-mix(in srgb, var(--brand) 15%, transparent);
@@ -243,7 +249,6 @@ img { display: block; max-width: 100%; }
 .segmented input { position: absolute; opacity: 0; width: 1px; height: 1px; }
 .segmented span { display: grid; place-items: center; height: 42px; border-radius: 12px; color: var(--text-2); font-size: 14.5px; font-weight: 500; transition: background-color .25s, color .25s, box-shadow .25s; }
 .segmented input:checked + span { background: var(--surface-3); color: var(--text); box-shadow: 0 4px 12px -4px rgb(0 0 0 / .5); }
-[data-theme='public'] .segmented input:checked + span { background: var(--surface); }
 .segmented input:focus-visible + span { outline: 2px solid var(--brand); outline-offset: -2px; }
 
 /* ---------------------------------------------------------------- surfaces */
@@ -253,7 +258,8 @@ img { display: block; max-width: 100%; }
   position: relative; border-color: var(--line-2); box-shadow: var(--shadow), 0 24px 70px -30px var(--brand-glow);
   background: radial-gradient(110% 90% at 100% 0%, rgb(168 85 247 / .22), transparent 55%), radial-gradient(90% 80% at 0% 100%, rgb(59 130 246 / .16), transparent 60%), var(--surface);
 }
-[data-theme='public'] .card.glow { background: var(--surface); }
+[data-theme='public'] .card.glow { background: radial-gradient(110% 90% at 100% 0%, color-mix(in srgb, var(--accent-lift) 16%, transparent), transparent 55%), var(--surface); }
+[data-theme='public'] .card.glow::before { background: conic-gradient(from var(--angle), transparent 0 60%, var(--accent-lift) 78%, transparent 96%); }
 /* A light that travels around the border. */
 .card.glow::before {
   content: ''; position: absolute; inset: -1px; z-index: 2; border-radius: inherit; padding: 1.5px; pointer-events: none;
@@ -668,33 +674,40 @@ img { display: block; max-width: 100%; }
 }
 .phone-screen { position: relative; width: 100%; height: 100%; border-radius: 40px; overflow: hidden; background: #f6f5f2; direction: inherit; }
 .phone-island { position: absolute; z-index: 5; top: 11px; left: 50%; width: 92px; height: 27px; margin-left: -46px; border-radius: 20px; background: #000; }
-.phone-status { position: absolute; z-index: 4; top: 0; inset-inline: 0; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 4px 26px 0; font-size: 13px; font-weight: 600; direction: ltr; }
+.phone-status { position: absolute; z-index: 4; top: 0; inset-inline: 0; height: 48px; display: flex; align-items: center; justify-content: space-between; padding: 4px 26px 0; color: #fff; font-size: 13px; font-weight: 600; direction: ltr; }
 .phone-status .bars { display: flex; gap: 4px; align-items: center; }
 .phone-status .bars i { display: block; width: 16px; height: 10px; border-radius: 3px; border: 1.5px solid currentColor; opacity: .9; }
 .phone-status .bars b { display: block; width: 14px; height: 9px; border-radius: 2px; background: currentColor; opacity: .9; }
 
-.mini { position: absolute; inset: 0; display: flex; flex-direction: column; font-family: var(--font); color: #1b1b1b; text-align: start; }
-.mini-hero { position: relative; flex: none; padding: 58px 18px 20px; background: var(--primary); color: var(--on-primary); text-align: center; overflow: hidden; }
-.mini-hero::after { content: ''; position: absolute; inset: auto -20% -60% -20%; height: 120%; background: radial-gradient(50% 50% at 50% 0%, color-mix(in srgb, var(--accent) 35%, transparent), transparent 70%); opacity: .6; }
-.mini-hero .app-icon { --s: 60px; margin: 0 auto 10px; box-shadow: 0 0 0 1.5px color-mix(in srgb, var(--on-primary) 22%, transparent), 0 12px 26px -8px rgb(0 0 0 / .5); border-radius: 18px; }
-.mini-hero .t { position: relative; z-index: 1; font-size: 19px; font-weight: 700; line-height: 1.25; }
-.mini-hero .a { position: relative; z-index: 1; font-size: 11.5px; opacity: .8; margin-top: 4px; }
-.mini-hero .st { position: relative; z-index: 1; display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 3px 10px; border-radius: 99px; font-size: 10.5px; background: color-mix(in srgb, var(--on-primary) 16%, transparent); }
-.mini-hero .st::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #34c759; }
-.mini-hero .st.closed::before { background: #9aa0a6; }
-.mini-body { flex: 1; overflow: hidden; padding: 14px 14px 80px; }
+/* The salon's night page in miniature, as the owner's live preview. */
+.mini { position: absolute; inset: 0; display: flex; flex-direction: column; font-family: var(--font); color: #f7f4ef; text-align: start; background: var(--night); }
+.mini-hero { position: relative; isolation: isolate; flex: none; padding: 56px 18px 18px; text-align: center; overflow: hidden;
+  background: radial-gradient(70% 60% at 15% 10%, color-mix(in srgb, var(--primary), #fff 18%), transparent 70%), radial-gradient(60% 55% at 95% 25%, color-mix(in srgb, var(--accent-lift) 55%, transparent), transparent 70%), var(--night); }
+.mini-hero::after { content: ''; position: absolute; inset: auto 0 0; height: 45%; z-index: -1; background: linear-gradient(transparent, var(--night)); }
+.mini-mirror { position: relative; width: 84px; height: 84px; margin: 0 auto 10px; display: grid; place-items: center; }
+/* A ring of little lights, like a lit salon mirror. */
+.mini-mirror::before { content: ''; position: absolute; inset: 0; border-radius: 50%; background: repeating-conic-gradient(var(--accent-lift) 0 4deg, transparent 4deg 20deg); -webkit-mask: radial-gradient(closest-side, transparent 88%, #000 89% 100%); mask: radial-gradient(closest-side, transparent 88%, #000 89% 100%); filter: drop-shadow(0 0 4px var(--accent-lift)); opacity: .9; }
+.mini-hero .app-icon { --s: 58px; border-radius: 18px; box-shadow: 0 0 0 1px rgb(255 255 255 / .2), 0 12px 26px -8px rgb(0 0 0 / .7), 0 0 30px -6px color-mix(in srgb, var(--accent-lift) 60%, transparent); }
+.mini-hero .t { font-size: 19px; font-weight: 700; line-height: 1.25; }
+.mini-hero .a { font-size: 11px; opacity: .72; margin-top: 4px; }
+.mini-hero .st { display: inline-flex; align-items: center; gap: 5px; margin-top: 10px; padding: 3px 10px; border-radius: 99px; font-size: 10.5px; background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .12); }
+.mini-hero .st::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: #4ade80; box-shadow: 0 0 6px #4ade80; }
+.mini-hero .st.closed::before { background: #9aa0a6; box-shadow: none; }
+.mini-body { flex: 1; overflow: hidden; padding: 10px 14px 80px; }
 .mini-h { font-size: 12.5px; font-weight: 700; margin: 2px 2px 8px; }
-.mini-svc { display: flex; align-items: center; gap: 10px; padding: 9px 10px; background: #fff; border-radius: 14px; box-shadow: 0 1px 2px rgb(0 0 0 / .05); }
+.mini-svc { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 14px; background: color-mix(in srgb, var(--night), #fff 8%); border: 1px solid rgb(255 255 255 / .08); }
 .mini-svc + .mini-svc { margin-top: 6px; }
-.mini-svc .e { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; font-family: var(--emoji); font-size: 16px; background: color-mix(in srgb, var(--accent) 18%, #fff); flex: none; }
+.mini-svc .e { flex: none; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 10px; font-family: var(--emoji); font-size: 16px; background: color-mix(in srgb, var(--accent-lift) 20%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-lift) 30%, transparent); }
 .mini-svc .n { font-size: 12px; font-weight: 600; line-height: 1.3; }
-.mini-svc .d { font-size: 10px; color: #8a857d; }
-.mini-svc .p { font-size: 12px; font-weight: 700; white-space: nowrap; margin-inline-start: auto; }
-.mini-team { display: flex; gap: 10px; }
-.mini-team > div { width: 56px; text-align: center; font-size: 10px; font-weight: 600; }
-.mini-team img, .mini-team .ph { width: 56px; height: 56px; border-radius: 50%; object-fit: cover; background: #e6e2da; margin-bottom: 4px; display: grid; place-items: center; color: #8a857d; }
-.mini-cta { position: absolute; z-index: 3; inset-inline: 14px; bottom: 16px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 13px; font-weight: 700; background: var(--accent); color: var(--on-accent); box-shadow: 0 10px 24px -8px color-mix(in srgb, var(--accent) 70%, transparent); }
-.mini-empty { font-size: 11px; color: #9a958d; padding: 10px 2px; }
+.mini-svc .d { font-size: 10px; color: rgb(247 244 239 / .55); }
+.mini-svc .p { margin-inline-start: auto; font-size: 12px; font-weight: 700; white-space: nowrap; color: var(--accent-lift); }
+.mini-team { display: flex; gap: 8px; }
+.mini-team > div { position: relative; width: 74px; border-radius: 12px; overflow: hidden; }
+.mini-team img, .mini-team .ph { display: grid; place-items: center; width: 74px; height: 92px; object-fit: cover; background: color-mix(in srgb, var(--night), #fff 12%); color: rgb(247 244 239 / .5); }
+.mini-team .nm { position: absolute; inset: auto 0 0; padding: 14px 6px 5px; font-size: 10px; font-weight: 600; color: #fff; background: linear-gradient(transparent, rgb(0 0 0 / .75)); }
+.mini-cta { position: absolute; z-index: 3; inset-inline: 14px; bottom: 16px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 13px; font-weight: 700; color: var(--on-accent-lift);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent-lift), #fff 24%), var(--accent-lift) 48%, color-mix(in srgb, var(--accent-lift), #000 16%)); box-shadow: 0 10px 26px -8px color-mix(in srgb, var(--accent-lift) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .3); }
+.mini-empty { font-size: 11px; color: rgb(247 244 239 / .5); padding: 10px 2px; }
 
 .home-screen { position: absolute; inset: 0; background:
   radial-gradient(90% 60% at 20% 10%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 70%),
@@ -836,8 +849,6 @@ img { display: block; max-width: 100%; }
 .notice { display: flex; gap: 10px; align-items: flex-start; margin-top: 16px; padding: 12px 14px; border-radius: 14px; background: var(--brand-soft); border: 1px solid var(--brand-line); font-size: 13.5px; line-height: 1.5; }
 .notice .icon { width: 18px; height: 18px; margin-top: 2px; color: var(--brand); }
 
-.service-line.bookable { cursor: pointer; transition: background-color .2s; }
-.service-line.bookable:hover { background: var(--surface-2); }
 
 .booking-page { min-height: 100dvh; }
 .booking-top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; padding: calc(10px + var(--safe-top)) 16px 10px; background: var(--glass); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-bottom: 1px solid var(--line); font-weight: 600; }
@@ -1168,7 +1179,8 @@ img { display: block; max-width: 100%; }
 .cred { display: grid; gap: 8px; }
 .cred-row { display: flex; align-items: center; gap: 10px; padding: 12px 12px 12px 14px; border-radius: 14px; background: var(--surface-2); border: 1px solid var(--line); }
 [dir='rtl'] .cred-row { padding: 12px 14px 12px 12px; }
-.cred-row .v { font-size: 15px; font-weight: 600; word-break: break-all; }
+.cred-row .v { font-size: 15px; font-weight: 600; overflow-wrap: anywhere; }
+.cred-row.link .v { font-size: 13px; font-weight: 500; color: var(--text-2); }
 [dir='rtl'] .cred-row .v { text-align: right; }
 .cred-row.secret { border-color: var(--brand-line); background: linear-gradient(160deg, var(--brand-soft), var(--surface-2) 70%); }
 .cred-row.secret .v { font: 600 23px/1.3 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; letter-spacing: .04em; }
@@ -1205,6 +1217,20 @@ img { display: block; max-width: 100%; }
 ::view-transition-group(tab-pill), ::view-transition-group(side-pill) { animation-duration: .45s; animation-timing-function: var(--spring); }
 @keyframes vt-out { to { opacity: 0; transform: translateY(-8px); } }
 @keyframes vt-in { from { opacity: 0; transform: translateY(14px); } }
+/* Between studio tabs the page slides the way the tabs go: towards the start for a
+   later tab, back for an earlier one (mirrored in Arabic). */
+html[data-nav='forward']::view-transition-old(root) { animation: vt-out-start .22s ease both; }
+html[data-nav='forward']::view-transition-new(root) { animation: vt-in-end .5s var(--ease-out) both; }
+html[data-nav='back']::view-transition-old(root) { animation: vt-out-end .22s ease both; }
+html[data-nav='back']::view-transition-new(root) { animation: vt-in-start .5s var(--ease-out) both; }
+@keyframes vt-out-start { to { opacity: 0; transform: translateX(-28px); } }
+@keyframes vt-out-end { to { opacity: 0; transform: translateX(28px); } }
+@keyframes vt-in-end { from { opacity: 0; transform: translateX(44px); } }
+@keyframes vt-in-start { from { opacity: 0; transform: translateX(-44px); } }
+html[dir='rtl'][data-nav='forward']::view-transition-old(root) { animation-name: vt-out-end; }
+html[dir='rtl'][data-nav='forward']::view-transition-new(root) { animation-name: vt-in-start; }
+html[dir='rtl'][data-nav='back']::view-transition-old(root) { animation-name: vt-out-start; }
+html[dir='rtl'][data-nav='back']::view-transition-new(root) { animation-name: vt-in-end; }
 
 /* The phone in the home card floats. */
 .hero-card .mini-phone .phone-wrap { animation: float 6s ease-in-out infinite; }
@@ -1249,36 +1275,139 @@ img { display: block; max-width: 100%; }
 @keyframes breathe { 50% { box-shadow: var(--shadow-lg), 0 0 50px -8px var(--brand-glow); } }
 
 /* ==========================================================================
-   Public salon page (light, salon-branded) — kept simple for now
+   Public salon page: the salon's night
    ========================================================================== */
 .page { max-width: 640px; margin: 0 auto; padding: 16px 16px calc(24px + var(--safe-bottom)); }
-.hero { position: relative; background: var(--primary); color: var(--on-primary); padding: calc(28px + var(--safe-top)) 16px 30px; }
-.hero-inner { max-width: 640px; margin: 0 auto; text-align: center; }
-.hero .logo { width: 88px; height: 88px; border-radius: 24px; margin: 0 auto 12px; background: #fff; object-fit: contain; box-shadow: 0 10px 30px rgb(0 0 0 / .2); display: grid; place-items: center; font-size: 2rem; font-weight: 700; color: var(--primary); overflow: hidden; }
-.hero h1 { font-size: 26px; }
-.hero p { opacity: .85; margin-top: 6px; }
-.hero .hero-actions { display: flex; justify-content: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-.hero-top { position: absolute; inset-inline-end: 8px; top: calc(8px + var(--safe-top)); }
-.hero-top .icon-btn { background: transparent; border-color: transparent; color: var(--on-primary); }
-.status-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 12px; padding: 4px 12px; border-radius: 999px; font-size: 13px; background: color-mix(in srgb, var(--on-primary) 14%, transparent); }
-.status-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #9aa0a6; }
-.status-pill.open::before { background: #34c759; }
-.section-title { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 8px 2px 10px; }
-.section-title h2 { font-size: 18px; }
-.service-line { display: flex; align-items: flex-start; gap: 12px; padding: 14px 16px; }
-.service-line h3 { font-size: 16px; font-weight: 600; }
-.service-line .price { font-weight: 700; white-space: nowrap; }
-.service-line .from { display: block; font-size: 11px; font-weight: 400; color: var(--text-2); text-align: end; }
-.team-card .name { font-weight: 700; margin-top: 8px; }
-.team-card .role { color: var(--text-2); font-size: 13.5px; }
-.hours-table { width: 100%; border-collapse: collapse; }
-.hours-table td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: top; font-variant-numeric: tabular-nums; }
-.hours-table tr:first-child td { border-top: 0; }
-.hours-table td:last-child { text-align: end; }
-.hours-table tr.today td { font-weight: 700; }
-.cta-bar { position: sticky; bottom: 0; padding: 12px 16px calc(12px + var(--safe-bottom)); background: linear-gradient(to top, var(--bg) 70%, transparent); }
-.cta-bar-inner { max-width: 640px; margin: 0 auto; }
-[data-theme='public'] .avatar-stack .avatar { border-color: #fff; }
+.p-page { min-height: 100dvh; background: var(--bg); }
+[data-theme='public'] .avatar-stack .avatar { border-color: var(--surface); }
+
+/* Hero: aurora in the salon's colours, the logo in a ring of mirror lights. */
+.p-hero { position: relative; isolation: isolate; overflow: hidden; padding: calc(14px + var(--safe-top)) 20px 34px; text-align: center; background: var(--night); }
+.p-hero .aurora { position: absolute; inset: -30% -20% 0; z-index: -2; filter: blur(64px) saturate(1.25); pointer-events: none; }
+.p-hero .aurora i { position: absolute; width: 62%; aspect-ratio: 1; border-radius: 50%; mix-blend-mode: screen; animation: aurora 20s ease-in-out infinite alternate; }
+.p-hero .aurora i:nth-child(1) { top: 4%; left: -8%; background: color-mix(in srgb, var(--primary), #fff 18%); opacity: .75; }
+.p-hero .aurora i:nth-child(2) { top: 14%; right: -14%; background: var(--accent-lift); opacity: .42; animation-duration: 26s; animation-direction: alternate-reverse; }
+.p-hero .aurora i:nth-child(3) { bottom: -18%; left: 26%; background: color-mix(in srgb, var(--primary), var(--accent-lift) 35%); opacity: .5; animation-duration: 31s; }
+@keyframes aurora { to { transform: translate(9%, 7%) scale(1.18) rotate(24deg); } }
+/* Melts into the page, with a fine light line at the horizon. */
+.p-hero::after { content: ''; position: absolute; inset: auto 0 0; height: 46%; z-index: -1; background: linear-gradient(transparent, var(--bg)); }
+.p-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 44px; }
+.p-glass-btn { display: inline-flex; align-items: center; gap: 8px; height: 40px; padding: 0 14px; border-radius: 999px; background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .14); color: #fff; font-size: 13.5px; font-weight: 500; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); cursor: pointer; transition: background-color .2s; }
+.p-glass-btn:hover { background: rgb(255 255 255 / .14); }
+.p-glass-btn .icon { width: 18px; height: 18px; }
+.p-glass-btn.round { width: 40px; padding: 0; justify-content: center; }
+.p-hero-content { max-width: 560px; margin: 6px auto 0; }
+.p-mirror { position: relative; width: 168px; height: 168px; margin: 0 auto 14px; display: grid; place-items: center; }
+.p-lights i { position: absolute; left: 50%; top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: var(--accent-lift); box-shadow: 0 0 10px 2px color-mix(in srgb, var(--accent-lift) 65%, transparent); transform: rotate(calc(var(--i) * 20deg)) translateY(-78px); animation: mirror-light 2.8s ease-in-out infinite; animation-delay: calc(var(--i) * -.155s); }
+@keyframes mirror-light { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
+.p-logo { position: relative; width: 112px; height: 112px; border-radius: 34px; object-fit: contain; background: #fff; box-shadow: 0 0 0 1px rgb(255 255 255 / .2), 0 24px 50px -16px rgb(0 0 0 / .8), 0 0 60px -10px color-mix(in srgb, var(--accent-lift) 55%, transparent); animation: pop .8s var(--spring) both; }
+.p-logo.letter { display: grid; place-items: center; background: var(--grad); color: var(--on-brand); font-size: 46px; font-weight: 700; }
+.p-hero h1 { font-size: 32px; line-height: 1.2; background: linear-gradient(180deg, #fff 40%, color-mix(in srgb, var(--accent-lift), #fff 35%)); -webkit-background-clip: text; background-clip: text; color: transparent; animation: rise .7s var(--ease-out) .1s both; }
+.p-about { margin: 8px auto 0; max-width: 42ch; color: var(--text-2); font-size: 15px; animation: rise .7s var(--ease-out) .18s both; }
+.p-status { display: inline-flex; align-items: center; gap: 8px; margin-top: 16px; padding: 7px 14px; border-radius: 999px; background: rgb(255 255 255 / .07); border: 1px solid rgb(255 255 255 / .12); backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); font-size: 13.5px; animation: rise .7s var(--ease-out) .26s both; }
+.p-status .dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--text-3); }
+.p-status.open .dot { background: var(--ok); }
+.p-status.open .dot::after { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid var(--ok); animation: ping 2.2s var(--ease-out) infinite; }
+.p-actions { display: flex; justify-content: center; gap: 18px; margin-top: 22px; }
+.p-action { display: flex; flex-direction: column; align-items: center; gap: 7px; min-width: 56px; padding: 0; background: none; border: 0; color: var(--text-2); font-size: 12px; cursor: pointer; animation: rise .7s var(--ease-out) both; }
+.p-action:nth-child(1) { animation-delay: .32s; } .p-action:nth-child(2) { animation-delay: .38s; } .p-action:nth-child(3) { animation-delay: .44s; } .p-action:nth-child(4) { animation-delay: .5s; }
+.p-action .c { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 50%; background: rgb(255 255 255 / .08); border: 1px solid rgb(255 255 255 / .14); color: #fff; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); transition: transform .3s var(--spring), background-color .2s, box-shadow .3s; }
+.p-action .icon { width: 22px; height: 22px; }
+.p-action:hover .c { background: rgb(255 255 255 / .14); box-shadow: 0 0 28px -6px color-mix(in srgb, var(--accent-lift) 70%, transparent); }
+.p-action:active .c { transform: scale(.9); }
+
+/* The page below the hero. */
+.p-main { max-width: 760px; margin: 0 auto; padding: 4px 16px calc(120px + var(--safe-bottom)); }
+.p-main > * + * { margin-top: 30px; }
+.p-head { display: flex; align-items: center; gap: 10px; margin: 0 4px 12px; }
+.p-head h2 { font-size: 20px; }
+.p-card { border-radius: 22px; background: var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); }
+
+/* Services: glass cards; the price in the salon's light. */
+.p-services { display: grid; gap: 10px; }
+.p-svc { position: relative; overflow: hidden; isolation: isolate; display: flex; align-items: center; gap: 14px; width: 100%; padding: 14px; border-radius: 22px; background: linear-gradient(160deg, rgb(255 255 255 / .05), transparent 55%), var(--surface); border: 1px solid var(--line); box-shadow: var(--shadow); color: var(--text); text-align: start; }
+button.p-svc { cursor: pointer; transition: transform .3s var(--spring), border-color .25s, box-shadow .3s; }
+button.p-svc:hover { border-color: color-mix(in srgb, var(--accent-lift) 40%, transparent); box-shadow: var(--shadow), 0 18px 40px -22px color-mix(in srgb, var(--accent-lift) 60%, transparent); }
+button.p-svc:active { transform: scale(.98); }
+/* A mirror glint on hover. */
+button.p-svc::after { content: ''; position: absolute; inset: 0; z-index: -1; background: linear-gradient(105deg, transparent 35%, rgb(255 255 255 / .07) 47%, transparent 60%); transform: translateX(-120%); transition: transform .9s var(--ease-out); }
+button.p-svc:hover::after { transform: translateX(120%); }
+.p-svc-e { flex: none; display: grid; place-items: center; width: 52px; height: 52px; border-radius: 17px; font-family: var(--emoji); font-size: 25px; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--accent-lift) 30%, transparent), color-mix(in srgb, var(--accent-lift) 8%, transparent)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-lift) 30%, transparent); }
+button.p-svc:hover .p-svc-e { animation: wiggle .6s var(--spring); }
+.p-svc .n { font-size: 16px; font-weight: 600; line-height: 1.35; }
+.p-svc .d { margin-top: 2px; font-size: 13px; color: var(--text-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.p-svc .m { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+.p-svc .chip { display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 9px; border-radius: 99px; background: var(--surface-2); color: var(--text-2); font-size: 12px; }
+.p-svc .chip .icon { width: 13px; height: 13px; }
+.p-svc .avatar-stack .avatar { width: 24px; height: 24px; font-size: 10px; }
+.p-svc-p { flex: none; display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
+.p-svc-p small { font-size: 11px; color: var(--text-3); }
+.p-svc-p b { font-size: 17px; color: var(--accent-lift); white-space: nowrap; }
+.p-svc-p .go { display: grid; place-items: center; width: 30px; height: 30px; margin-top: 6px; border-radius: 50%; background: var(--surface-2); color: var(--text-2); transition: background-color .25s, color .25s, transform .3s var(--spring); }
+.p-svc-p .go .icon { width: 16px; height: 16px; }
+button.p-svc:hover .go { background: var(--accent-lift); color: var(--on-accent-lift); transform: translateX(-3px); }
+[dir='ltr'] button.p-svc:hover .go { transform: translateX(3px); }
+
+/* Team: portraits in a carousel, name on the glass. */
+.p-team { gap: 12px; padding-bottom: 10px; }
+.p-member { width: min(46vw, 220px); }
+.p-member .portrait { border-radius: 24px; box-shadow: 0 0 0 1px var(--line-2), 0 24px 44px -24px rgb(0 0 0 / .9); }
+.p-member .portrait::after { content: ''; position: absolute; inset: 50% 0 0; background: linear-gradient(transparent, rgb(0 0 0 / .78)); pointer-events: none; }
+.p-member .portrait.tilt { transform: perspective(900px) rotateX(var(--rx, 0deg)) rotateY(var(--ry, 0deg)); transition: transform .3s var(--ease-out); }
+.p-member .info { position: absolute; inset: auto 12px 12px; z-index: 1; color: #fff; text-align: start; }
+.p-member .n { font-size: 16px; font-weight: 700; line-height: 1.25; }
+.p-member .r { font-size: 12.5px; opacity: .78; }
+
+/* Hours: the week, today lit. */
+.p-hours { padding: 6px; }
+.p-hour { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 11px 12px; border-radius: 15px; font-size: 14.5px; }
+.p-hour + .p-hour { margin-top: 2px; }
+.p-hour .d { display: inline-flex; align-items: center; gap: 8px; }
+.p-hour .v { display: flex; flex-direction: column; align-items: flex-end; font-variant-numeric: tabular-nums; }
+.p-hour .v span + span { font-size: 13px; color: var(--text-2); }
+.p-hour.off .v { color: var(--text-3); }
+.p-hour.today { background: linear-gradient(90deg, color-mix(in srgb, var(--accent-lift) 14%, transparent), transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent-lift) 28%, transparent); font-weight: 600; }
+[dir='rtl'] .p-hour.today { background: linear-gradient(270deg, color-mix(in srgb, var(--accent-lift) 14%, transparent), transparent); }
+.p-today { height: 20px; padding: 0 8px; border-radius: 99px; display: inline-grid; place-items: center; background: var(--accent-lift); color: var(--on-accent-lift); font-size: 11px; font-weight: 600; }
+
+/* Contact */
+.p-contact { padding: 4px; }
+.p-line { display: flex; align-items: center; gap: 12px; padding: 12px; border-radius: 16px; transition: background-color .2s; }
+.p-line:hover { background: var(--surface-2); }
+.p-line + .p-line { margin-top: 2px; }
+.p-line .ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 13px; background: var(--grad-soft); color: var(--accent-lift); }
+.p-line .ic .icon { width: 19px; height: 19px; }
+.p-line > .icon { width: 17px; height: 17px; flex: none; }
+.p-foot { display: grid; gap: 6px; justify-items: center; padding-top: 6px; font-size: 13px; }
+.p-foot a { color: var(--text-2); }
+
+/* The glass bar that arrives once the hero is gone, and the book button below. */
+.p-bar { position: fixed; z-index: 40; top: 0; inset-inline: 0; padding: calc(8px + var(--safe-top)) 12px 8px; background: var(--glass); border-bottom: 1px solid var(--line); backdrop-filter: blur(20px) saturate(1.5); -webkit-backdrop-filter: blur(20px) saturate(1.5); transform: translateY(-110%); transition: transform .45s var(--ease-out); }
+.p-bar.on { transform: none; }
+.p-bar-inner { max-width: 760px; margin: 0 auto; display: flex; align-items: center; gap: 10px; font-weight: 600; }
+.p-bar-logo { width: 34px; height: 34px; border-radius: 11px; object-fit: contain; background: #fff; flex: none; }
+.p-bar-logo.letter { display: grid; place-items: center; background: var(--grad); color: var(--on-brand); font-size: 15px; }
+.p-cta { position: fixed; z-index: 40; bottom: 0; inset-inline: 0; padding: 14px 16px calc(14px + var(--safe-bottom)); background: linear-gradient(to top, var(--bg) 55%, transparent); pointer-events: none; }
+.p-cta-inner { max-width: 520px; margin: 0 auto; pointer-events: auto; }
+.p-book { height: 58px; font-size: 17px; border-radius: 20px; box-shadow: 0 18px 44px -14px color-mix(in srgb, var(--accent-lift) 75%, transparent), inset 0 1px 0 rgb(255 255 255 / .35); }
+
+/* Things drift up into place as they scroll into view. */
+.reveal { opacity: 0; transform: translateY(26px) scale(.985); transition: opacity .75s var(--ease-out), transform .9s var(--ease-out); transition-delay: calc(var(--i, 0) * 70ms); }
+.reveal.in { opacity: 1; transform: none; }
+
+@media (min-width: 720px) {
+  .p-services { grid-template-columns: repeat(2, 1fr); }
+  .p-hero { padding-bottom: 54px; }
+  .p-hero h1 { font-size: 40px; }
+  .p-member { width: 210px; }
+}
+/* Where supported, the hero sinks back as the page scrolls over it. */
+@supports (animation-timeline: scroll()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .p-hero-content { animation: hero-sink linear both; animation-timeline: scroll(root); animation-range: 0 70vh; }
+  }
+}
+@keyframes hero-sink { to { opacity: .1; transform: translateY(60px) scale(.94); filter: blur(3px); } }
 
 /* ---------------------------------------------------------------- motion preferences */
 @media (prefers-reduced-motion: reduce) {

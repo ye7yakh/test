@@ -46,7 +46,7 @@ async function snap(page: Page, name: string, { full = false, wait = 700 } = {})
     // Grow the viewport to the whole page so fixed bars sit where they would at the end of a scroll.
     const height = await page.evaluate(() => document.documentElement.scrollHeight);
     await page.setViewport({ ...viewport, height: Math.max(viewport.height, height) });
-    await sleep(200);
+    await sleep(1100); // sections slide in as they come into view
   }
   await page.screenshot({ path: file });
   if (full) await page.setViewport(viewport);
@@ -169,8 +169,8 @@ async function main() {
     await admin.$eval('input[name=password]', (el) => { (el as HTMLInputElement).value = ''; });
     await admin.type('input[name=password]', ADMIN.password);
     await admin.click('button[type=submit]');
-    await admin.waitForSelector('.stats');
-    await snap(admin, 'admin');
+    await admin.waitForSelector('.trend-card svg .line');
+    await snap(admin, 'admin', { full: true, wait: 2400 });
     await clickText(admin, 'button', 'صالون جديد');
     await admin.waitForSelector('.sheet input[name=subdomain]');
     await admin.type('.sheet input[name=name_ar]', 'صالون لوكس');
@@ -181,14 +181,39 @@ async function main() {
     await admin.type('.sheet input[name=owner_password]', owner.password);
     await snap(admin, 'admin-create');
     await clickText(admin, '.sheet-foot button', 'إنشاء');
-    await admin.waitForFunction((s) => document.body.textContent?.includes(s), {}, `${sub}.`);
-    await snap(admin, 'admin-created');
+    await admin.waitForSelector('.sheet .cred-row.secret');
+    await snap(admin, 'admin-handover', { wait: 1400 });
+    await clickText(admin, '.sheet-foot button', 'تم');
+    await admin.waitForFunction(() => !document.querySelector('.sheet'));
+    // The new salon's sheet: its numbers, setup, owner, name and link.
+    await clickText(admin, '.salon-card', sub);
+    await admin.waitForSelector('.sheet .sd-stats');
+    await snap(admin, 'admin-salon', { wait: 900 });
+    // The owner forgot their password: a new temporary one, shown once.
+    await clickText(admin, '.sheet button', 'إعادة تعيين كلمة المرور');
+    await admin.waitForSelector('.sheet .btn-danger');
+    await settle(admin, 500); // let the confirmation finish sliding in
+    await admin.click('.sheet .btn-danger');
+    await admin.waitForSelector('.sheet .cred-row.secret');
+    owner.password = await admin.$eval('.sheet .cred-row.secret .v', (el) => el.textContent!.trim());
+    await snap(admin, 'admin-reset-password', { wait: 700 });
 
     // ---- the salon owner's first visit
     const page = await newPage(browser);
     await login(page, SALON, owner.phone, owner.password);
     await page.waitForSelector('.hero-card');
     await snap(page, 'home-empty', { full: true, wait: 1500 });
+    // First thing: their own password instead of the temporary one.
+    await page.click('.temp-pw .btn-primary');
+    await page.waitForSelector('.sheet input[name=current]');
+    await page.type('.sheet input[name=current]', owner.password);
+    owner.password = 'owner-pass-888';
+    await page.type('.sheet input[name=next]', owner.password);
+    await clickText(page, '.sheet button', 'تغيير كلمة المرور');
+    await find(page, '.toast', 'تم تغيير كلمة المرور');
+    await page.waitForFunction(() => !document.querySelector('.temp-pw'));
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
 
     // Services: a ready menu for a barbershop, priced in one sheet.
     await go(page, `${SALON}/#/manage/services`, '.type-card');
@@ -298,7 +323,7 @@ async function main() {
 
     // The salon's public page still renders in its own light theme.
     const pub = await newPage(browser);
-    await go(pub, `${SALON}/`, '.hero h1');
+    await go(pub, `${SALON}/`, '.p-hero h1');
     await snap(pub, 'public-page', { full: true });
 
     // ---- bookings: the owner asks for a CliQ deposit
@@ -321,7 +346,7 @@ async function main() {
     // ---- a customer, on their own phone, books from the salon page
     const customer = await browser.createBrowserContext();
     const cust = await newPage(customer);
-    await go(cust, `${SALON}/`, '.hero h1');
+    await go(cust, `${SALON}/`, '.p-hero h1');
     await clickText(cust, 'button', 'احجز موعدك');
     await cust.waitForSelector('.sheet .svc');
     await snap(cust, 'book-service');

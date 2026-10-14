@@ -206,7 +206,7 @@ function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = fal
   const list = h('div', { class: 'cred' }, rows.map((r) => {
     const btn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t('copy')}: ${r.label}`, title: t('copy') }, icon('copy'));
     btn.addEventListener('click', () => copy(r.value));
-    return h('div', { class: `cred-row ${r.secret ? 'secret' : ''}` }, h('div', { class: 'grow' }, h('div', { class: 'eyebrow', text: r.label }), h('div', { class: 'v ltr', text: r.value })), btn);
+    return h('div', { class: `cred-row ${r.secret ? 'secret' : ''} ${r.link ? 'link' : ''}` }, h('div', { class: 'grow' }, h('div', { class: 'eyebrow', text: r.label }), h('div', { class: 'v ltr', text: r.value })), btn);
   }));
   const done = h('button', { class: 'btn btn-secondary', type: 'button', text: t('admin.done') });
   const wa = waPhone
@@ -254,7 +254,7 @@ function openCreate(onCreated) {
         title: t('admin.handover'),
         intro: res.owner_created ? t('admin.handover_sub') : t('admin.existing_owner'),
         rows: [
-          { label: t('admin.studio_link'), value: link },
+          { label: t('admin.studio_link'), value: link, link: true },
           { label: t('admin.login_phone'), value: f.owner_phone.value.trim() },
           res.owner_created ? { label: t('admin.temp_password'), value: f.owner_password.value, secret: true } : null,
         ].filter(Boolean),
@@ -357,7 +357,7 @@ async function openSalon(id, onChange) {
           credentialsSheet({
             title: t('admin.reset_done'),
             intro: t('admin.reset_once'),
-            rows: [{ label: t('admin.temp_password'), value: res.password, secret: true }, { label: t('admin.studio_link'), value: link }],
+            rows: [{ label: t('admin.temp_password'), value: res.password, secret: true }, { label: t('admin.studio_link'), value: link, link: true }],
             waPhone: res.owner.phone,
             waText: t('admin.wa_reset', { name: res.owner.name, password: res.password, link }),
           });

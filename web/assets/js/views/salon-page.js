@@ -1,32 +1,75 @@
-// The salon's own page, as customers see it, with online booking.
+// The salon's own page, as customers see it: a night-lit hero in the salon's
+// colours with its logo in a ring of mirror lights, then services, team, hours and
+// how to reach them, with booking one tap away from anywhere on the page.
 import { api } from '../api.js';
-import { myBookingsCard, openBooking } from './booking.js';
-import { avatar, clear, h, icon } from '../dom.js';
+import { myBookingsCard, openBooking, waNumber } from './booking.js';
+import { avatar, clear, h, icon, tilt, toast } from '../dom.js';
 import { DAY_ORDER, dayName, errorText, fmtDuration, fmtPrice, fmtTime, pick, t } from '../i18n.js';
-import { applyColors } from '../theme.js';
-import { nowIn, openStatus } from '../time.js';
-
-export function hoursTable(hours, today) {
-  return h(
-    'table',
-    { class: 'hours-table' },
-    h('tbody', null, DAY_ORDER.map((d) => h(
-      'tr',
-      { class: d === today ? 'today' : '' },
-      h('td', { text: dayName(d) }),
-      h('td', null, hours[d].length
-        ? hours[d].map((r, i) => h('div', { text: `${fmtTime(r.open)} – ${fmtTime(r.close)}`, class: i ? 'small' : '' }))
-        : h('span', { class: 'muted', text: t('pub.closed') })),
-    ))),
-  );
-}
+import { applyColors, reducedMotion } from '../theme.js';
+import { nowIn, openStatus, toMin } from '../time.js';
 
 export function salonPage(app) {
-  const el = h('div', null, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
+  const el = h('div', { class: 'p-page' }, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
   api('GET', '/api/public/salon')
-    .then((data) => clear(el, render(app, data)))
+    .then((data) => {
+      clear(el, render(app, data));
+      requestAnimationFrame(() => watchScroll(app, el));
+    })
     .catch((err) => clear(el, h('div', { class: 'page' }, h('p', { class: 'empty', text: errorText(err) }))));
   return el;
+}
+
+/** When the salon next opens, for the "closed now" pill: later today, tomorrow, or a weekday. */
+function nextOpening(hours, now) {
+  for (let ahead = 0; ahead < 7; ahead++) {
+    const day = (now.weekday + ahead) % 7;
+    const ranges = [...(hours[day] ?? [])].sort((a, b) => toMin(a.open) - toMin(b.open));
+    const next = ranges.find((r) => ahead > 0 || toMin(r.open) > now.minutes);
+    if (!next) continue;
+    if (ahead === 0) return t('pub.opens_today', { time: fmtTime(next.open) });
+    if (ahead === 1) return t('pub.opens_tomorrow', { time: fmtTime(next.open) });
+    return t('pub.opens_day', { day: dayName(day), time: fmtTime(next.open) });
+  }
+  return null;
+}
+
+/** Sections drift in as they scroll into view; the glass bar shows once the hero is gone. */
+function watchScroll(app, root) {
+  const items = [...root.querySelectorAll('.reveal')];
+  if (reducedMotion() || !('IntersectionObserver' in window)) items.forEach((x) => x.classList.add('in'));
+  else {
+    const io = new IntersectionObserver((entries) => {
+      for (const e of entries) {
+        if (!e.isIntersecting) continue;
+        e.target.classList.add('in');
+        io.unobserve(e.target);
+      }
+    }, { rootMargin: '0px 0px -6% 0px', threshold: 0.06 });
+    items.forEach((x) => io.observe(x));
+    app.onUnmount(() => io.disconnect());
+  }
+  const bar = root.querySelector('.p-bar');
+  const anchor = root.querySelector('.p-hero h1');
+  if (bar && anchor && 'IntersectionObserver' in window) {
+    const io = new IntersectionObserver(([e]) => bar.classList.toggle('on', !e.isIntersecting && e.boundingClientRect.top < 0));
+    io.observe(anchor);
+    app.onUnmount(() => io.disconnect());
+  }
+}
+
+async function share(salon) {
+  const name = pick(salon, 'name');
+  const data = { title: name, text: t('home.share_text', { name }), url: location.origin };
+  if (navigator.share) {
+    try {
+      await navigator.share(data);
+      return;
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+    }
+  }
+  await navigator.clipboard?.writeText(location.origin).catch(() => {});
+  toast(t('copied'));
 }
 
 function render(app, data) {
@@ -40,108 +83,167 @@ function render(app, data) {
   const staffById = new Map(staff.map((s) => [s.id, s]));
   applyColors(salon.color_primary, salon.color_accent); // drop any unsaved preview from the dashboard
 
+  const logo = (cls) => (salon.logo_url ? h('img', { class: cls, src: salon.logo_url, alt: '' }) : h('div', { class: `${cls} letter`, text: name.charAt(0) }));
+  const tel = salon.phone ? salon.phone.replace(/[^\d+]/g, '') : '';
+  const wa = salon.phone ? waNumber(salon.phone) : '';
+  const map = salon.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${name} ${salon.address}`)}` : '';
+
+  // ---- hero
+  const action = (iconName, label, attrs) => h(
+    attrs.href ? 'a' : 'button',
+    { class: 'p-action', ...(attrs.href ? { target: attrs.href.startsWith('http') ? '_blank' : null, rel: 'noopener' } : { type: 'button' }), ...attrs },
+    h('span', { class: 'c' }, icon(iconName)),
+    h('span', { class: 'l', text: label }),
+  );
+  const actions = [
+    tel ? action('phone', t('pub.call'), { href: `tel:${tel}` }) : null,
+    wa ? action('chat', t('pub.whatsapp'), { href: `https://wa.me/${wa}` }) : null,
+    map ? action('pin', t('pub.map'), { href: map }) : null,
+    action('share', t('pub.share'), { onclick: () => share(salon) }),
+  ].filter(Boolean);
+  const opening = status.open ? null : nextOpening(hours, now);
+
   const hero = h(
     'header',
-    { class: 'hero' },
+    { class: 'p-hero' },
+    h('div', { class: 'aurora', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')),
     h(
       'div',
-      { class: 'hero-top' },
-      h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), onclick: () => app.toggleLang(), style: { color: 'var(--on-primary)' } }, icon('globe')),
+      { class: 'p-top' },
+      app.canManage ? h('a', { class: 'p-glass-btn', href: '#/manage' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
+      h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
     ),
     h(
       'div',
-      { class: 'hero-inner' },
-      salon.logo_url ? h('img', { class: 'logo', src: salon.logo_url, alt: '' }) : h('div', { class: 'logo', text: name.charAt(0) }),
+      { class: 'p-hero-content' },
+      h('div', { class: 'p-mirror' }, h('div', { class: 'p-lights', 'aria-hidden': 'true' }, Array.from({ length: 18 }, (_, i) => h('i', { style: { '--i': String(i) } }))), logo('p-logo')),
       h('h1', { text: name }),
-      about ? h('p', { text: about }) : null,
-      h('span', {
-        class: `status-pill ${status.open ? 'open' : ''}`,
-        text: status.open ? t('pub.open_now', { time: fmtTime(status.until) }) : t('pub.closed_now'),
-      }),
-      app.canManage
-        ? h('div', { class: 'hero-actions' }, h('a', { class: 'btn btn-accent btn-sm', href: '#/manage', text: t('pub.manage') }))
-        : null,
+      about ? h('p', { class: 'p-about', text: about }) : null,
+      h(
+        'div',
+        { class: `p-status ${status.open ? 'open' : ''}` },
+        h('span', { class: 'dot', 'aria-hidden': 'true' }),
+        h('span', { text: status.open ? t('pub.open_now', { time: fmtTime(status.until) }) : [t('pub.closed_now'), opening].filter(Boolean).join(' · ') }),
+      ),
+      h('div', { class: 'p-actions' }, actions),
     ),
   );
 
-  const servicesCard = services.length
-    ? h(
-        'section',
-        null,
-        h('div', { class: 'section-title' }, h('h2', { text: t('pub.services') })),
-        h('div', { class: 'card flush' }, h('ul', { class: 'list' }, services.map((s) => h(
-          'li',
-          { class: `service-line ${canBook ? 'bookable' : ''}`, role: canBook ? 'button' : null, tabindex: canBook ? '0' : null, onclick: () => book(s.id) },
-          h(
-            'div',
-            { class: 'grow' },
-            h('h3', { text: pick(s, 'name') }),
-            pick(s, 'description') ? h('p', { class: 'muted small', text: pick(s, 'description') }) : null,
-            h(
-              'div',
-              { class: 'row', style: { gap: '8px', marginTop: '4px' } },
-              h('span', { class: 'muted small', text: fmtDuration(s.duration_min) }),
-              h('span', { class: 'avatar-stack' }, s.staff_ids.slice(0, 4).map((id) => {
-                const m = staffById.get(id);
-                return m ? avatar(m.photo_url, pick(m, 'name')) : null;
-              })),
-            ),
-          ),
-          h('div', { class: 'price' }, s.price_is_from ? h('span', { class: 'from', text: t('pub.from') }) : null, fmtPrice(s.price, salon.currency)),
-        )))),
-      )
+  // ---- services
+  const serviceCard = (s, i) => h(
+    canBook ? 'button' : 'div',
+    { class: 'p-svc reveal', type: canBook ? 'button' : null, style: { '--i': String(i % 6) }, onclick: canBook ? () => book(s.id) : null },
+    h('div', { class: 'p-svc-e', text: s.icon || '✂️' }),
+    h(
+      'div',
+      { class: 'grow' },
+      h('div', { class: 'n', text: pick(s, 'name') }),
+      pick(s, 'description') ? h('div', { class: 'd', text: pick(s, 'description') }) : null,
+      h(
+        'div',
+        { class: 'm' },
+        h('span', { class: 'chip' }, icon('clock'), fmtDuration(s.duration_min)),
+        h('span', { class: 'avatar-stack' }, s.staff_ids.slice(0, 3).map((id) => {
+          const m = staffById.get(id);
+          return m ? avatar(m.photo_url, pick(m, 'name')) : null;
+        })),
+      ),
+    ),
+    h(
+      'div',
+      { class: 'p-svc-p' },
+      s.price_is_from ? h('small', { text: t('pub.from') }) : null,
+      h('b', { text: fmtPrice(s.price, salon.currency) }),
+      canBook ? h('span', { class: 'go', 'aria-hidden': 'true' }, icon('arrow', 'flip-ltr')) : null,
+    ),
+  );
+  const head = (title, count) => h('div', { class: 'p-head reveal' }, h('h2', { text: title }), count ? h('span', { class: 'count num', text: String(count) }) : null);
+  const servicesSection = services.length
+    ? h('section', { class: 'p-section' }, head(t('pub.services'), services.length), h('div', { class: 'p-services' }, services.map(serviceCard)))
     : null;
 
+  // ---- team: a carousel of portraits
   const teamSection = staff.length
     ? h(
         'section',
-        null,
-        h('div', { class: 'section-title' }, h('h2', { text: t('pub.team') })),
-        h('div', { class: 'team-grid' }, staff.map((m) => h(
+        { class: 'p-section' },
+        head(t('pub.team'), staff.length),
+        h('div', { class: 'scroller p-team' }, staff.map((m, i) => h(
           'div',
-          { class: 'team-card' },
-          h('div', { class: 'portrait' }, m.photo_url
-            ? h('img', { src: m.photo_url, alt: pick(m, 'name'), loading: 'lazy' })
-            : h('div', { class: 'placeholder' }, icon('user'))),
-          h('div', { class: 'name', text: pick(m, 'name') }),
-          pick(m, 'title') ? h('div', { class: 'role', text: pick(m, 'title') }) : null,
+          { class: 'p-member reveal', style: { '--i': String(i % 6) } },
+          // The portrait tilts towards the pointer; the card itself only slides in.
+          tilt(h(
+            'div',
+            { class: 'portrait' },
+            m.photo_url ? h('img', { src: m.photo_url, alt: pick(m, 'name'), loading: 'lazy' }) : h('div', { class: 'placeholder' }, icon('user')),
+            h('div', { class: 'info' }, h('div', { class: 'n', text: pick(m, 'name') }), pick(m, 'title') ? h('div', { class: 'r', text: pick(m, 'title') }) : null),
+          ), 6),
         ))),
       )
     : null;
 
-  const contact = salon.phone || salon.address
+  // ---- hours, today first in mind
+  const hoursSection = h(
+    'section',
+    { class: 'p-section' },
+    head(t('pub.hours')),
+    h('div', { class: 'p-card p-hours reveal' }, DAY_ORDER.map((d) => {
+      const ranges = hours[d] ?? [];
+      const today = d === now.weekday;
+      return h(
+        'div',
+        { class: `p-hour ${today ? 'today' : ''} ${ranges.length ? '' : 'off'}` },
+        h('span', { class: 'd' }, dayName(d), today ? h('span', { class: 'p-today', text: t('pub.today') }) : null),
+        h('span', { class: 'v' }, ranges.length ? ranges.map((r) => h('span', { text: `${fmtTime(r.open)} – ${fmtTime(r.close)}` })) : t('pub.closed')),
+      );
+    })),
+  );
+
+  const contactSection = tel || salon.address
     ? h(
         'section',
-        null,
-        h('div', { class: 'section-title' }, h('h2', { text: t('pub.contact') })),
+        { class: 'p-section' },
+        head(t('pub.contact')),
         h(
           'div',
-          { class: 'card stack' },
-          salon.phone
-            ? h('a', { class: 'row', href: `tel:${salon.phone.replace(/[^\d+]/g, '')}` }, icon('phone'), h('span', { class: 'ltr', text: salon.phone }))
-            : null,
-          salon.address ? h('div', { class: 'row' }, icon('pin'), h('span', { text: salon.address })) : null,
+          { class: 'p-card p-contact reveal' },
+          tel ? h('a', { class: 'p-line', href: `tel:${tel}` }, h('span', { class: 'ic' }, icon('phone')), h('span', { class: 'grow ltr', text: salon.phone }), icon('chevron', 'flip-ltr faint')) : null,
+          salon.address ? h('a', { class: 'p-line', href: map, target: '_blank', rel: 'noopener' }, h('span', { class: 'ic' }, icon('pin')), h('span', { class: 'grow', text: salon.address }), icon('external', 'faint')) : null,
         ),
       )
     : null;
 
+  // ---- floating bars
+  const bar = h(
+    'div',
+    { class: 'p-bar', 'aria-hidden': 'true' },
+    h('div', { class: 'p-bar-inner' }, logo('p-bar-logo'), h('span', { class: 'grow truncate', text: name }), canBook ? h('button', { class: 'btn btn-primary btn-sm', type: 'button', tabindex: '-1', onclick: () => book(), text: t('pub.book_short') }) : null),
+  );
+  const cta = h('div', { class: 'p-cta' }, h('div', { class: 'p-cta-inner' }, canBook
+    ? h('button', { class: 'btn btn-primary btn-block sheen p-book', type: 'button', onclick: () => book() }, icon('calendar'), t('book.cta'))
+    : h('button', { class: 'btn btn-primary btn-block', type: 'button', disabled: true, text: salon.booking_enabled ? t('pub.book') : t('book.closed') })));
+
   return h(
     'div',
     null,
+    bar,
     hero,
     h(
       'main',
-      { class: 'page stack-lg' },
+      { class: 'p-main' },
       !services.length && !staff.length ? h('p', { class: 'empty', text: t('pub.empty') }) : null,
       myBookingsCard(salon),
-      servicesCard,
+      servicesSection,
       teamSection,
-      h('section', null, h('div', { class: 'section-title' }, h('h2', { text: t('pub.hours') })), h('div', { class: 'card' }, hoursTable(hours, now.weekday))),
-      contact,
-      app.canManage ? null : h('p', { class: 'small', style: { textAlign: 'center' } }, h('a', { class: 'muted', href: '#/login', text: t('pub.owner_login') })),
+      hoursSection,
+      contactSection,
+      h(
+        'footer',
+        { class: 'p-foot' },
+        app.canManage ? null : h('a', { href: '#/login', text: t('pub.owner_login') }),
+        h('div', { class: 'faint', text: t('pub.powered', { brand: app.ctx.tenant.name }) }),
+      ),
     ),
-    h('div', { class: 'cta-bar' }, h('div', { class: 'cta-bar-inner' }, canBook
-      ? h('button', { class: 'btn btn-primary btn-block sheen', type: 'button', onclick: () => book() }, icon('clock'), t('book.cta'))
-      : h('button', { class: 'btn btn-primary btn-block', type: 'button', disabled: true, text: salon.booking_enabled ? t('pub.book') : t('book.closed') }))),
+    cta,
   );
 }

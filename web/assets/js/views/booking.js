@@ -396,7 +396,7 @@ export function myBookingsCard(salon) {
   const list = myBookings(salon.id);
   if (!list.length) return null;
   const box = h('div', { class: 'card flush' });
-  const section = h('section', { hidden: true }, h('div', { class: 'section-title' }, h('h2', { text: t('book.mine') })), box);
+  const section = h('section', { hidden: true }, h('div', { class: 'p-head' }, h('h2', { text: t('book.mine') })), box);
   Promise.all(list.slice(0, 5).map((item) => api('GET', `/api/public/bookings/${item.token}`).then((r) => ({ ...item, booking: r.booking })).catch(() => null)))
     .then((rows) => {
       const live = rows.filter((r) => r && (r.booking.upcoming || LIVE.has(r.booking.status)) && !['cancelled', 'expired'].includes(r.booking.status));

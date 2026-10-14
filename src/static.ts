@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { accentForDark, nightBase, onColor } from './colors.js';
 import { config } from './config.js';
 import { HttpError, requestProto, type Ctx } from './http.js';
 
@@ -63,23 +64,8 @@ export async function serveAsset(ctx: Ctx): Promise<boolean> {
 const escapeHtml = (s: string) =>
   s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 
-function luminance(hex: string): number {
-  const n = parseInt(hex.slice(1), 16);
-  const lin = (c: number) => {
-    const v = c / 255;
-    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
-  };
-  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255);
-}
-
-/** Black or white, whichever reads better on the given background. */
-export function onColor(hex: string): string {
-  const L = luminance(hex);
-  return (L + 0.05) / 0.05 > 1.05 / (L + 0.05) ? '#111111' : '#ffffff';
-}
-
 // Owner screens (and the whole platform host) use the dark studio theme; the
-// salon's public page is light. Set before first paint so there is no flash.
+// salon's public page is its own night theme. Set before first paint so there is no flash.
 const BOOT_SCRIPT = `(function(){var s=/^#\\/(manage|login)/.test(location.hash)||document.documentElement.dataset.platform==='1';
 if(s){document.documentElement.dataset.theme='studio';document.querySelector('meta[name=theme-color]').content='#0a0918';}})();`;
 
@@ -98,12 +84,14 @@ export async function serveIndex(ctx: Ctx): Promise<void> {
 <meta name="apple-mobile-web-app-title" content="${escapeHtml(title)}">`
     : '';
   const nonce = crypto.randomBytes(16).toString('base64');
-  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)}}`;
+  const night = nightBase(primary);
+  const lift = accentForDark(accent);
+  const vars = `:root{--primary:${primary};--on-primary:${onColor(primary)};--accent:${accent};--on-accent:${onColor(accent)};--night:${night};--accent-lift:${lift};--on-accent-lift:${onColor(lift)}}`;
   const html = template.body
     .toString('utf8')
     .replace('data-theme="{{mode}}"', salon ? 'data-theme="public"' : 'data-theme="studio" data-platform="1"')
     .replaceAll('{{title}}', escapeHtml(title))
-    .replaceAll('{{theme}}', salon ? primary : '#0a0918')
+    .replaceAll('{{theme}}', salon ? night : '#0a0918')
     .replace('{{head}}', head)
     .replace('{{vars}}', `<style nonce="${nonce}">${vars}</style>`)
     .replace('{{boot}}', `<script nonce="${nonce}">${BOOT_SCRIPT}</script>`);
