@@ -235,7 +235,7 @@ export function manageView(app, pageId) {
       h('main', { class: 's-page' }, content),
     ),
     h('aside', { class: 's-preview', 'aria-label': t('preview.live') }, h('div', { class: 'eyebrow', text: t('preview.live') }), previewHolder),
-    h('nav', { class: 's-tabbar', 'aria-label': 'main' }, PAGES.map((p) => navLink(p, 's-tab'))),
+    h('nav', { class: 's-tabbar', 'aria-label': t('nav.sections') }, PAGES.map((p) => navLink(p, 's-tab'))),
   );
 
   function refreshIdentity() {
@@ -267,7 +267,15 @@ export function manageView(app, pageId) {
     refreshPreview();
   }
 
+  // A quick tab change while the first load is in flight replaces this screen before
+  // the data arrives: then nothing here may draw (or start a page's timers and listeners).
+  let alive = true;
+  app.onUnmount(() => {
+    alive = false;
+  });
+
   function show() {
+    if (!alive) return;
     applyColors(store.salon.color_primary, store.salon.color_accent);
     refresh();
     clear(content, page.render(store, app));
@@ -292,6 +300,7 @@ export function manageView(app, pageId) {
         show();
       })
       .catch((err) => {
+        if (!alive) return;
         const retry = h('button', { class: 'btn btn-primary btn-sm', type: 'button', onclick: start }, icon('undo'), t('retry'));
         clear(content, h('div', { class: 'card empty load-error rise', role: 'alert' }, h('div', { class: 'tile' }, icon('alert')), h('p', { text: errorText(err) }), retry));
         appReady();

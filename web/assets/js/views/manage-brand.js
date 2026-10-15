@@ -126,7 +126,7 @@ export function brandPage(store, app) {
   };
 
   // ---- name
-  const nameAr = input({ name: 'name_ar', value: draft.name_ar, maxlength: 80 });
+  const nameAr = input({ name: 'name_ar', value: draft.name_ar, maxlength: 80, dir: 'rtl' });
   const nameEn = input({ name: 'name_en', value: draft.name_en, maxlength: 80, dir: 'ltr' });
   nameAr.addEventListener('input', () => change({ name_ar: nameAr.value }));
   nameEn.addEventListener('input', () => change({ name_en: nameEn.value }));
@@ -147,7 +147,8 @@ export function brandPage(store, app) {
 
   // ---- app icon: its own picture, or the logo on a background
   const iconBox = h('div', { class: 'logo-drop' });
-  const bgChips = h('div', { class: 'scroller fit icon-bgs' });
+  // Four short choices: they wrap rather than scroll, so none is hidden off the edge.
+  const bgChips = h('div', { class: 'icon-bgs' });
   function renderIcon() {
     const own = store.salon.icon_url;
     const tile = salonIcon({ ...store.salon, ...draft });

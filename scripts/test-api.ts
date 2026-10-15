@@ -22,6 +22,10 @@ const PLATFORM = `admin.${DOMAIN}:${PORT}`;
 const run = Date.now().toString(36).slice(-5);
 const hostOf = (sub: string) => `${sub}.${DOMAIN}:${PORT}`;
 
+// The platform's mark (sparkles), and the scissors that are only a salon's default icon.
+const SPARKLES = '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/>';
+const SCISSORS = '<circle cx="6" cy="6" r="3"/>';
+
 // ---------------------------------------------------------------- tiny client
 
 interface Res {
@@ -32,7 +36,7 @@ interface Res {
 }
 
 class Client {
-  cookies = new Map<string, string>(); // host -> "sid=..."
+  cookies = new Map<string, string>(); // host -> the Cookie header ("sid=...; dev=...")
 
   request(host: string, method: string, path: string, opts: { json?: unknown; raw?: Buffer; type?: string; headers?: Record<string, string> } = {}): Promise<Res> {
     const headers: Record<string, string> = { Host: host, ...opts.headers };
@@ -52,11 +56,15 @@ class Client {
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => {
           const body = Buffer.concat(chunks);
-          const set = res.headers['set-cookie']?.[0];
-          if (set) {
+          // A small jar: each cookie by name, an empty value removes it.
+          for (const set of res.headers['set-cookie'] ?? []) {
             const pair = set.split(';')[0]!;
-            if (pair === 'sid=') this.cookies.delete(host);
-            else this.cookies.set(host, pair);
+            const name = pair.slice(0, pair.indexOf('='));
+            const jar = new Map((this.cookies.get(host) ?? '').split('; ').filter(Boolean).map((p) => [p.slice(0, p.indexOf('=')), p] as const));
+            if (pair === `${name}=`) jar.delete(name);
+            else jar.set(name, pair);
+            if (jar.size) this.cookies.set(host, [...jar.values()].join('; '));
+            else this.cookies.delete(host);
           }
           let json: any = null;
           if (res.headers['content-type']?.includes('json')) json = JSON.parse(body.toString('utf8') || 'null');
@@ -200,6 +208,8 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(typo.status === 404 && String(typo.headers['content-type']).startsWith('text/html') && typoHtml.includes('لا يوجد صالون بهذا الرابط') && typoHtml.includes(`href="http://${LANDING}/"`), "a mistyped salon link in a browser: a page that says so, with the way to the platform", { status: typo.status, type: typo.headers['content-type'] });
   const typoBare = await anon.get(hostOf('nosuchsalon'), '/book');
   expect(typoBare.status === 404 && typoBare.body.toString('utf8').includes('لا يوجد صالون بهذا الرابط'), 'the same page for a request that does not say it wants HTML (a link preview)', { status: typoBare.status, type: typoBare.headers['content-type'] });
+  expect(typoHtml.includes('href="https://wa.me/962790001122"') && typoHtml.includes('تواصل معنا على واتساب') && typoHtml.includes('lang="en" dir="ltr">Message us on WhatsApp<'), 'its WhatsApp button says so in Arabic and in English');
+  expect(typoHtml.includes(SPARKLES) && !typoHtml.includes(SCISSORS), "it wears the platform's mark (the sparkles of its dashboard), not a salon's scissors");
   expectStatus(await anon.get(hostOf('nosuchsalon'), '/icons/icon-192.png'), 404, "a file on a mistyped link: a plain answer, not the page", 'not_found');
   expect(String((await anon.get('nothing.example', '/', { Accept: 'text/html' })).headers['content-type']).startsWith('text/plain'), 'a host on no platform still gets the plain answer');
   expectStatus(await anon.get(`x.y.${DOMAIN}`, '/api/context'), 404, 'nested subdomain');
@@ -318,6 +328,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   const ownerIndex = await anon.get(A, '/admin');
   const ownerHtml = ownerIndex.body.toString('utf8');
   expect(ownerIndex.status === 200 && ownerHtml.includes('data-theme="studio"') && ownerHtml.includes('data-app="owner"') && ownerHtml.includes('href="/admin.webmanifest"') && ownerHtml.includes('/icons/owner-apple-touch-icon.png') && ownerHtml.includes('/splash/owner-1290x2796.png') && ownerHtml.includes('content="noindex"'), "/admin opens the owner's app on the studio theme, with its manifest, icon and launch screens, out of search results");
+  expect(ownerHtml.includes('data-title-ar="إدارة صالون أ"') && /data-title-en="[^"]+ dashboard"/.test(ownerHtml), "the owner's app has its tab title in English too, for when that is its language");
   const customerHtml = (await anon.get(A, '/')).body.toString('utf8');
   expect(customerHtml.includes('data-page="day"') && customerHtml.includes('class="boot splash"') && customerHtml.includes('apple-touch-startup-image') && customerHtml.includes('--accent-ink:'), "the customers' app: day page, a splash with the salon's icon, iOS launch screens");
   const launch = await anon.get(A, `/splash/1179x2556.png?v=${brandPub?.icon_v}`);
@@ -541,6 +552,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect(door.status === 200 && doorHtml.includes('<form method="get" action="/admin">') && doorHtml.includes('name="salon"') && doorHtml.includes('content="noindex"') && !doorHtml.includes(`admin.${DOMAIN}`) && !door.headers.location,
     "the landing page's /admin asks for the salon's link, and never leads to the platform's dashboard", { status: door.status, location: door.headers.location });
   expect(!doorCsp.includes('unsafe-inline') && doorCsp.includes(`form-action 'self' http://*.${DOMAIN}:${PORT}`) && !doorHtml.includes('<script'), 'a page with no scripts and a nonce for its style');
+  expect(doorHtml.includes(SPARKLES) && !doorHtml.includes(SCISSORS) && doorHtml.includes("Your salon's dashboard · علامة تجربة</title>"), "the platform's mark, and a title in both languages");
   for (const typed of [subA, `${subA.toUpperCase()}.${DOMAIN}`, `http://${A}/admin`]) {
     const go = await anon.get(LANDING, `/admin?salon=${encodeURIComponent(typed)}`);
     expect(go.status === 302 && go.headers.location === `http://${A}/admin`, `"${typed}" leads to that salon's dashboard`, { status: go.status, location: go.headers.location });
@@ -551,6 +563,7 @@ async function tests(adminCreds: { phone: string; password: string }) {
   expect((await anon.get(LANDING, '/login')).status === 200 && (await anon.get(LANDING, '/admin/login')).status === 200, '/login and /admin/login on the landing page show the same');
   const dashboardHtml = (await anon.get(PLATFORM, '/')).body.toString('utf8');
   expect(dashboardHtml.includes('data-site="admin"') && dashboardHtml.includes('content="noindex"'), 'the dashboard stays out of search results');
+  expect(dashboardHtml.includes('data-title-ar="علامة تجربة · الإدارة" data-title-en="Test Brand · Admin"') && !(await anon.get(LANDING, '/')).body.toString('utf8').includes('data-title-'), "the dashboard's tab title in both languages (the landing page's already has both names)");
   const settings = await admin.get(PLATFORM, '/api/admin/platform');
   expect(settings.status === 200 && settings.json.contact_phone === '+962790001122' && settings.json.domain === DOMAIN, 'the admin sees the platform settings', settings.json);
   expectStatus(await admin.patch(PLATFORM, '/api/admin/platform', { contact_phone: '12' }), 400, 'the contact must be a phone number', 'invalid');
@@ -634,6 +647,24 @@ async function tests(adminCreds: { phone: string; password: string }) {
   for (let i = 0; i < 8; i++) await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: `guess-${i}`, next: 'owner-b-new-1' }, headers: guessing });
   expectStatus(await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: 'owner-b-pass', next: 'owner-b-new-1' }, headers: guessing }), 429, 'changing the password: 8 wrong current passwords, then locked', 'too_many_attempts');
   expectStatus(await ownerB.request(B, 'POST', '/api/auth/password', { json: { current: 'nope', next: 'owner-b-new-1' }, headers: { 'X-Forwarded-For': '10.7.0.4' } }), 400, 'only from that address', 'wrong_password');
+  // Guesses spread over many addresses meet the account's own limit (20 in all)...
+  for (let a = 1; a <= 3; a++) {
+    const spread = fromAddress(new Client(), `10.8.0.${a}`);
+    for (let i = 0; i < 8; i++) await spread.login(A, phoneA, `spread-${a}-${i}`);
+  }
+  expectStatus(await fromAddress(new Client(), '10.8.0.9').login(A, phoneA, 'new-pass-123'), 429, 'guesses spread over many addresses: then the account is locked from anywhere', 'too_many_attempts');
+  // ...but that does not lock out a browser that has signed in to it before: it holds
+  // a mark only the password could earn (ownerA changed the password above).
+  expect(/(?:^|; )dev=[\w-]{43}(?:;|$)/.test(ownerA.cookies.get(A) ?? ''), 'signing in (or changing the password) leaves a device mark', ownerA.cookies.get(A));
+  const forged = fromAddress(new Client(), '10.8.0.10');
+  forged.cookies.set(A, `dev=${'x'.repeat(43)}`);
+  expectStatus(await forged.login(A, phoneA, 'new-pass-123'), 429, 'a made-up mark does not get past the lock', 'too_many_attempts');
+  expectStatus(await ownerA.request(A, 'POST', '/api/auth/login', { json: { phone: phoneA, password: 'new-pass-123' }, headers: { 'X-Forwarded-For': '10.8.0.11' } }), 200, "the owner's own browser still signs in, from a new address too");
+  // An IPv6 address counts by its /64: hopping to another address in it gives no fresh guesses.
+  const v6 = (addr: string, password: string) => fromAddress(new Client(), addr).login(A, '0790000666', password);
+  for (let i = 0; i < 8; i++) await v6('2001:db8:7:7::1', `v6-${i}`);
+  expectStatus(await v6('2001:db8:7:7:ffff:1:2:3', 'v6-next'), 429, 'IPv6: another address in the same /64 is still locked', 'too_many_attempts');
+  expectStatus(await v6('2001:db8:7:8::1', 'v6-other'), 401, 'another /64 is not', 'bad_credentials');
 
   section('Suspending a salon');
   expectStatus(await admin.patch(PLATFORM, `/api/admin/salons/${created.json?.id}`, { active: false }), 200, 'suspend salon A');
@@ -822,6 +853,7 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   const d1 = await book(customer(), { time: 720, name: 'نور', phone: '0795555555' });
   const pending = d1.json?.booking;
   expect(d1.status === 201 && pending?.status === 'pending_payment' && pending.deposit === '2' && pending.expires_in_s > 1700 && pending.expires_in_s <= 1800, 'held for 30 minutes pending a 2 JD deposit', pending);
+  expect(pending?.hold_s === 1800, "the hold's whole length comes with it (for the countdown ring)", pending?.hold_s);
   expect(pending?.salon.cliq_alias === 'SALONK' && pending.salon.cliq_name === 'صالون ك', 'the customer sees where to send it');
   const colourBooking = await book(customer(), { service_id: color, time: 900, name: 'هبة', phone: '0796666666' });
   expect(colourBooking.json?.booking.deposit === '1.5', 'the deposit never exceeds the price', colourBooking.json?.booking);
@@ -836,6 +868,8 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   const soon = await book(customer(), { date: soonDay, time: soonSlot?.min, name: 'سريع', phone: '0795550123' });
   const soonHold = (await query<{ gap: string }>('select extract(epoch from start_at - expires_at) as gap from bookings where id = $1', [soon.json?.booking.id]))[0];
   expect(soon.status === 201 && soon.json.booking.status === 'pending_payment' && Number(soonHold?.gap) === 0 && soon.json.booking.expires_in_s <= 60 * 60, 'a 2-hour payment window ends when a visit within the hour starts', { hold: soonHold, booking: soon.json?.booking });
+  const soonB = soon.json?.booking;
+  expect(soonB?.hold_s <= 60 * 60 && soonB.hold_s >= soonB.expires_in_s && soonB.hold_s - soonB.expires_in_s < 30, 'and its whole length says so, not the 2 hours', { hold_s: soonB?.hold_s, expires_in_s: soonB?.expires_in_s });
   await guest.post(K, `/api/public/bookings/${soon.json?.token}/cancel`);
   await owner.patch(K, '/api/manage/salon', { payment_window_min: 30 });
 
@@ -972,6 +1006,25 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   expectStatus(await customer().post(m.host, '/api/public/bookings', { service_id: m.serviceId, date: visitDate, time: visitStart + 30, name: 'متأخر', phone: '0790000790' }), 409, 'nobody can book into it', 'slot_taken');
   const undone = await m.owner.patch(m.host, `/api/manage/bookings/${visit.json?.booking.id}`, { status: 'confirmed' });
   expect(undone.status === 200 && undone.json.booking.status === 'confirmed', 'and Undo brings the visit back', undone.json);
+  // A no-show frees the chair; a walk-in seated in it and marked done keeps it. Undo
+  // on the no-show must not put the first visit back on top of the walk-in.
+  const visitId = visit.json?.booking.id;
+  await query(`update bookings set start_at = now() - interval '10 minutes', end_at = now() + interval '50 minutes' where id = $1`, [visitId]);
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${visitId}`, { status: 'no_show' }), 200, 'the visit, begun, is marked a no-show');
+  const walkAt = await ownerFirst(visitDate);
+  const walkIn = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, date: visitDate, time: walkAt?.min, name: 'عابر', phone: '0790000791' });
+  const walkDone = await m.owner.patch(m.host, `/api/manage/bookings/${walkIn.json?.booking.id}`, { status: 'completed' });
+  expect(walkIn.status === 201 && walkDone.status === 200, 'a walk-in takes the freed chair and is marked done', walkDone.json ?? walkIn.json);
+  // The no-show's own time, which the walk-in now sits in.
+  await query(`update bookings v set start_at = w.start_at - interval '15 minutes', end_at = w.end_at - interval '15 minutes' from bookings w where v.id = $1 and w.id = $2`, [visitId, walkIn.json?.booking.id]);
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${visitId}`, { status: 'confirmed' }), 409, 'Undo on the no-show would double-book the chair', 'slot_taken');
+  // "Anyone" goes to whoever has the least that day, counting visits already done.
+  const second = (await m.owner.post(m.host, '/api/manage/staff', { name_ar: 'سامر' })).json?.id as number;
+  const loadDay = addDays(mToday, 3);
+  const doneEarlier = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, staff_id: m.staffId, date: loadDay, time: 600, name: 'صباحي', phone: '0790000792' });
+  await query(`update bookings set status = 'completed' where id = $1`, [doneEarlier.json?.booking.id]);
+  const anyone = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, date: loadDay, time: 840, name: 'أي حلاق', phone: '0790000793' });
+  expect(anyone.status === 201 && anyone.json.booking.staff.id === second, '"anyone" goes to the barber who has not worked yet, not the one whose visits are done', { anyone: anyone.json?.booking?.staff, first: m.staffId, second });
 
   await lateNightTests(admin, customer);
   await clockChangeTests(admin);

@@ -73,6 +73,7 @@ const STRINGS = {
     'nav.hours': 'الأوقات',
     'nav.settings': 'الإعدادات',
     'nav.preview': 'معاينة',
+    'nav.sections': 'أقسام الاستوديو',
 
     'home.morning': 'صباح الخير',
     'home.evening': 'مساء الخير',
@@ -209,6 +210,10 @@ const STRINGS = {
     'services.hidden': 'مخفية',
     'services.reorder': 'ترتيب',
     'services.custom': 'مدة أخرى',
+    'services.minus5': '5 دقائق أقل',
+    'services.plus5': '5 دقائق أكثر',
+    'services.move_up': 'تحريك للأعلى',
+    'services.move_down': 'تحريك للأسفل',
 
     'team.title': 'الفريق',
     'team.sub': 'الحلاقون والمصففون في صالونك، بصور موحّدة.',
@@ -446,7 +451,7 @@ const STRINGS = {
     'book.name': 'اسمك',
     'book.phone': 'رقم جوالك',
     'book.summary': 'ملخص الحجز',
-    'book.deposit_note': 'لتأكيد الحجز ترسل عربون {amount} عبر CliQ خلال {min} دقيقة.',
+    'book.deposit_note': 'لتأكيد الحجز ترسل عربون {amount} عبر CliQ خلال {window}، أو قبل موعدك إن كان أقرب.',
     'book.confirm': 'تأكيد الحجز',
     'book.next': 'التالي',
     'book.back': 'رجوع',
@@ -561,7 +566,8 @@ const STRINGS = {
     'sched.save': 'احفظ الحجز',
     'sched.price': 'السعر',
     'sched.deposit_paid': 'العربون',
-    'sched.number': 'حجز #{id}',
+    // The reference in a left-to-right isolate (LRI…PDI): read "#3504", as on the customer's ticket, not "3504#".
+    'sched.number': 'حجز ⁦#{id}⁩',
     'sched.pick_slot': 'اختر وقتًا للحجز',
     'sched.proof': 'صورة الحوالة',
     'sched.review': 'اضغط لمراجعتها',
@@ -641,7 +647,7 @@ const STRINGS = {
     'bs.full': 'كامل السعر',
     'bs.amount': 'المبلغ',
     'bs.window': 'مهلة الإرسال',
-    'bs.minutes': '{n} دقيقة',
+    'bs.minutes': { two: 'دقيقتان', few: '{n} دقائق', other: '{n} دقيقة' },
     'bs.saved': 'تم حفظ إعدادات الحجز',
     'home.today': 'اليوم',
     'home.temp_pw': 'أنت تستخدم كلمة مرور مؤقتة',
@@ -650,7 +656,8 @@ const STRINGS = {
     'home.next': 'التالي: {name} · {time}',
     'home.waiting': { one: 'دفعة واحدة بانتظار تأكيدك', two: 'دفعتان بانتظار تأكيدك', few: '{n} دفعات بانتظار تأكيدك', other: '{n} دفعة بانتظار تأكيدك' },
 
-    'unit.min': '{n} دقيقة',
+    // 3-10 take the plural (10 دقائق); 1 and 11-99 the singular (15 دقيقة).
+    'unit.min': { two: 'دقيقتان', few: '{n} دقائق', other: '{n} دقيقة' },
     'unit.min_short': '{n} د',
     days: ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'],
   },
@@ -724,6 +731,7 @@ const STRINGS = {
     'nav.hours': 'Hours',
     'nav.settings': 'Settings',
     'nav.preview': 'Preview',
+    'nav.sections': 'Studio sections',
 
     'home.morning': 'Good morning',
     'home.evening': 'Good evening',
@@ -860,6 +868,10 @@ const STRINGS = {
     'services.hidden': 'Hidden',
     'services.reorder': 'Reorder',
     'services.custom': 'Other',
+    'services.minus5': '5 minutes less',
+    'services.plus5': '5 minutes more',
+    'services.move_up': 'Move up',
+    'services.move_down': 'Move down',
 
     'team.title': 'Team',
     'team.sub': 'The barbers and stylists in your salon, with unified photos.',
@@ -952,11 +964,11 @@ const STRINGS = {
     'admin.dash_sub': 'All your salons and how they are doing, in one place.',
     'admin.bookings_30': 'New bookings · last 30 days',
     'admin.last7': 'Last 7 days',
-    'admin.last7_sr': 'Last 7 days: {n} bookings, against {prev} in the 7 days before.',
+    'admin.last7_sr': { one: 'Last 7 days: 1 booking, against {prev} in the 7 days before.', other: 'Last 7 days: {n} bookings, against {prev} in the 7 days before.' },
     'admin.no_change': 'no change',
     'admin.busiest': 'Busiest day',
     'admin.daily_avg': 'Daily average',
-    'admin.per_day': 'bookings a day',
+    'admin.per_day': { one: 'booking a day', other: 'bookings a day' },
     'admin.just_now': 'just now',
     'admin.attention': 'Needs attention',
     'admin.by_bookings': 'By bookings',
@@ -1097,7 +1109,7 @@ const STRINGS = {
     'book.name': 'Your name',
     'book.phone': 'Your mobile number',
     'book.summary': 'Booking summary',
-    'book.deposit_note': 'To confirm, you send a {amount} deposit by CliQ within {min} minutes.',
+    'book.deposit_note': 'To confirm, you send a {amount} deposit by CliQ within {window}, or before your visit starts if that is sooner.',
     'book.confirm': 'Confirm booking',
     'book.next': 'Next',
     'book.back': 'Back',
@@ -1329,6 +1341,10 @@ export function setLang(next) {
 export function applyLang() {
   document.documentElement.lang = lang;
   document.documentElement.dir = lang === 'ar' ? 'rtl' : 'ltr';
+  // The tab's title too: the server writes it in both languages (the landing page's
+  // title already carries both, so it has none).
+  const title = document.documentElement.dataset[lang === 'ar' ? 'titleAr' : 'titleEn'];
+  if (title) document.title = title;
 }
 
 const plurals = {};
@@ -1346,6 +1362,13 @@ export function t(key, vars) {
 }
 
 export const dayName = (weekday) => t('days')[weekday];
+
+/**
+ * A name or other user-typed text placed inside a translated sentence, wrapped in a
+ * first-strong isolate (FSI…PDI): an Arabic name in English (or a Latin one in Arabic)
+ * then keeps its own direction and cannot pull a following time or number into it.
+ */
+export const iso = (s) => `\u2068${s ?? ''}\u2069`;
 
 /** Picks the field in the current language, falling back to Arabic: pick(service, 'name'). */
 export function pick(obj, base) {

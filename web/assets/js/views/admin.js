@@ -123,12 +123,13 @@ function trendCard(series) {
     h('span', { class: 'delta-in', 'aria-hidden': 'true' }, icon(dir === 'flat' ? 'minus' : 'trend', dir === 'down' ? 'flip-v' : ''), h('span', { text: t('admin.last7') }), h('b', { text: isolate(value) })),
   );
   // A quiet second reading for wide screens: the busiest day and the daily pace.
+  const avg = Math.round((total / series.length) * 10) / 10;
   const side = total
     ? h(
         'dl',
         { class: 'trend-side' },
         h('div', null, h('dt', { text: t('admin.busiest') }), h('dd', null, h('b', { class: 'num', text: fmtNumber(peak.n) }), h('span', { text: fmtDate(peak.date, { weekday: 'long', day: 'numeric', month: 'long' }) }))),
-        h('div', null, h('dt', { text: t('admin.daily_avg') }), h('dd', null, h('b', { class: 'num', text: fmtNumber(Math.round((total / series.length) * 10) / 10) }), h('span', { text: t('admin.per_day') }))),
+        h('div', null, h('dt', { text: t('admin.daily_avg') }), h('dd', null, h('b', { class: 'num', text: fmtNumber(avg) }), h('span', { text: t('admin.per_day', { n: avg }) }))),
       )
     : null;
   return h(
@@ -187,7 +188,7 @@ function salonCard(s, open) {
   if (s.stats.upcoming) bookings.push(t('admin.upcoming_n', { n: s.stats.upcoming }));
   return h(
     'button',
-    { class: `salon-card ${status}`, type: 'button', onclick: () => open(s.id) },
+    { class: `salon-card ${status}`, type: 'button', 'data-id': String(s.id), onclick: () => open(s.id) },
     h('div', { class: 'sc-avatar' }, salonIcon(s), h('span', { class: 'live-dot', 'aria-hidden': 'true' })),
     h('div', { class: 'sc-id' }, h('div', { class: 'name truncate', text: pick(s, 'name') }), h('div', { class: 'link truncate', text: shortLink(s.url) })),
     h('span', {
@@ -248,7 +249,8 @@ function salonsSection(salons, view, open) {
   const layoutBtns = h('div', { class: 'layout-toggle', role: 'group', 'aria-label': t('admin.view') }, layoutBtn('grid'), layoutBtn('list'));
 
   function matches(s) {
-    const q = westernDigits(view.query).toLowerCase().replace(/\s+/g, '');
+    // Spaces and bidi marks out: a number pasted from a WhatsApp message still matches.
+    const q = westernDigits(view.query).toLowerCase().replace(/[\s\u200e\u200f\u202a-\u202e\u2066-\u2069]+/g, '');
     if (!q) return true;
     const owner = s.owners[0];
     return [s.name_ar, s.name_en, s.subdomain, owner?.name, owner?.phone].some((v) => (v ?? '').toLowerCase().replace(/\s+/g, '').includes(q));
@@ -325,7 +327,7 @@ function keepConfettiOff(canvas, panel) {
 }
 
 /** Sign-in details to pass on: each copyable, all of it sendable on WhatsApp. */
-function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = false }) {
+function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = false, onClose }) {
   const list = h('div', { class: 'cred' }, rows.map((r) => {
     const btn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t('copy')}: ${r.label}`, title: t('copy') }, icon('copy'));
     btn.addEventListener('click', () => copy(r.value));
@@ -335,7 +337,7 @@ function credentialsSheet({ title, intro, rows, waPhone, waText, celebrate = fal
   const wa = waPhone
     ? h('a', { class: 'btn btn-primary sheen', href: `https://wa.me/${waNumber(waPhone)}?text=${encodeURIComponent(waText)}`, target: '_blank', rel: 'noopener' }, icon('chat'), t('admin.send_wa'))
     : null;
-  const panel = sheet({ title, body: h('div', null, intro ? h('p', { class: 'muted cred-intro', text: intro }) : null, list), actions: [done, wa] });
+  const panel = sheet({ title, body: h('div', null, intro ? h('p', { class: 'muted cred-intro', text: intro }) : null, list), actions: [done, wa], onClose });
   done.addEventListener('click', () => panel.close());
   if (celebrate) {
     setTimeout(() => {
@@ -391,9 +393,11 @@ async function openPlatform(app) {
   }));
 }
 
+let createSeq = 0;
+
 function openCreate(onCreated) {
   const f = {
-    name_ar: input({ name: 'name_ar', maxlength: 80 }),
+    name_ar: input({ name: 'name_ar', maxlength: 80, dir: 'rtl', lang: 'ar' }),
     name_en: input({ name: 'name_en', maxlength: 80, dir: 'ltr' }),
     subdomain: input({ name: 'subdomain', dir: 'ltr', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', maxlength: 32 }),
     owner_name: input({ name: 'owner_name', maxlength: 60 }),
@@ -405,10 +409,15 @@ function openCreate(onCreated) {
     f.subdomain.value = f.subdomain.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
     url.textContent = `${location.protocol}//${f.subdomain.value || '…'}.${baseHost()}`;
   });
-  const create = h('button', { class: 'btn btn-primary', type: 'button', text: t('admin.create') });
+  // The button sits in the sheet's footer but belongs to the form (form=…): it is the
+  // form's default button, so Enter in any field clicks it. The submit itself never
+  // navigates; the click listener below does the saving.
+  // (A fresh id each time: the last sheet may still be sliding out with its own form.)
+  const formId = `create-salon-${++createSeq}`;
+  const create = h('button', { class: 'btn btn-primary', type: 'submit', form: formId, text: t('admin.create') });
   const form = h(
     'form',
-    { class: 'create-form', novalidate: true, onsubmit: (e) => { e.preventDefault(); create.click(); } },
+    { id: formId, class: 'create-form', novalidate: true, onsubmit: (e) => e.preventDefault() },
     field(t('admin.name_ar'), f.name_ar),
     field(t('admin.name_en'), f.name_en, { optional: true }),
     h('div', { style: { marginTop: '12px' } }, field(t('admin.subdomain'), f.subdomain, { hint: t('admin.subdomain_hint') }), url),
@@ -433,7 +442,7 @@ function openCreate(onCreated) {
         ].filter(Boolean),
         waPhone: f.owner_phone.value,
         waText: res.owner_created
-          ? t('admin.wa_welcome', { name, link, phone: f.owner_phone.value.trim(), password: f.owner_password.value })
+          ? t('admin.wa_welcome', { name, link, phone: isolate(f.owner_phone.value.trim()), password: f.owner_password.value })
           : t('admin.wa_welcome_existing', { name, link }),
         celebrate: true,
       });
@@ -453,10 +462,31 @@ async function openSalon(id, onChange) {
     return;
   }
   const body = h('div', { class: 'sd' });
-  const panel = sheet({ title: pick(salon, 'name'), body, tall: true });
+  const panel = sheet({
+    title: pick(salon, 'name'),
+    body,
+    tall: true,
+    // An edit reloads the list behind, so the card that opened this is a new one by now: focus goes to it.
+    onClose: () => {
+      const a = document.activeElement;
+      if (a && a !== document.body && !panel.el.contains(a)) return;
+      document.querySelector(`.salon-card[data-id="${salon.id}"]`)?.focus({ preventScroll: true });
+    },
+  });
   // On a wide screen the salon opens in a drawer beside the list, not over it.
   panel.el.classList.add('drawer');
   const title = panel.el.querySelector('.sheet-head h2');
+  // Every redraw replaces every control. The one last used here (by data-k or name)
+  // takes the focus back, so keyboard and screen-reader users keep their place.
+  let lastKey = null;
+  body.addEventListener('focusin', (e) => {
+    lastKey = e.target.dataset?.k || e.target.name || null;
+  });
+  const refocus = (key) => {
+    if (key) body.querySelector(`[data-k="${key}"], [name="${key}"]`)?.focus({ preventScroll: true });
+    // Gone, or disabled (Save, once nothing is left to save): the drawer itself.
+    if (!body.contains(document.activeElement)) panel.el.focus({ preventScroll: true });
+  };
   const update = (next) => {
     salon = next;
     render();
@@ -470,7 +500,7 @@ async function openSalon(id, onChange) {
     const status = statusOf(salon);
     const done = setupDone(salon);
 
-    const copyLink = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('copy'), title: t('copy'), onclick: () => copy(salon.url) }, icon('copy'));
+    const copyLink = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('copy'), title: t('copy'), 'data-k': 'copy', onclick: () => copy(salon.url) }, icon('copy'));
     const hero = h(
       'div',
       { class: `sd-hero ${status}` },
@@ -487,6 +517,7 @@ async function openSalon(id, onChange) {
 
     const live = switchRow(t('admin.live'), t('admin.live_sub'), salon.active);
     live.el.classList.add('sd-live');
+    live.input.dataset.k = 'live';
     live.input.addEventListener('change', async () => {
       const on = live.input.checked;
       if (!on && !(await confirmDelete({ title: t('admin.suspend_title'), message: t('admin.suspend_msg'), yesText: t('admin.suspend_yes') }))) {
@@ -545,7 +576,7 @@ async function openSalon(id, onChange) {
 
     let ownerBlock = null;
     if (owner) {
-      const reset = h('button', { class: 'btn btn-secondary btn-block', type: 'button' }, icon('key'), t('admin.reset'));
+      const reset = h('button', { class: 'btn btn-secondary btn-block', type: 'button', 'data-k': 'reset' }, icon('key'), t('admin.reset'));
       reset.addEventListener('click', async () => {
         if (!(await confirmDelete({ title: t('admin.reset'), message: t('admin.reset_confirm'), yesText: t('admin.reset_yes') }))) return;
         busy(reset, async () => {
@@ -557,6 +588,10 @@ async function openSalon(id, onChange) {
             rows: [{ label: t('admin.temp_password'), value: res.password, secret: true }, { label: t('admin.studio_link'), value: link, link: true }],
             waPhone: res.owner.phone,
             waText: t('admin.wa_reset', { name: res.owner.name, password: res.password, link }),
+            // The reset button that opened it is redrawn meanwhile: back to its replacement, in the drawer.
+            onClose: () => {
+              if (panel.el.isConnected && !panel.el.classList.contains('closing') && !panel.el.contains(document.activeElement)) refocus('reset');
+            },
           });
           update((await api('GET', `/api/admin/salons/${salon.id}`)).salon);
         });
@@ -585,13 +620,14 @@ async function openSalon(id, onChange) {
 
     // Name and link. Moving the link keeps the old one working.
     const f = {
-      name_ar: input({ name: 'name_ar', value: salon.name_ar, maxlength: 80 }),
+      name_ar: input({ name: 'name_ar', value: salon.name_ar, maxlength: 80, dir: 'rtl', lang: 'ar' }),
       name_en: input({ name: 'name_en', value: salon.name_en, maxlength: 80, dir: 'ltr' }),
       subdomain: input({ name: 'subdomain', value: salon.subdomain, dir: 'ltr', autocapitalize: 'off', autocomplete: 'off', spellcheck: 'false', maxlength: 32 }),
     };
     const preview = h('div', { class: 'url-preview' });
     const warn = h('div', { class: 'notice', hidden: true }, icon('link'), h('span', { text: t('admin.link_warn') }));
-    const save = h('button', { class: 'btn btn-primary btn-block', type: 'button', text: t('save') });
+    // The form's default button: Enter in a field clicks it (and does nothing while it is disabled, nothing changed).
+    const save = h('button', { class: 'btn btn-primary btn-block', type: 'submit', text: t('save'), 'data-k': 'save' });
     const sync = () => {
       f.subdomain.value = f.subdomain.value.toLowerCase().replace(/[^a-z0-9-]/g, '');
       preview.textContent = `${location.protocol}//${f.subdomain.value || '…'}.${baseHost()}`;
@@ -601,7 +637,7 @@ async function openSalon(id, onChange) {
     Object.values(f).forEach((el) => el.addEventListener('input', sync));
     const form = h(
       'form',
-      { class: 'sd-block', novalidate: true, onsubmit: (e) => { e.preventDefault(); if (!save.disabled) save.click(); } },
+      { class: 'sd-block', novalidate: true, onsubmit: (e) => e.preventDefault() },
       h('div', { class: 'eyebrow', text: t('admin.edit') }),
       field(t('admin.name_ar'), f.name_ar),
       field(t('admin.name_en'), f.name_en, { optional: true }),
@@ -624,7 +660,11 @@ async function openSalon(id, onChange) {
     }));
     sync();
 
+    // busy() may already have dropped the focus to <body>. Focus in a sheet above this one (the new password) stays there.
+    const a = document.activeElement;
+    const restore = !a || a === document.body || body.contains(a);
     clear(body, ...stagger([hero, links, live.el, statsBlock, setup, ownerBlock, form].filter(Boolean)));
+    if (restore) refocus(lastKey);
   }
   render();
 }
@@ -633,6 +673,13 @@ async function openSalon(id, onChange) {
 
 export function adminView(app) {
   const view = { filter: 'all', query: '', layout: savedLayout() };
+  // A salon (or the settings) loads before its sheet shows: a second tap meanwhile
+  // must not stack a second sheet. Free again once the sheet is up (the page behind
+  // is inert then) or the load failed.
+  let opening = null;
+  const once = (fn) => (...args) => (opening ??= fn(...args).finally(() => { opening = null; }));
+  const openOne = once((id) => openSalon(id, load));
+  const openSettings = once(() => openPlatform(app));
   const skeleton = () => [
     h('div', { class: 'skel', style: { height: '300px', borderRadius: '22px' } }),
     h('div', { class: 'skel', style: { height: '120px', marginTop: '12px', borderRadius: '22px' } }),
@@ -653,7 +700,7 @@ export function adminView(app) {
         stagger([trendCard(data.series)]),
         kpis(data.totals),
         data.salons.length
-          ? salonsSection(data.salons, view, (id) => openSalon(id, load))
+          ? salonsSection(data.salons, view, openOne)
           : h('div', { class: 'card empty admin-empty' }, h('div', { class: 'tile' }, icon('store')), h('p', { text: t('admin.empty') })),
       );
     } catch (err) {
@@ -683,8 +730,8 @@ export function adminView(app) {
     'header',
     { class: 's-header' },
     h('div', { class: 'identity' }, h('div', { class: 'app-icon studio-mark', style: { '--s': '38px' } }, icon('sparkles')), h('div', { class: 'grow' }, h('div', { class: 'name', text: pick(app.ctx.tenant, 'name') }), h('div', { class: 'sub', text: t('login.platform') }))),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('admin.platform'), title: t('admin.platform'), onclick: () => openPlatform(app) }, icon('gear')),
-    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
+    h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('admin.platform'), title: t('admin.platform'), onclick: openSettings }, icon('gear')),
+    h('button', { class: 'icon-btn', type: 'button', lang: getLang() === 'ar' ? 'en' : 'ar', 'aria-label': t('app.lang'), title: t('app.lang'), onclick: () => app.toggleLang() }, icon('globe')),
   );
   // The bar turns to glass once the page moves under it.
   const onScroll = () => header.classList.toggle('scrolled', scrollY > 6);

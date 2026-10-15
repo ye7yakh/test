@@ -178,12 +178,18 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
   const brand = tenant.name_ar || tenant.name;
   const nonce = crypto.randomBytes(16).toString('base64');
   let title = page === 'landing' ? `${brand} · ${tenant.name}` : `${brand} · الإدارة`;
+  // The same title in English, which the app puts on the tab when that is its language
+  // (kept on the device, so only the app knows it). The landing page's title already
+  // carries both names.
+  let titleEn = page === 'landing' ? '' : `${tenant.name} · Admin`;
   let head: string[] = [];
   let attrs = `data-theme="studio" data-platform="1" data-site="${page}"`;
   let theme = STUDIO_BG;
   let splash = '<div class="boot"><div class="spinner"></div></div>';
   if (salon) {
     title = owner ? `إدارة ${salon.name_ar}` : salon.name_ar;
+    const nameEn = salon.name_en || salon.name_ar;
+    titleEn = owner ? `${nameEn} dashboard` : nameEn;
     const v = iconVersion(salon);
     const prefix = owner ? 'owner-' : '';
     const studio = studioColor(salon);
@@ -234,6 +240,7 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
       head.push('<meta name="robots" content="noindex">');
     }
   }
+  if (titleEn) attrs += ` data-title-ar="${escapeHtml(title)}" data-title-en="${escapeHtml(titleEn)}"`;
   const colors = brandVars(salon?.color_primary ?? '#1f2a37', salon?.color_accent ?? '#c8a15a');
   const vars = `:root{${Object.entries(colors).map(([k, val]) => `${k}:${val}`).join(';')}}`;
   const fills: Record<string, string> = {

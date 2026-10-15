@@ -145,6 +145,10 @@ function render() {
   if (location.href !== here) history.replaceState(history.state, '', here);
   document.documentElement.dataset.nav = navDirection();
   const swap = () => {
+    // A confirmation belongs to the screen it was shown on ("saved" over the next screen's
+    // unsaved bar contradicts it). Errors stay: the session-expired notice comes right after
+    // app.go(). Inside swap, so a cross-fade fades it out with the old screen.
+    document.querySelector('body > .toast:not(.error)')?.remove();
     for (const fn of unmount) {
       try {
         fn();

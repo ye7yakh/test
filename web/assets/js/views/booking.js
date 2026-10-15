@@ -2,7 +2,7 @@
 // own page, which walks the customer through a CliQ deposit when the salon asks for one.
 import { api, pickImage, prepareImage } from '../api.js';
 import { appIcon, appReady, avatar, busy, clear, confetti, confirmDelete, field, h, icon, input, legalLink, markInvalid, salonIcon, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
-import { errorText, fmtDuration, fmtPrice, fmtTime, pick, t, westernDigits } from '../i18n.js';
+import { errorText, fmtDuration, fmtPrice, fmtTime, getLang, pick, t, westernDigits } from '../i18n.js';
 import { addDays, dateOf, dayLabel, dayStrip, fmtDate, fmtRange, monthCaption, periodIcon, slotGrid } from '../slots.js';
 import { applyColors, reducedMotion } from '../theme.js';
 
@@ -537,7 +537,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
       }),
       h('div', { class: 'bk-fields' }, field(t('book.name'), name)),
       h('div', { class: 'phone-input bk-fields' }, h('div', { class: 'cc', text: `+${app.ctx.tenant.calling_code}` }), field(t('book.phone'), phone)),
-      deposit > 0 ? h('div', { class: 'notice' }, icon('lock'), h('span', { text: t('book.deposit_note', { amount: fmtPrice(deposit, salon.currency), min: salon.payment_window_min }) })) : null,
+      deposit > 0 ? h('div', { class: 'notice' }, icon('lock'), h('span', { text: t('book.deposit_note', { amount: fmtPrice(deposit, salon.currency), window: fmtDuration(salon.payment_window_min) }) })) : null,
       // New tabs, so reading them does not lose the booking in progress.
       h('p', { class: 'consent' }, t('legal.by_booking'), ' ', legalLink('terms', { newTab: true }), t('legal.and'), legalLink('privacy', { newTab: true }), t('legal.end')),
     );
@@ -650,6 +650,9 @@ export function bookingPage(app, token) {
   // change's own answer is drawn instead.
   let changing = 0;
   let version = 0;
+  // Left for another screen: an answer that arrives later draws nothing and starts no
+  // timer, so nothing of this page polls, scrolls or celebrates over the next one.
+  let gone = false;
   const hold = () => {
     changing++;
     let open = true;
@@ -674,6 +677,7 @@ export function bookingPage(app, token) {
   };
   document.addEventListener('visibilitychange', onVisible);
   app.onUnmount(() => {
+    gone = true;
     clearInterval(tick);
     clearInterval(poll);
     setProof(null);
@@ -686,6 +690,7 @@ export function bookingPage(app, token) {
     try {
       res = await api('GET', `/api/public/bookings/${token}`);
     } catch (err) {
+      if (gone) return;
       // A missed poll (a network switch, a 5xx) keeps the screen as it is, with a quiet
       // note; the next poll retries. Only a first load, or a booking that is gone, ends here.
       if (booking && err.status !== 404) {
@@ -703,10 +708,11 @@ export function bookingPage(app, token) {
       appReady();
       return;
     }
-    if (asked !== version || changing) return;
+    if (gone || asked !== version || changing) return;
     if (offline) offline.hidden = true;
     const first = !booking;
     if (first) info = await infoP;
+    if (gone) return;
     const changed = !first && booking.status !== res.booking.status;
     booking = res.booking;
     // Polling only redraws when something happened, so a half-filled form stays put;
@@ -746,6 +752,7 @@ export function bookingPage(app, token) {
   }
 
   function render(changed = false) {
+    if (gone) return;
     const b = booking;
     const s = b.salon;
     clearInterval(tick);
@@ -909,7 +916,7 @@ export function bookingPage(app, token) {
       `DTSTART:${stamp(start)}`,
       `DTEND:${stamp(end)}`,
       `SUMMARY:${esc(what)}`,
-      address ? `LOCATION:${esc(`${salonName}، ${address}`)}` : null,
+      address ? `LOCATION:${esc(`${salonName}${getLang() === 'ar' ? '، ' : ', '}${address}`)}` : null,
       `DESCRIPTION:${esc(`${t('bk.with')} ${pick(b.staff, 'name')} · ${t('bk.number')} #${b.id}\n${location.href}`)}`,
       `URL:${location.href}`,
       'BEGIN:VALARM', 'ACTION:DISPLAY', 'TRIGGER:-PT1H', `DESCRIPTION:${esc(what)}`, 'END:VALARM',
@@ -927,7 +934,8 @@ export function bookingPage(app, token) {
     const s = b.salon;
     // The clock counts to a deadline, not down by ticks: a phone that slept in the bank
     // app wakes to the right time. Each poll sets the deadline again from the server.
-    const total = Math.max(60, (Number(s.payment_window_min) || 30) * 60);
+    // The hold may have been cut short to end at the visit's start: the server says how long it was.
+    const total = Math.max(60, Number(b.hold_s) || (Number(s.payment_window_min) || 30) * 60);
     deadline = Date.now() + (b.expires_in_s ?? 0) * 1000;
     const left = () => Math.max(0, Math.ceil((deadline - Date.now()) / 1000));
     const clock = h('b', { class: 'num', role: 'timer' });

@@ -38,11 +38,9 @@ interface Page {
   pill?: string;
   extra?: string;
   primary?: PageLink;
+  /** Plain text: a button with the Arabic over the English. */
   whatsapp?: { href: string; ar: string; en: string };
 }
-
-/** The platform's mark (scissors on its violet light), drawn inline. */
-const SCISSORS = '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/></svg>';
 
 let embedded: string | null = null;
 /** Readex as data: URLs, read once, for hosts that cannot serve /assets (a suspended or unknown salon link). */
@@ -77,7 +75,9 @@ p{margin:0;color:var(--text-2)}
 .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:50px;padding:0 22px;border-radius:16px;background:var(--grad);color:var(--on-grad);font-weight:600;text-decoration:none;box-shadow:0 14px 30px -14px color-mix(in srgb,var(--accent) 75%,transparent),inset 0 1px 0 rgb(255 255 255 / .2);transition:transform .2s,box-shadow .2s}
 .btn:hover{transform:translateY(-1px)}
 .btn.ghost{background:var(--chip);color:var(--text);border:1px solid var(--line);box-shadow:none}
-.btn.ghost svg{color:#25d366}
+.btn.ghost svg{flex:none;color:#25d366}
+.two{display:flex;flex-direction:column;align-items:center;line-height:1.35;padding-block:7px}
+.ghost-en{font-size:13px;font-weight:500;color:var(--text-2)}
 .en{margin-top:24px;padding-top:18px;border-top:1px solid var(--line);font-size:14px;line-height:1.6}
 .en b{display:block;margin-bottom:2px;color:var(--text);font-weight:600}
 .en a{display:inline-flex;margin-top:10px;color:var(--accent);font-weight:600;text-decoration:none}
@@ -99,7 +99,7 @@ ${STYLE}</style></head><body>
 ${p.mark}
 ${p.pill ? `<p class="pill">${p.pill}</p>` : ''}
 <h1>${p.title}</h1><p>${p.ar}</p>${p.extra ?? ''}
-${p.primary || p.whatsapp ? `<div class="acts">${p.primary ? `<a class="btn" href="${escapeHtml(p.primary.href)}">${p.primary.ar}</a>` : ''}${p.whatsapp ? `<a class="btn ghost" href="${escapeHtml(p.whatsapp.href)}" rel="noopener">${SVG.chat}${p.whatsapp.ar}</a>` : ''}</div>` : ''}
+${p.primary || p.whatsapp ? `<div class="acts">${p.primary ? `<a class="btn" href="${escapeHtml(p.primary.href)}">${p.primary.ar}</a>` : ''}${p.whatsapp ? `<a class="btn ghost" href="${escapeHtml(p.whatsapp.href)}" rel="noopener">${SVG.chat}<span class="two"><span>${escapeHtml(p.whatsapp.ar)}</span><span class="ghost-en" lang="en" dir="ltr">${escapeHtml(p.whatsapp.en)}</span></span></a>` : ''}</div>` : ''}
 <div class="en" lang="en" dir="ltr"><p><b>${p.en.title}</b>${p.en.text}</p>${p.primary ? `<a href="${escapeHtml(p.primary.href)}">${p.primary.en} →</a>` : ''}</div>
 </main></body></html>`;
 }
@@ -137,7 +137,8 @@ function iconMark(host: HostContext): string {
   return `<div class="mark"><img src="${src}" alt=""></div>`;
 }
 
-const platformMark = () => `<div class="mark">${SCISSORS}</div>`;
+/** The platform's mark (the sparkles of its dashboard and landing page), drawn inline: an unknown link's page may load no images. */
+const platformMark = () => `<div class="mark">${SVG.sparkles}</div>`;
 
 // ---------------------------------------------------------------- not found
 

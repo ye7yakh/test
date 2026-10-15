@@ -5,7 +5,7 @@
 // CliQ transfers, marks visits, adds bookings taken by phone and sets how booking works.
 import { api } from '../api.js';
 import { avatar, busy, clear, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast, trackOverlay } from '../dom.js';
-import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, pick, t, westernDigits } from '../i18n.js';
+import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, iso, pick, t, westernDigits } from '../i18n.js';
 import { addDays, dateOf, dayLabel, dayStrip, fmtDate, periodIcon } from '../slots.js';
 import { reducedMotion } from '../theme.js';
 import { nowIn, toMin } from '../time.js';
@@ -286,7 +286,7 @@ async function runAction(ctx, button, b, [, status, , asks], onDone) {
     const ok = await confirmSheet(status === 'no_show'
       ? {
           title: t('sched.no_show'),
-          question: t('sched.no_show_q', { name: b.customer.name, time: when }),
+          question: t('sched.no_show_q', { name: iso(b.customer.name), time: when }),
           message: t('sched.no_show_confirm'),
           yesText: t('sched.no_show'),
           noText: t('sched.back'),
@@ -294,14 +294,14 @@ async function runAction(ctx, button, b, [, status, , asks], onDone) {
       : b.status === 'payment_sent'
       ? {
           title: t('sched.reject_full'),
-          question: t('sched.reject_q', { name: b.customer.name, amount: fmtPrice(b.deposit, ctx.cur()) }),
+          question: t('sched.reject_q', { name: iso(b.customer.name), amount: fmtPrice(b.deposit, ctx.cur()) }),
           message: t('sched.reject_confirm'),
           yesText: t('sched.reject_full'),
           noText: t('sched.keep'),
         }
       : {
           title: t('sched.cancel'),
-          question: t('sched.cancel_q', { name: b.customer.name, time: when }),
+          question: t('sched.cancel_q', { name: iso(b.customer.name), time: when }),
           message: t('sched.cancel_confirm'),
           yesText: t('sched.cancel'),
           noText: t('sched.keep'),
@@ -730,8 +730,13 @@ function gapRow(ctx, date, [from, to]) {
     h(
       'span',
       { class: 'gap-box' },
-      h('span', { class: 'gap-what', text: t('sched.free', { span: fmtSpan(to - from) }) }),
-      h('span', { class: 'gap-when num', text: fmtRange(from, to) }),
+      // The two labels wrap as a pair, so a narrow phone moves the range under the label instead of clipping it.
+      h(
+        'span',
+        { class: 'gap-text' },
+        h('span', { class: 'gap-what', text: t('sched.free', { span: fmtSpan(to - from) }) }),
+        h('span', { class: 'gap-when num', text: fmtRange(from, to) }),
+      ),
       icon('plus'),
     ),
   );
@@ -1181,7 +1186,7 @@ export function openBookingSettings(store, onSaved) {
     cliqGroup.inert = !on;
     instant.hidden = on || !online.input.checked;
     amountField.hidden = kind !== 'fixed';
-    const shown = kind === 'full' ? t('bs.full_note') : t('book.deposit_note', { amount: fmtPrice(amount.value || '0', s.currency), min: windowMin });
+    const shown = kind === 'full' ? t('bs.full_note') : t('book.deposit_note', { amount: fmtPrice(amount.value || '0', s.currency), window: fmtDuration(windowMin) });
     clear(example, icon('lock'), h('span', { text: shown }));
   }
   cliq.input.addEventListener('change', sync);

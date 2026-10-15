@@ -46,9 +46,9 @@ function openEditor(store, service, onSaved) {
   })));
   renderIcons();
 
-  const nameAr = input({ name: 'name_ar', value: s.name_ar, maxlength: 80 });
+  const nameAr = input({ name: 'name_ar', value: s.name_ar, maxlength: 80, dir: 'rtl' });
   const nameEn = input({ name: 'name_en', value: s.name_en, maxlength: 80, dir: 'ltr' });
-  const desc = input({ name: 'description_ar', value: s.description_ar, maxlength: 300 });
+  const desc = input({ name: 'description_ar', value: s.description_ar, maxlength: 300, dir: 'rtl' });
 
   const durationValue = h('span', { class: 'v num' });
   const durationChips = h('div', { class: 'scroller fit' });
@@ -75,7 +75,7 @@ function openEditor(store, service, onSaved) {
     h('div', { style: { marginTop: '18px' } }, field(t('services.name'), nameAr), field(t('services.name_en'), nameEn, { optional: true }), field(t('services.desc'), desc, { optional: true })),
     h('span', { class: 'field-label', text: t('services.duration') }),
     durationChips,
-    h('div', { class: 'row', style: { marginTop: '10px' } }, h('span', { class: 'small muted grow', text: t('services.custom') }), h('div', { class: 'stepper' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': '-5', onclick: step(-5) }, icon('minus')), durationValue, h('button', { class: 'icon-btn', type: 'button', 'aria-label': '+5', onclick: step(5) }, icon('plus')))),
+    h('div', { class: 'row', style: { marginTop: '10px' } }, h('span', { class: 'small muted grow', text: t('services.custom') }), h('div', { class: 'stepper' }, h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('services.minus5'), onclick: step(-5) }, icon('minus')), durationValue, h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('services.plus5'), onclick: step(5) }, icon('plus')))),
     h('span', { class: 'field-label', text: t('services.price') }),
     h('label', { class: 'price-field' }, price, h('span', { class: 'cur', text: currencySymbol(store.salon.currency) })),
     h('div', { style: { marginTop: '6px' } }, from.el, active.el),
@@ -269,8 +269,8 @@ export function servicesPage(store) {
         ? h(
             'div',
             { class: 'reorder' },
-            h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↑', disabled: i === 0, onclick: (e) => busy(e.currentTarget, () => move(i, -1)) }, icon('up')),
-            h('button', { class: 'icon-btn', type: 'button', 'aria-label': '↓', disabled: i === services.length - 1, onclick: (e) => busy(e.currentTarget, () => move(i, 1)) }, icon('down')),
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t('services.move_up')} · ${pick(s, 'name')}`, disabled: i === 0, onclick: (e) => busy(e.currentTarget, () => move(i, -1)) }, icon('up')),
+            h('button', { class: 'icon-btn', type: 'button', 'aria-label': `${t('services.move_down')} · ${pick(s, 'name')}`, disabled: i === services.length - 1, onclick: (e) => busy(e.currentTarget, () => move(i, 1)) }, icon('down')),
           )
         : null,
     )))));

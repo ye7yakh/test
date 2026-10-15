@@ -98,8 +98,8 @@ function openEditor(store, member, onSaved) {
   renderPhoto();
 
   // ---- details
-  const nameAr = input({ name: 'name_ar', value: m.name_ar, maxlength: 60 });
-  const titleAr = input({ name: 'title_ar', value: m.title_ar, maxlength: 60 });
+  const nameAr = input({ name: 'name_ar', value: m.name_ar, maxlength: 60, dir: 'rtl' });
+  const titleAr = input({ name: 'title_ar', value: m.title_ar, maxlength: 60, dir: 'rtl' });
   const nameEn = input({ name: 'name_en', value: m.name_en, maxlength: 60, dir: 'ltr' });
   const titleEn = input({ name: 'title_en', value: m.title_en, maxlength: 60, dir: 'ltr' });
   const offered = chips(store.services.map((s) => ({ id: s.id, label: pick(s, 'name'), emoji: s.icon })), m.service_ids);

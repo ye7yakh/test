@@ -104,7 +104,8 @@ export async function availability(db: Db, salon: Salon, input: AvailabilityInpu
   // A visit marked done ("Arrived", which the owner taps as it starts) still holds the
   // chair until its end: the customer is sitting in it, and Undo must be able to bring
   // it back to confirmed. The exclusion constraint leaves 'completed' out on purpose
-  // (older rows may overlap one); every new booking comes through here, so none can.
+  // (older rows may overlap one): every new booking comes through here, and Undo
+  // (ownerUpdate) checks visits marked done itself, so neither can land on one.
   const busy = await query<{ staff_id: number; s: string; e: string }>(
       `select staff_id, extract(epoch from start_at) / 60 as s, extract(epoch from end_at) / 60 as e
          from bookings
@@ -175,10 +176,11 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
 
   let staffId = input.staffId ?? slot.staff[0]!;
   if (!input.staffId && slot.staff.length > 1) {
-    // "Anyone": give it to whoever has the fewest bookings that day.
+    // "Anyone": give it to whoever has the fewest bookings that day, visits already
+    // done included. (Run-out holds were expired above, under the salon's lock.)
     const loads = await query<{ staff_id: number; n: number }>(
       `select staff_id, count(*)::int as n from bookings
-        where salon_id = $1 and staff_id = any($2::bigint[]) and status in ('pending_payment', 'payment_sent', 'confirmed')
+        where salon_id = $1 and staff_id = any($2::bigint[]) and status in ('pending_payment', 'payment_sent', 'confirmed', 'completed')
           and start_at >= ($3::timestamp at time zone $4) and start_at < (($3::date + 1)::timestamp at time zone $4)
         group by staff_id`,
       [salon.id, slot.staff, input.date, salon.timezone],
@@ -250,6 +252,9 @@ export function bookingSelect(where: string): string {
            -- Changes when the screenshot is replaced, so the image URL does too (no stale cache).
            floor(extract(epoch from p.created_at) * 1000)::bigint::text as proof_v,
            greatest(0, floor(extract(epoch from b.expires_at - now())))::int as expires_in_s,
+           -- The hold's whole length: the salon's payment window, or less when the visit
+           -- starts sooner (expires_at is written once, with created_at, at booking).
+           floor(extract(epoch from b.expires_at - b.created_at))::int as hold_s,
            to_char(b.start_at at time zone s.timezone, 'YYYY-MM-DD') as date,
            to_char(b.start_at at time zone s.timezone, 'HH24:MI') as start,
            to_char(b.end_at at time zone s.timezone, 'HH24:MI') as "end",
@@ -281,6 +286,7 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     // The owner's view of the screenshot; the customer's page swaps in its own link.
     proof_url: r.proof_v ? `/api/manage/bookings/${r.id}/proof?v=${r.proof_v}` : null,
     expires_in_s: r.status === 'pending_payment' ? r.expires_in_s : null,
+    hold_s: r.status === 'pending_payment' ? r.hold_s : null,
     date: r.date,
     start: r.start,
     end: r.end,

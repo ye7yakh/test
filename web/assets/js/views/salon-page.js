@@ -6,7 +6,7 @@
 import { api } from '../api.js';
 import { myBookings, openBooking, waNumber } from './booking.js';
 import { appReady, avatar, clear, h, icon, legalLinks, sheet, tilt, toast } from '../dom.js';
-import { DAY_ORDER, dayName, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, pick, t } from '../i18n.js';
+import { DAY_ORDER, dayName, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, iso, pick, t } from '../i18n.js';
 import { homeScreen, phone } from '../preview.js';
 import { fmtDate } from '../slots.js';
 import { applyColors, reducedMotion } from '../theme.js';
@@ -201,7 +201,8 @@ function heroDepth(root) {
 function installButton(app, salon) {
   const btn = h(
     'button',
-    { class: 'p-glass-btn p-install', type: 'button', hidden: true },
+    // Named on the button itself: on an owner's phone the label collapses to the icon.
+    { class: 'p-glass-btn p-install', type: 'button', hidden: true, 'aria-label': t('install.app'), title: t('install.app') },
     appMark(salon, 'p-glass-icon', 192),
     h('span', { text: t('install.app') }),
   );
@@ -376,7 +377,7 @@ function render(app, data) {
     const label = pick(m, 'name');
     return h(
       can ? 'button' : 'div',
-      { class: 'p-member reveal', type: can ? 'button' : null, style: { '--i': String(i % 6) }, 'aria-label': can ? t('pub.book_with', { name: label }) : null, onclick: can ? () => bookWith(m) : null },
+      { class: 'p-member reveal', type: can ? 'button' : null, style: { '--i': String(i % 6) }, 'aria-label': can ? t('pub.book_with', { name: iso(label) }) : null, onclick: can ? () => bookWith(m) : null },
       // The portrait tilts towards the pointer; the card itself only slides in.
       tilt(h(
         'div',
@@ -399,7 +400,7 @@ function render(app, data) {
         { class: 'grow' },
         h('div', { class: 'n' }, h('bdi', { text: label })),
         pick(m, 'title') ? h('div', { class: 'r' }, h('bdi', { text: pick(m, 'title') })) : null,
-        can ? h('span', { class: 'p-solo-cta' }, icon('calendar'), t('pub.book_with', { name: label })) : null,
+        can ? h('span', { class: 'p-solo-cta' }, icon('calendar'), t('pub.book_with', { name: iso(label) })) : null,
       ),
     );
   };
@@ -489,7 +490,7 @@ function render(app, data) {
   ].filter(Boolean);
   // Share on its own is a small button up top rather than a lone circle mid-hero.
   const shareOnly = actions.length === 1;
-  const glass = (iconName, label, onclick) => h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': label, title: label, onclick }, icon(iconName));
+  const glass = (iconName, label, onclick, extra = {}) => h('button', { class: 'p-glass-btn round', type: 'button', 'aria-label': label, title: label, onclick, ...extra }, icon(iconName));
   const opening = status.open ? null : nextOpening(hours, now);
 
   const hero = h(
@@ -501,7 +502,7 @@ function render(app, data) {
     h(
       'div',
       { class: 'p-top' },
-      app.canManage ? h('a', { class: 'p-glass-btn', href: '/admin' }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
+      app.canManage ? h('a', { class: 'p-glass-btn', href: '/admin', 'aria-label': t('pub.manage'), title: t('pub.manage') }, icon('sliders'), h('span', { text: t('pub.manage') })) : h('span'),
       tabs.length > 1
         ? h('nav', { class: 'p-top-nav', 'aria-label': t('pub.sections') }, tabs.map(([, id, label]) => h('a', { href: `#${id}`, onclick: jumpTo(id), text: label })))
         : null,
@@ -510,7 +511,8 @@ function render(app, data) {
         { class: 'p-top-end' },
         installButton(app, salon),
         shareOnly ? glass('share', t('pub.share'), () => share(salon)) : null,
-        glass('globe', t('app.lang'), () => app.toggleLang()),
+        // The label is the other language's own name, so it is read in that language.
+        glass('globe', t('app.lang'), () => app.toggleLang(), { lang: getLang() === 'ar' ? 'en' : 'ar' }),
       ),
     ),
     h(

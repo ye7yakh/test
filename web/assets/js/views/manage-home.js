@@ -2,7 +2,7 @@
 // the salon, and the link to share once it is ready.
 import { api } from '../api.js';
 import { avatar, clear, confetti, countUp, h, icon, stagger, toast } from '../dom.js';
-import { fmtTime, pick, t } from '../i18n.js';
+import { fmtTime, iso, pick, t } from '../i18n.js';
 import { miniApp, phone } from '../preview.js';
 import { nowIn, openStatus, toMin } from '../time.js';
 import { openPreview, setupSteps } from './manage.js';
@@ -163,7 +163,7 @@ function todayCard(store) {
           icon('chevron', 'flip-ltr faint'),
         ),
         next
-          ? h('div', { class: 'next' }, avatar(next.staff.photo_url, pick(next.staff, 'name')), h('span', { class: 'grow truncate', text: t('home.next', { name: next.customer.name, time: fmtTime(next.start) }) }), h('span', { class: 'emoji', text: next.service.icon || '✂️' }))
+          ? h('div', { class: 'next' }, avatar(next.staff.photo_url, pick(next.staff, 'name')), h('span', { class: 'grow truncate', text: t('home.next', { name: iso(next.customer.name), time: fmtTime(next.start) }) }), h('span', { class: 'emoji', text: next.service.icon || '✂️' }))
           : live.length ? h('div', { class: 'next', text: t('home.today_done') }) : null,
         waiting ? h('div', { class: 'today-alert' }, h('span', { class: 'dot' }), h('span', { text: t('home.waiting', { n: waiting }) })) : null,
       );

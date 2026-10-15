@@ -84,11 +84,11 @@ function setCookie(res: ServerResponse, value: string, maxAge: number): void {
   res.setHeader('Set-Cookie', parts.join('; '));
 }
 
-function readCookie(header: string | undefined): string | null {
+function readCookie(header: string | undefined, name = COOKIE): string | null {
   if (!header) return null;
   for (const part of header.split(';')) {
     const [k, ...v] = part.trim().split('=');
-    if (k === COOKIE) return v.join('=') || null;
+    if (k === name) return v.join('=') || null;
   }
   return null;
 }
@@ -174,13 +174,14 @@ export function requireOwner(ctx: Ctx): number {
 // account together, and per account from anywhere. In memory because the API runs
 // as one process; a restart only forgives recent failures.
 //
-// The tight limit is on the (address, account) pair, so someone guessing at a number
-// blocks only themselves, never the real owner signing in from their own phone. The
-// per-account limit across all addresses is a loose backstop against guessing spread
-// over many addresses. A correct password never skips a limit that has been reached:
-// that would let guessing go on without any cap.
+// The tight limit is on the (address, account) pair. The per-account limit across all
+// addresses stops guessing spread over many addresses; on its own it would also let
+// such guessing lock the real owner out, so a device that has signed in to the account
+// before (it holds a mark only the password can earn, see deviceMark) is counted
+// apart from everyone else. A correct password never skips a limit that has been
+// reached: that would let guessing go on without any cap.
 const WINDOW_MS = 15 * 60 * 1000;
-const LIMITS = { ip: 30, ipPhone: 8, phone: 100 };
+const LIMITS = { ip: 30, ipPhone: 8, phone: 20 };
 const failures = new Map<string, { count: number; resetAt: number }>();
 
 function bucket(key: string) {
@@ -193,21 +194,48 @@ function bucket(key: string) {
   return b;
 }
 
-const limitKeys = (ip: string, phoneKey: string) =>
-  [
-    [`ip:${ip}`, LIMITS.ip],
-    [`ipphone:${ip}|${phoneKey}`, LIMITS.ipPhone],
-    [`phone:${phoneKey}`, LIMITS.phone],
+/**
+ * The address a limit counts by: an IPv4 address on its own (also when written as
+ * IPv6, ::ffff:a.b.c.d), an IPv6 address by its /64. One subscriber is given a whole
+ * /64, so counting single addresses would hand them a fresh limit per address.
+ */
+export function addressKey(ip: string): string {
+  const addr = ip.trim().toLowerCase().replace(/%.*$/, '');
+  const mapped = /^(?:0{0,4}:){0,5}:?ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(addr);
+  if (mapped) return mapped[1]!;
+  if (!addr.includes(':') || !/^[0-9a-f:.]+$/.test(addr)) return addr;
+  const halves = addr.split('::');
+  if (halves.length > 2) return addr;
+  const groups = (part: string | undefined) => (part ? part.split(':') : []);
+  // A dotted IPv4 tail fills the last two groups.
+  const width = (gs: string[]) => gs.reduce((n, g) => n + (g.includes('.') ? 2 : 1), 0);
+  const head = groups(halves[0]);
+  const tail = groups(halves[1]);
+  const full = halves.length === 2 ? [...head, ...Array<string>(Math.max(0, 8 - width(head) - width(tail))).fill('0'), ...tail] : head;
+  return `${full.slice(0, 4).map((g) => g.replace(/^0+(?=.)/, '')).join(':')}::/64`;
+}
+
+const accountKey = (phoneKey: string, knownDevice: boolean) => `${knownDevice ? 'known' : 'phone'}:${phoneKey}`;
+
+const limitKeys = (ip: string, phoneKey: string, knownDevice: boolean) => {
+  const addr = addressKey(ip);
+  return [
+    [`ip:${addr}`, LIMITS.ip],
+    [`ipphone:${addr}|${phoneKey}`, LIMITS.ipPhone],
+    [accountKey(phoneKey, knownDevice), LIMITS.phone],
   ] as const;
+};
 
 /**
  * Refuses an attempt once a limit is reached, otherwise counts it straight away,
  * before the caller awaits the (slow) password check: a burst of parallel guesses
  * cannot all pass the check before the first failure is recorded. A wrong password
  * then needs nothing more; a right one gives the attempt back (loginSucceeded).
+ * `knownDevice` (the request carries the account's device mark) counts the attempt
+ * against the account's own devices, not against everyone guessing at it.
  */
-export function assertLoginAllowed(ip: string, phoneKey: string): void {
-  const buckets = limitKeys(ip, phoneKey).map(([key, max]) => ({ b: bucket(key), max }));
+export function assertLoginAllowed(ip: string, phoneKey: string, knownDevice = false): void {
+  const buckets = limitKeys(ip, phoneKey, knownDevice).map(([key, max]) => ({ b: bucket(key), max }));
   const full = buckets.filter(({ b, max }) => b.count >= max);
   if (full.length) {
     const retry = Math.ceil((Math.max(...full.map(({ b }) => b.resetAt)) - Date.now()) / 1000);
@@ -217,19 +245,47 @@ export function assertLoginAllowed(ip: string, phoneKey: string): void {
 }
 
 /** The password was right: this attempt was no guess, and this address's earlier misses for the account are forgiven. */
-export function loginSucceeded(ip: string, phoneKey: string): void {
-  for (const key of [`ip:${ip}`, `phone:${phoneKey}`]) {
+export function loginSucceeded(ip: string, phoneKey: string, knownDevice = false): void {
+  const addr = addressKey(ip);
+  for (const key of [`ip:${addr}`, accountKey(phoneKey, knownDevice)]) {
     const b = failures.get(key);
     if (b && b.count > 0) b.count--;
   }
-  failures.delete(`ipphone:${ip}|${phoneKey}`);
+  failures.delete(`ipphone:${addr}|${phoneKey}`);
 }
 
 /** Forgives every failure for an account, from every address (the admin has just reset its password). */
 export function clearLoginFailures(phoneKey: string): void {
   failures.delete(`phone:${phoneKey}`);
+  failures.delete(`known:${phoneKey}`);
   const suffix = `|${phoneKey}`;
   for (const key of failures.keys()) if (key.startsWith('ipphone:') && key.endsWith(suffix)) failures.delete(key);
+}
+
+// The device mark: proof that this browser once signed in to the account with its
+// current password. Keyed on the password's hash, so nobody can make one without
+// having had the password, it needs no secret of its own (and survives restarts), and
+// changing or resetting the password retires every old one. Sent only to sign-in.
+const DEVICE_COOKIE = 'dev';
+
+const deviceMark = (passwordHash: string, phoneKey: string) =>
+  crypto.createHmac('sha256', passwordHash).update(`device:${phoneKey}`).digest('base64url');
+
+/** Whether the request carries the mark for this account (its current password hash). */
+export function isKnownDevice(cookieHeader: string | undefined, passwordHash: string, phoneKey: string): boolean {
+  const got = readCookie(cookieHeader, DEVICE_COOKIE);
+  if (!got || got.length > 100) return false;
+  const want = Buffer.from(deviceMark(passwordHash, phoneKey));
+  const have = Buffer.from(got);
+  return have.length === want.length && crypto.timingSafeEqual(have, want);
+}
+
+/** Marks this browser as one the account signs in from (after a correct password). */
+export function rememberDevice(res: ServerResponse, passwordHash: string, phoneKey: string): void {
+  const parts = [`${DEVICE_COOKIE}=${deviceMark(passwordHash, phoneKey)}`, 'Path=/api/auth', 'HttpOnly', 'SameSite=Strict', `Max-Age=${365 * 86400}`];
+  if (config.secureCookies) parts.push('Secure');
+  const prev = res.getHeader('Set-Cookie');
+  res.setHeader('Set-Cookie', [...(prev === undefined ? [] : Array.isArray(prev) ? prev : [String(prev)]), parts.join('; ')]);
 }
 
 setInterval(() => {

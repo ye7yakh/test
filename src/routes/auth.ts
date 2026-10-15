@@ -5,8 +5,10 @@ import {
   destroySession,
   DUMMY_HASH,
   hashPassword,
+  isKnownDevice,
   loginSucceeded,
   normalizePhone,
+  rememberDevice,
   verifyPassword,
 } from '../auth.js';
 import { one, query } from '../db.js';
@@ -40,24 +42,28 @@ async function login(ctx: Ctx) {
   const phone = normalizePhone(body.phone, tenant.default_calling_code);
   const password = typeof body.password === 'string' ? body.password.slice(0, 200) : '';
   const limitKey = `${tenant.id}:${phone ?? String(body.phone ?? '').slice(0, 40)}`;
-  // Counts this attempt now, before the slow password check, so parallel guesses are limited too.
-  assertLoginAllowed(ctx.ip, limitKey);
-
   const user = phone
     ? await one<{ id: number; password_hash: string; is_super_admin: boolean }>(
         'select id, password_hash, is_super_admin from users where tenant_id = $1 and phone = $2',
         [tenant.id, phone],
       )
     : undefined;
+  // A browser that has signed in to this account before is not held back by guessing
+  // at it from elsewhere (see the rate limit in auth.ts).
+  const knownDevice = !!user && isKnownDevice(ctx.req.headers.cookie, user.password_hash, limitKey);
+  // Counts this attempt now, before the slow password check, so parallel guesses are limited too.
+  assertLoginAllowed(ctx.ip, limitKey, knownDevice);
+
   const passwordOk = await verifyPassword(password, user?.password_hash ?? DUMMY_HASH);
   // The platform host is for the super admin only.
   if (!user || !passwordOk || (!ctx.host.salon && !user.is_super_admin)) {
     // Already counted when the attempt began.
     throw new HttpError(401, 'bad_credentials');
   }
-  loginSucceeded(ctx.ip, limitKey);
+  loginSucceeded(ctx.ip, limitKey, knownDevice);
   if (ctx.session) await destroySession(ctx);
   await createSession(ctx.res, user.id, ctx.host);
+  rememberDevice(ctx.res, user.password_hash, limitKey);
   ok(ctx, { ok: true });
 }
 
@@ -69,16 +75,20 @@ async function changePassword(ctx: Ctx) {
   // account key, so the two together give no more tries than the login alone, and
   // the admin's password reset clears both.
   const limitKey = `${ctx.host.tenant.id}:${ctx.session.user.phone}`;
-  assertLoginAllowed(ctx.ip, limitKey);
   const row = await one<{ password_hash: string }>('select password_hash from users where id = $1', [ctx.session.user.id]);
+  const knownDevice = !!row && isKnownDevice(ctx.req.headers.cookie, row.password_hash, limitKey);
+  assertLoginAllowed(ctx.ip, limitKey, knownDevice);
   if (!row || typeof body.current !== 'string' || !(await verifyPassword(body.current, row.password_hash))) {
     throw new HttpError(400, 'wrong_password', 'current');
   }
-  loginSucceeded(ctx.ip, limitKey);
+  loginSucceeded(ctx.ip, limitKey, knownDevice);
   // Their own password now, so any temporary one the admin set is gone.
-  await query('update users set password_hash = $2, must_change_password = false where id = $1', [ctx.session.user.id, await hashPassword(next)]);
-  // Sign out every other device.
+  const hash = await hashPassword(next);
+  await query('update users set password_hash = $2, must_change_password = false where id = $1', [ctx.session.user.id, hash]);
+  // Sign out every other device; their device marks went with the old password, and
+  // this one gets a new mark.
   await query('delete from sessions where user_id = $1 and token_hash <> $2', [ctx.session.user.id, ctx.session.tokenHash]);
+  rememberDevice(ctx.res, hash, limitKey);
   ok(ctx);
 }
 

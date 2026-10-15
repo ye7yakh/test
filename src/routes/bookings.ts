@@ -372,6 +372,9 @@ async function ownerUpdate(ctx: Ctx) {
   if (!Number.isSafeInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
   const status = new Input(await readJson(ctx)).req('status', oneOf(['confirmed', 'completed', 'no_show', 'cancelled'] as const));
   await tx(async (db) => {
+    // In turn with new bookings (createBooking takes the same lock, then expires
+    // holds) and with other taps, so the check below sees what they wrote.
+    await query('select pg_advisory_xact_lock(727002, $1::int)', [salonId], db);
     await expireHolds(db, salonId);
     const current = await one<{ status: BookingStatus; started: boolean; near: boolean }>(
       `select status, start_at <= now() as started, start_at <= now() + interval '1 hour' as near
@@ -388,6 +391,21 @@ async function ownerUpdate(ctx: Ctx) {
     // but marking a visit days ahead as done is a mistake either way.
     if ((status === 'no_show' && !current.started) || (status === 'completed' && !current.near)) {
       throw new HttpError(409, 'bad_transition');
+    }
+    // Undo puts the visit back in the chair. The database refuses an overlap with a
+    // waiting or confirmed booking (below), but not with a visit already marked done,
+    // which still holds the chair (see availability()): a walk-in seated in the time a
+    // no-show freed, say. That one is checked here.
+    if (status === 'confirmed' && (current.status === 'no_show' || current.status === 'completed')) {
+      const clash = await one(
+        `select 1 from bookings o join bookings b on b.id = $2 and b.salon_id = $1
+          where o.salon_id = $1 and o.staff_id = b.staff_id and o.id <> b.id and o.status = 'completed'
+            and tstzrange(o.start_at, o.end_at) && tstzrange(b.start_at, b.end_at)
+          limit 1`,
+        [salonId, id],
+        db,
+      );
+      if (clash) throw new HttpError(409, 'slot_taken');
     }
     try {
       // Cancelling a payment the customer said they sent is a rejection; they are told so.

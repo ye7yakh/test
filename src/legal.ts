@@ -115,7 +115,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           'لا نستخدم ملفات تعريف الارتباط (الكوكيز) للإعلانات أو التتبع، ولا أدوات تحليلات من جهات أخرى.',
           [
-            'ملف تعريف ارتباط واحد يُبقي أصحاب الصالونات مسجّلين في لوحة الإدارة.',
+            'ملف تعريف ارتباط يُبقي أصحاب الصالونات مسجّلين في لوحة الإدارة، وآخر يتذكّر الجهاز الذي سجّلوا الدخول منه، حتى لا تمنعهم من الدخول محاولاتُ غيرهم تخمينَ كلمة المرور.',
             'يحفظ متصفحك على جهازك لغة التطبيق، واسمك ورقمك لتسريع حجزك القادم، وروابط حجوزاتك. تبقى هذه البيانات على جهازك، ويمكنك حذفها بمسح بيانات الموقع من إعدادات المتصفح.',
           ],
         ],
@@ -235,7 +235,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           'We use no cookies for advertising or tracking, and no third-party analytics.',
           [
-            'One cookie keeps salon owners signed in to their dashboard.',
+            'One cookie keeps salon owners signed in to their dashboard, and another remembers a device they have signed in from, so that someone else guessing at their password cannot lock them out.',
             'Your browser keeps, on your device only, the app\'s language, your name and number to make your next booking quicker, and links to your bookings. You can remove them by clearing this site\'s data in your browser settings.',
           ],
         ],
@@ -490,6 +490,9 @@ export const SVG = {
   back: '<svg class="chev" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.5 8.5 12l6.5 6.5"/></svg>',
   globe: '<svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M2.5 12h19M12 2.5a14.5 14.5 0 0 1 4 9.5 14.5 14.5 0 0 1-4 9.5 14.5 14.5 0 0 1-4-9.5 14.5 14.5 0 0 1 4-9.5z"/></svg>',
   chat: '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.5 11.6a8.4 8.4 0 0 1-12.3 7.5L3.5 20.5l1.4-4.6A8.4 8.4 0 1 1 20.5 11.6z"/></svg>',
+  // The platform's own mark, as the app draws it (icon('sparkles') on .studio-mark):
+  // the same glyph at the same share of its 88px tile.
+  sparkles: '<svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8zM5 2.5l.6 1.6 1.6.6-1.6.6L5 6.9l-.6-1.6-1.6-.6 1.6-.6z"/></svg>',
 };
 
 const STYLE = `*{box-sizing:border-box}html{-webkit-text-size-adjust:100%;scroll-behavior:smooth}

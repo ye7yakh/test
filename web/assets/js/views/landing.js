@@ -16,7 +16,7 @@ import { waNumber } from './booking.js';
 // §2 COPY: the landing's own words (it is lazy-loaded on the bare domain only).
 const COPY = {
   ar: {
-    skip: 'تخطَّ إلى التواصل', contact: 'تواصل معنا', lang: 'English', cta: 'اطلب تطبيق صالونك', soon: 'قريبًا.',
+    skip: 'تخطَّ إلى التواصل', skip_end: 'تخطَّ إلى النهاية', contact: 'تواصل معنا', lang: 'English', cta: 'اطلب تطبيق صالونك', soon: 'قريبًا.',
     wa_text: 'مرحبًا! بدي أعرف أكثر عن تطبيق لصالوني.', examples: 'الصالونات في هذه الصفحة أمثلة للتوضيح.',
     heads: { cover: ['01', 'الغلاف'], letter: ['02', 'كلمة العدد'], 'white-label': ['03', 'علامتك الخاصة'], collection: ['04', 'المجموعة'], try: ['04', 'المجموعة'], pocket: ['05', 'في جيب زبونك'], booking: ['06', 'الحجز'], backstage: ['07', 'خلف الكرسي'], how: ['08', 'البداية'], finale: ['09', 'غلافك'] },
     night: 'ليلي', day: 'نهاري', cliq: 'كليك',
@@ -83,11 +83,14 @@ const COPY = {
       ['جهّز صالونك', 'ضيف خدماتك وأسعارك وفريقك ودوامك وشعارك وألوانك، كله من جوالك.'],
       ['شارك الرابط', 'حطّه بالبايو وعلى الواتساب، وابدأ تستقبل الحجوزات.'],
     ],
+    // Without a contact number there is no WhatsApp to promise.
+    how_1_soon: ['تواصل معنا', 'نفتح لك صالونك، ونبعتلك رابطه وكلمة مرور لوحة الإدارة.'],
     fn_h2: ['جاهز يكون صالونك', 'على الغلاف؟'], fn_deck: 'احكي معنا على واتساب، ونجهّز تطبيق صالونك باسمه وألوانه.', logo_here: 'شعارك هنا',
+    fn_deck_soon: 'نجهّز تطبيق صالونك باسمه وألوانه.',
     col_line: 'تطبيقات وحجوزات للصالونات ومحلات الحلاقة في الأردن.', owner: 'عندك صالون معنا؟ لوحة إدارتك على رابط صالونك وبعده {path}',
   },
   en: {
-    skip: 'Skip to contact', contact: 'Contact us', lang: 'العربية', cta: "Get your salon's app", soon: 'Coming soon.',
+    skip: 'Skip to contact', skip_end: 'Skip to the end', contact: 'Contact us', lang: 'العربية', cta: "Get your salon's app", soon: 'Coming soon.',
     wa_text: "Hi! I'd like to know more about an app for my salon.", examples: 'The salons on this page are examples.',
     heads: { cover: ['01', 'Cover'], letter: ['02', "Editor's letter"], 'white-label': ['03', 'White label'], collection: ['04', 'The collection'], try: ['04', 'The collection'], pocket: ['05', 'In their pocket'], booking: ['06', 'Booking'], backstage: ['07', 'Behind the chair'], how: ['08', 'Getting started'], finale: ['09', 'Your cover'] },
     night: 'Night', day: 'Day', cliq: 'CliQ',
@@ -154,7 +157,9 @@ const COPY = {
       ['Set up your salon', 'Add your services, prices, team, hours, logo and colours, all from your phone.'],
       ['Share the link', 'Put it in your bio and on WhatsApp, and start taking bookings.'],
     ],
+    how_1_soon: ['Get in touch', 'We open your salon and send you its link and your dashboard password.'],
     fn_h2: ['Ready to put your salon', 'on the cover?'], fn_deck: "Message us on WhatsApp and we'll set up your salon's app, in its name and colours.", logo_here: 'Your logo here',
+    fn_deck_soon: "We'll set up your salon's app, in its name and colours.",
     col_line: 'Apps and bookings for salons and barbershops in Jordan.', owner: "Already with us? Your dashboard is your salon's link followed by {path}",
   },
 };
@@ -690,8 +695,8 @@ function chrome(c) {
   const prog = bar.lastChild;
   const skip = h('a', {
     class: 'l-skip',
-    href: '#get-app',
-    text: tx('skip'),
+    href: c.wa ? '#get-app' : '#finale',
+    text: tx(c.wa ? 'skip' : 'skip_end'),
     onclick: (e) => {
       e.preventDefault();
       const target = c.view.querySelector('#get-app') || c.view.querySelector('#finale h2');
@@ -974,6 +979,8 @@ function letterScene(c) {
 // ---- 5.3 WHITE LABEL
 const CHAPTERS = [[0, 0.38], [0.3, 0.7], [0.62, 1]];
 const CH_START = [0, 0.38, 0.7];
+// A link-preview card's text (the white-label satellite and the chat in the pocket scene).
+const ogBody = (c, s) => h('div', { class: 'og-b' }, h('b', { text: pick(s, 'name') }), h('p', { text: pick(s, 'about') }), h('span', { dir: 'ltr', text: `${s.sub}.${c.domain}` }));
 
 function plate(c, s, i) {
   const data = salonData(s);
@@ -989,7 +996,7 @@ function plate(c, s, i) {
     'div',
     { class: 'wl-og' },
     h('img', { src: coverSvg(s), alt: '' }),
-    h('div', { class: 'og-b' }, h('b', { text: s.name_ar }), h('p', { text: s.about_ar }), h('span', { dir: 'ltr', text: `${s.sub}.${c.domain}` })),
+    ogBody(c, s),
   );
   const dash = h(
     'div',
@@ -1131,7 +1138,7 @@ function whiteLabelScene(c) {
         const first = ch < 0;
         ch = k;
         stage.style.setProperty('--wl-acc', chapters[k].vars['--accent-lift']);
-        chBtns.forEach((b, j) => b.toggleAttribute('aria-current', j === k));
+        chBtns.forEach((b, j) => (j === k ? b.setAttribute('aria-current', 'true') : b.removeAttribute('aria-current')));
         // Always kept: the frame guard can switch the page to lite mid-pin, and lite shows only .cur.
         plates.forEach((pl, j) => pl.el.classList.toggle('cur', j === k));
         if (!first) retype(k);
@@ -1334,7 +1341,7 @@ function tryScene(c) {
     ),
   );
   c.sections.push({ el: sec, id: 'try', tone: 'ink' });
-  c.tryCta = sec.querySelector('.try-cta');
+  c.trySec = sec;
 
   const render = () => {
     const data = trySalon();
@@ -1390,7 +1397,7 @@ function chatLayer(c, s, typed) {
     'div',
     { class: 'pk-card' },
     h('img', { src: coverSvg(s), alt: '' }),
-    h('div', { class: 'og-b' }, h('b', { text: s.name_ar }), h('p', { text: s.about_ar }), h('span', { dir: 'ltr', text: `${s.sub}.${c.domain}` })),
+    ogBody(c, s),
   );
   const layer = h(
     'div',
@@ -1553,7 +1560,7 @@ function bookingScene(c) {
       h('div', { class: 'proof-drop' }, receipt('mini'), h('div', { class: 'vg-st' }, h('span', { class: 'pill status-pending_payment', text: t('status.pending_payment') }), h('span', { class: 'pill status-payment_sent', text: t('bk.payment_sent') }))))],
     () => [h('div', { class: 'vg-toast' }, icon('wallet'), h('span', { text: t('sched.payment_arrived') })), receipt('big'), h('p', { class: 'vg-warn', text: t('sched.review_hint') }),
       h('div', { class: 'vg-acts' }, h('div', { class: 'btn btn-secondary btn-sm', text: t('sched.reject') }), h('div', { class: 'btn btn-primary btn-sm vg-ok', text: t('sched.received') }))],
-    () => [h('div', { class: 'vg-done' }, h('span', { class: 'vg-check' }, icon('check'), h('i', { class: 'mask' })), h('b', { text: t('bk.confirmed') }), h('span', { text: t('bk.confirmed_sub', { day: tx('tomorrow'), time: fmtTime('18:00') }) }),
+    () => [h('div', { class: 'vg-done' }, h('span', { class: 'vg-check' }, icon('check'), h('i', { class: 'mask' })), h('b', { text: t('bk.confirmed') }), h('span', { text: t('bk.see_you', { when: t('bk.tomorrow_at', { time: fmtTime('18:00') }) }) }),
       h('span', { class: 'vg-sum' }, icon('scissors'), `${pick(s.services[0], 'name')} · ${pick(fahd, 'name')}`))],
   ];
   const prints = tx('frames').map(([title, line], i) => {
@@ -1658,11 +1665,11 @@ function backstageScene(c) {
   const styles = ['natural', 'warm', 'mono', 'brand'];
   const tiles = styles.map((st, i) => h('figure', { class: `bs-tile rig t${i}` }, h('span', { class: 'im' }, h('img', { src: portraitSvg(st, s, 'beard'), alt: '' })), h('figcaption', { text: tx('styles')[i] })));
   const sheetEl = h('div', { class: 'bs-sheet' }, h('div', { class: 'bs-sh-h' }, h('h3', { text: tx('bs_sheet') }), h('p', { text: t('brand.style_sub') })), h('div', { class: 'bs-tiles' }, tiles));
-  const stageArt = h('div', { class: 'bs-art' }, frame, h('div', { class: 'bs-mid' }, phoneRig, chip), look);
+  const mid = h('div', { class: 'bs-mid' }, phoneRig, chip);
+  const stageArt = h('div', { class: 'bs-art' }, frame, mid, look);
   const el = section(c, 'backstage', 'paper', 'l-bs', h('div', { class: 'bs-grid' }, h('div', { class: 'bs-copy' }, sectionHead('backstage', tx('bs_h2'), tx('bs_deck')), table), stageArt), sheetEl);
   if (mode === 'still') el.classList.add('b1', 'b2');
   const k = mode === 'lite' ? 0.5 : 1;
-  // The beats follow the phone's own block, so the colour curtain plays while it is in view.
   eng.add({
     el: stageArt,
     kind: 'view',
@@ -1671,12 +1678,20 @@ function backstageScene(c) {
       { el: phoneRig, v: (p) => (0.5 - p) * k },
       { el: chip, v: (p) => (0.5 - p) * k },
     ],
-    beats: mode === 'still' ? null : [0.42, 0.55],
-    onBeat(i) {
-      el.classList.toggle('b1', i >= 1);
-      el.classList.toggle('b2', i >= 2);
-    },
   });
+  // The beats follow the phone's own block (not the taller art box), so the colour curtain plays
+  // while the phone is in view: b1 once it is fully on screen, b2 near the middle.
+  if (mode !== 'still') {
+    eng.add({
+      el: mid,
+      kind: 'view',
+      beats: [0.32, 0.45],
+      onBeat(i) {
+        el.classList.toggle('b1', i >= 1);
+        el.classList.toggle('b2', i >= 2);
+      },
+    });
+  }
   eng.add({ el: sheetEl, kind: 'view', rigs: mode === 'still' ? [] : tiles.map((tile, i) => ({ el: tile, v: (p) => (i % 2 ? 1 : -1) * (p - 0.5) * k })) });
   if (mode === 'full') eng.once(sheetEl, () => sheetEl.classList.add('sheen'), 0.4);
   return el;
@@ -1687,7 +1702,8 @@ function howScene(c) {
   const { mode, eng } = c;
   const line = h('i', { class: 'hw-line rig', 'aria-hidden': 'true' });
   const nums = [];
-  const cols = tx('how_steps').map(([title, text], i) => {
+  const steps = c.wa ? tx('how_steps') : [tx('how_1_soon'), ...tx('how_steps').slice(1)];
+  const cols = steps.map(([title, text], i) => {
     const n = h('span', { class: 'hw-n', 'aria-hidden': 'true', text: String(i + 1) });
     nums.push(n);
     return h('li', { class: 'hw-col' }, n, h('div', { class: 'tx' }, h('h3', { text: title }), h('p', { text })));
@@ -1731,7 +1747,7 @@ function finaleScene(c) {
   const [a, b] = tx('fn_h2');
   const h2 = h('h2', { class: 'fn-h2', tabindex: '-1' }, h('span', { class: 'ln' }, h('span', { text: a })), ' ', h('span', { class: 'fn-ringbox', 'aria-hidden': 'true' }, ringEl), ' ', h('span', { class: 'ln' }, h('span', { text: b })));
   const cta = c.wa ? c.cta('fn-cta', tx('cta'), 'get-app') : h('p', { class: 'l-soon big', text: tx('soon') });
-  const el = section(c, 'finale', 'ink', 'l-fn', h('div', { class: 'fn-in' }, folio(folioText('finale')), h2, h('p', { class: 'l-deck', text: tx('fn_deck') }), cta));
+  const el = section(c, 'finale', 'ink', 'l-fn', h('div', { class: 'fn-in' }, folio(folioText('finale')), h2, h('p', { class: 'l-deck', text: tx(c.wa ? 'fn_deck' : 'fn_deck_soon') }), cta));
   c.fnCta = cta;
   let lit = -1;
   const light = (n) => {
@@ -1748,9 +1764,11 @@ function finaleScene(c) {
     el,
     kind: 'view',
     rigs: mode === 'still' ? [] : [{ el: ringEl, v: (p) => seg(p, 0, 0.4) }],
-    onP: mode === 'still' ? null : (p) => light(Math.min(N, Math.ceil(seg(p, 0.1, 0.55) * N - 1e-6))),
+    // Fully lit just before the section's centre reaches the screen's, while the heading is still well in view.
+    onP: mode === 'still' ? null : (p) => light(Math.min(N, Math.ceil(seg(p, 0.08, 0.42) * N - 1e-6))),
   });
-  eng.once(h2, () => el.classList.add('rise'), 0.4);
+  // The h2 holds the tall ring box, so a low threshold: the heading rises as its first line enters.
+  eng.once(h2, () => el.classList.add('rise'), 0.15);
   return el;
 }
 
@@ -1800,11 +1818,15 @@ export function landingView(app, opts = {}) {
     toggleLang() {
       if (rebuilt) return;
       rebuilt = true;
+      const ae = document.activeElement;
+      const refocus = ae?.closest?.('.l-lang') ? (ae.closest('.l-foot') ? '.l-foot .l-lang' : '.l-top .l-lang') : null;
       const at = eng.anchor();
       setLang(getLang() === 'ar' ? 'en' : 'ar');
       eng.stop();
       const fresh = landingView(app, { restore: at });
       view.replaceWith(fresh);
+      // Keyboard focus stays on the same button in the new view (the restore keeps the scroll position).
+      if (refocus) fresh.querySelector(refocus)?.focus({ preventScroll: true });
     },
   };
   const ui = chrome(c);
@@ -1832,7 +1854,7 @@ export function landingView(app, opts = {}) {
     if (prev && prev.tone !== s.tone && !(s.id === 'letter' && mode !== 'still')) s.el.classList.add('over');
     eng.mark(s.el, s.id, s.tone, s.id === 'cover' ? c.coverScene : s.id === 'white-label' ? c.wlPin : s.id === 'pocket' ? c.pkPin : null);
   });
-  ui.watchBlockers([c.tryCta, c.bkCta, c.fnCta, foot]);
+  ui.watchBlockers([c.trySec, c.bkCta, c.fnCta, foot]);
 
   eng.onError = () => (mode === 'still' ? null : rebuild('still'));
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');

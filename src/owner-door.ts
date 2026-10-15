@@ -11,7 +11,6 @@ import { findSalonLink } from './tenancy.js';
 
 const escapeHtml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 
-const SCISSORS = '<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M8.1 8.1 20 20M8.1 15.9 20 4"/></svg>';
 const ARROW = '<svg class="arrow" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
 
 const STYLE = `*{box-sizing:border-box}html,body{margin:0}
@@ -93,13 +92,13 @@ export async function ownerDoor(ctx: Ctx): Promise<void> {
     : '';
   const html = `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">
-<meta name="theme-color" content="${colors['--bg']}"><title>لوحة تحكم صالونك · ${escapeHtml(brandAr)}</title>
+<meta name="theme-color" content="${colors['--bg']}"><title>لوحة تحكم صالونك · Your salon's dashboard · ${escapeHtml(brandAr)}</title>
 <link rel="icon" href="/icons/icon-192.png"><style nonce="${nonce}">${FONTS}
 :root{${Object.entries(colors).map(([k, v]) => `${k}:${v}`).join(';')}}
 ${STYLE}</style></head><body>
 <div class="glow" aria-hidden="true"><i></i><i></i></div>
 <main class="card" aria-labelledby="door-h">
-<div class="mark">${SCISSORS}</div>
+<div class="mark">${SVG.sparkles}</div>
 <p class="pill">لأصحاب الصالونات</p>
 <h1 id="door-h">لوحة تحكم صالونك</h1>
 <p class="lead">لكل صالون رابطه الخاص، ولوحة إدارته عليه. اكتب رابط صالونك وننقلك إلى الدخول.</p>

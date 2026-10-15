@@ -48,7 +48,7 @@ export function miniApp({ salon, services, staff, hours }) {
       salon.cover_url ? h('img', { class: 'cover', src: salon.cover_url, alt: '' }) : null,
       h('div', { class: 'mini-mirror' }, lights(), salonIcon(salon)),
       h('div', { class: 't', text: name }),
-      about ? h('div', { class: 'a', text: about }) : null,
+      about ? h('div', { class: 'a', dir: 'auto', text: about }) : null,
       hasHours ? h('div', { class: `st ${status.open ? '' : 'closed'}`, text: until ? t('pub.open_now', { time: fmtTime(until) }) : status.open ? t('preview.open_now') : t('preview.closed') }) : null,
       actions.length > 1 ? h('div', { class: 'mini-actions' }, actions.map((name_) => h('span', null, icon(name_)))) : null,
     ),

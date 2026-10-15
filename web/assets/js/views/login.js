@@ -4,11 +4,13 @@
 // platform's dashboard, the constellation of salons it serves.
 import { api } from '../api.js';
 import { appIcon, appReady, clear, field, h, icon, input, legalLinks, markInvalid, scissorsMark } from '../dom.js';
-import { errorText, pick, t } from '../i18n.js';
+import { errorText, getLang, iso, pick, t, westernDigits } from '../i18n.js';
 import { miniApp, phone } from '../preview.js';
 import { waNumber } from './booking.js';
 
 const WIDE = '(min-width: 1024px)';
+// Direction marks and isolates ride along when a number is copied out of a WhatsApp message.
+const BIDI = /[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 /** The salon's app as its customers see it, drawn from its live page data. */
 function salonShowcase(salon) {
@@ -100,7 +102,7 @@ export function loginView(app) {
     submit.classList.add('busy');
     submit.disabled = true;
     try {
-      await api('POST', '/api/auth/login', { phone: phoneInput.value, password: password.value });
+      await api('POST', '/api/auth/login', { phone: phoneInput.value.replace(BIDI, ''), password: password.value });
       await app.reload();
       // Owners land on their dashboard (/admin), the app their phone installs.
       if (ctx.kind === 'salon' && app.canManage) app.go('/admin', { replace: true });
@@ -123,8 +125,14 @@ export function loginView(app) {
   if (salon && contact) {
     forgot = h('a', { class: 'link-btn forgot', target: '_blank', rel: 'noopener' }, icon('key'), t('login.forgot'));
     const sync = () => {
-      const typed = phoneInput.value.trim();
-      const text = t('login.forgot_wa', { salon: name, phone: typed ? `+${ctx.tenant.calling_code} ${typed.replace(/^0+/, '')}` : '—' });
+      // The number as the server reads it (+9627…), so the platform finds the owner by it.
+      const cc = ctx.tenant.calling_code;
+      let d = westernDigits(phoneInput.value).replace(/[^\d+]/g, '');
+      if (d.startsWith('00')) d = `+${d.slice(2)}`;
+      else if (d.startsWith('0')) d = `+${cc}${d.slice(1)}`;
+      else if (d && !d.startsWith('+')) d = `+${cc}${d}`;
+      // Isolated left to right: inside the Arabic message "+962…" would otherwise read "…962+".
+      const text = t('login.forgot_wa', { salon: name, phone: d ? `\u2066${d}\u2069` : '—' });
       forgot.href = `https://wa.me/${waNumber(contact)}?text=${encodeURIComponent(text)}`;
     };
     sync();
@@ -147,7 +155,7 @@ export function loginView(app) {
           { class: 'login-brand rise' },
           salon ? appIcon(salon.logo_url) : h('div', { class: 'app-icon studio-mark' }, icon('sparkles')),
           h('h1', { text: t('login.welcome') }),
-          h('p', { text: salon ? t('login.studio', { name }) : `${name} · ${t('login.platform')}` }),
+          h('p', { text: salon ? t('login.studio', { name: iso(name) }) : `${name} · ${t('login.platform')}` }),
         ),
         h('div', { class: 'rise', style: { '--i': '1' } }, form),
         forgot ? h('div', { class: 'login-help rise', style: { '--i': '2' } }, forgot) : null,
@@ -155,7 +163,7 @@ export function loginView(app) {
           'div',
           { class: 'login-foot rise', style: { '--i': '2' } },
           salon ? h('a', { class: 'link-btn', href: '/' }, icon('arrow', 'flip-rtl'), t('login.back')) : null,
-          h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), t('app.lang')),
+          h('button', { class: 'link-btn', type: 'button', onclick: () => app.toggleLang() }, icon('globe'), h('span', { lang: getLang() === 'ar' ? 'en' : 'ar', text: t('app.lang') })),
         ),
         h('div', { class: 'login-legal rise', style: { '--i': '3' } }, legalLinks()),
       ),

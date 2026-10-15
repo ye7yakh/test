@@ -259,9 +259,12 @@ salon's barber, or a photo from another salon.
   production, and host-only. A session is bound to the host that created it, so a cookie
   from one salon is useless on another. Changing the password signs out other devices.
 - Login failures are limited per client address and account together (8 / 15 min), per
-  client address (30 / 15 min) and per account from anywhere (100 / 15 min), so someone
-  guessing at a number blocks only themselves, not the owner on their own phone. Each
-  attempt counts before the password check, so parallel guesses are limited too.
+  client address (30 / 15 min) and per account from anywhere (20 / 15 min). IPv6 addresses
+  count by their /64. A browser that has signed in to the account before carries an
+  `HttpOnly` device mark (an HMAC of the password hash, so it dies with a password change)
+  and is counted apart: guessing spread over many addresses locks the account for
+  strangers, not for the owner on their own phone. Each attempt counts before the
+  password check, so parallel guesses are limited too.
   Changing the password checks the current one under the same limits.
 - Writes need JSON (or a raw image body) and a same-host `Origin`, which blocks CSRF.
 - Uploads are judged by their bytes (JPEG/PNG/WebP magic numbers and a real decode),

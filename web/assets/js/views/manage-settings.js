@@ -44,7 +44,7 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
   const cc = app.ctx.tenant?.calling_code ?? '962';
   const f = {
     phone: input({ name: 'phone', type: 'tel', inputmode: 'tel', autocomplete: 'tel-national', value: toLocal(s.phone, cc), maxlength: 24 }),
-    address: input({ name: 'address', value: s.address, maxlength: 200, autocomplete: 'street-address', dir: 'auto' }),
+    address: input({ name: 'address', value: s.address, maxlength: 200, autocomplete: 'street-address' }),
     about_ar: h('textarea', { name: 'about_ar', maxlength: 600, rows: 3, dir: 'rtl', text: s.about_ar }),
     about_en: h('textarea', { name: 'about_en', maxlength: 600, rows: 3, dir: 'ltr', text: s.about_en }),
   };
@@ -130,6 +130,8 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
       next.value = '';
       markInvalid(form, null);
       setPwOpen(false);
+      // busy() disabled the button and the fold is now inert: focus goes back to the row.
+      pwRow.focus({ preventScroll: true });
       toast(t('settings.password_changed'));
       // Their own password now: the temporary-password reminder goes.
       if (app.ctx.user) app.ctx.user.must_change_password = false;

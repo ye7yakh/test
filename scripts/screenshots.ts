@@ -523,6 +523,7 @@ async function main() {
     await snap(page, 'bookings-empty', { wait: 1000 });
     await page.click('.s-head .icon-btn[aria-label="إعدادات الحجز"]');
     await page.waitForSelector('.sheet input[name=cliq_alias]');
+    await settle(page, 400); // the sheet slides up from below the screen; its rows are out of reach until it lands
     await clickText(page, '.sheet .switch-row', 'CliQ');
     await page.waitForSelector('.sheet .fold.open');
     await page.type('.sheet input[name=cliq_alias]', 'LUXSALON');
