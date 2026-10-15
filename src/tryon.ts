@@ -10,10 +10,8 @@ import { HttpError, readBody, type Ctx } from './http.js';
 import { sniffImage } from './media.js';
 import type { Salon } from './tenancy.js';
 
-export type TryonSetting = 'off' | 'on';
-
 /** The hair on top of the head, shortest first: a cut can only take it shorter. */
-export const LENGTHS = ['bald', 'buzz', 'short', 'medium', 'long'] as const;
+export const LENGTHS = ['bald', 'buzz', 'short', 'medium', 'long', 'very_long'] as const;
 export const TEXTURES = ['straight', 'wavy', 'curly', 'coily'] as const;
 export const DENSITIES = ['thick', 'normal', 'thin'] as const;
 export const HAIRLINES = ['full', 'receding'] as const;
@@ -55,8 +53,12 @@ interface Shade {
   prompt: string;
 }
 
-// Men's cuts, from the shortest hair they need to the longest.
+// Men's cuts, from the shortest hair they need to the longest. Lengths are of the hair
+// on top: short 1-5 cm, medium 5-10, long 10-15, very long over 15.
+const NOT_COILY = ['straight', 'wavy', 'curly'] as const;
 export const STYLES: readonly Style[] = [
+  { id: 'shaved', name_ar: 'حلاقة على الصفر', name_en: 'Clean shave', needs: 'bald', faces: ['oval', 'square', 'diamond'],
+    prompt: 'a clean, smoothly shaved head with no hair on top or at the sides (keep any beard as it is)' },
   { id: 'buzz', name_ar: 'بز كت', name_en: 'Buzz cut', needs: 'buzz', faces: ['oval', 'square', 'diamond'],
     prompt: 'an even buzz cut, about 6 mm long all over the head' },
   { id: 'crew_cut', name_ar: 'كرو كت', name_en: 'Crew cut', needs: 'short', faces: ['oval', 'square', 'diamond', 'heart'],
@@ -65,21 +67,21 @@ export const STYLES: readonly Style[] = [
     prompt: 'a modern skin fade: the sides and back fade cleanly down to the skin, with short textured hair on top' },
   { id: 'low_taper', name_ar: 'تيبر منخفض', name_en: 'Low taper', needs: 'short', faces: ['oval', 'long', 'heart', 'square'],
     prompt: 'a low taper fade at the temples and the neckline, with the natural hair on top kept short and neatly styled' },
-  { id: 'crop', name_ar: 'كروب', name_en: 'Textured crop', needs: 'short', faces: ['oval', 'long', 'square', 'heart', 'diamond'],
+  { id: 'crop', name_ar: 'كروب', name_en: 'Textured crop', needs: 'short', textures: NOT_COILY, faces: ['oval', 'long', 'square', 'heart', 'diamond'],
     prompt: 'a textured French crop: a short straight fringe, messy texture on top and faded sides' },
+  { id: 'curls_fade', name_ar: 'كيرلي مع فيد', name_en: 'Curls and fade', needs: 'short', textures: ['curly', 'coily'], faces: ['oval', 'round', 'square', 'long', 'heart', 'diamond'],
+    prompt: 'natural defined curls on top with a mid fade on the sides and back' },
   { id: 'side_part', name_ar: 'فرق جانبي', name_en: 'Side part', needs: 'medium', faces: ['oval', 'round', 'square', 'heart', 'diamond'],
     prompt: 'a classic gentleman side part, neatly combed with a soft taper on the sides' },
-  { id: 'quiff', name_ar: 'كويف', name_en: 'Textured quiff', needs: 'medium', volume: true, faces: ['round', 'oval', 'square', 'diamond'],
+  { id: 'quiff', name_ar: 'كويف', name_en: 'Textured quiff', needs: 'medium', textures: NOT_COILY, volume: true, faces: ['round', 'oval', 'square', 'diamond'],
     prompt: 'a textured quiff: the front swept up and slightly back with natural movement, short tapered sides' },
-  { id: 'pompadour', name_ar: 'بومبادور', name_en: 'Pompadour', needs: 'medium', volume: true, faces: ['round', 'oval', 'square'],
+  { id: 'pompadour', name_ar: 'بومبادور', name_en: 'Pompadour', needs: 'long', textures: NOT_COILY, volume: true, faces: ['round', 'oval', 'square'],
     prompt: 'a pompadour: volume swept up and back from the forehead, with short faded sides' },
-  { id: 'undercut', name_ar: 'أندركت', name_en: 'Undercut', needs: 'medium', faces: ['oval', 'round', 'heart', 'diamond'],
+  { id: 'undercut', name_ar: 'أندركت', name_en: 'Undercut', needs: 'long', textures: NOT_COILY, volume: true, faces: ['oval', 'round', 'heart', 'diamond'],
     prompt: 'an undercut: the sides cut very short, the longer hair on top slicked back' },
-  { id: 'curls_fade', name_ar: 'كيرلي مع فيد', name_en: 'Curls and fade', needs: 'medium', textures: ['wavy', 'curly', 'coily'], faces: ['oval', 'round', 'square', 'long', 'heart', 'diamond'],
-    prompt: 'natural defined curls on top with a mid fade on the sides and back' },
   { id: 'slick_back', name_ar: 'سليك باك', name_en: 'Slick back', needs: 'long', textures: ['straight', 'wavy'], volume: true, faces: ['oval', 'square', 'diamond', 'heart'],
     prompt: 'a long slicked-back style: the hair on top combed straight back with a soft shine, the sides tapered' },
-  { id: 'flow', name_ar: 'فلو طويل', name_en: 'Long flow', needs: 'long', textures: ['straight', 'wavy', 'curly'], faces: ['oval', 'long', 'heart', 'square'],
+  { id: 'flow', name_ar: 'فلو طويل', name_en: 'Long flow', needs: 'very_long', textures: NOT_COILY, faces: ['oval', 'long', 'heart', 'square'],
     prompt: 'a medium-long men\'s flow: the hair pushed back from the face and falling naturally to just above the collar' },
 ];
 
@@ -127,12 +129,15 @@ export function catalogue() {
 export function fitStyles(hair: Hair) {
   const have = LENGTHS.indexOf(hair.length);
   const sparse = hair.density === 'thin' || hair.hairline === 'receding';
+  const curly = hair.texture === 'curly' || hair.texture === 'coily';
   const fits = STYLES.filter((s) => have >= LENGTHS.indexOf(s.needs) && (!s.textures || s.textures.includes(hair.texture)));
   const score = (s: Style) =>
     (s.faces.includes(hair.face) ? 3 : 0)
     + (s.volume && sparse ? -4 : 0)
     + (sparse && LENGTHS.indexOf(s.needs) <= LENGTHS.indexOf('short') ? 1 : 0)
-    + (s.textures && !s.textures.includes('straight') ? 2 : 0) // made for his texture
+    + (curly && s.textures && !s.textures.includes('straight') ? 2 : 0) // made for his curls
+    // A clean shave is the barber's answer to a bald or thinning top, a big step otherwise.
+    + (s.id === 'shaved' ? (sparse || have <= LENGTHS.indexOf('buzz') ? 3 : -3) : 0)
     // A cut close to the hair he has now is a smaller step; a big change still shows.
     - 0.5 * (have - LENGTHS.indexOf(s.needs));
   const ranked = fits.map((s, i) => ({ s, i, v: score(s) })).sort((a, b) => b.v - a.v || a.i - b.i).map((x) => x.s.id);
@@ -201,25 +206,32 @@ function countTry(ip: string, salonId: number): void {
   perDay.set(allKey, (perDay.get(allKey) ?? 0) + 1);
 }
 
-// Reading the hair costs far less than a picture, but it is still capped: per address
-// and for the whole platform each day, with a few at once.
+// Reading the hair costs far less than a picture, but it is still capped: per address,
+// per salon and for the whole platform each day, with a few at once.
 const readsPerAddress = new Map<string, number[]>();
 let reading = 0;
 const MAX_READING = 12;
 
 setInterval(() => {
   const now = Date.now();
-  for (const [ip, list] of readsPerAddress) if (!list.some((t) => now - t < RECENT_MS)) readsPerAddress.delete(ip);
+  for (const [ip, list] of readsPerAddress) if (!list.some((t) => now - t < 24 * 3600_000)) readsPerAddress.delete(ip);
 }, 10 * 60_000).unref();
 
-function countRead(ip: string): void {
+function countRead(ip: string, salonId: number): void {
   const now = Date.now();
-  const list = (readsPerAddress.get(ip) ?? []).filter((t) => now - t < RECENT_MS);
-  if (list.length >= config.tryon.readsPerAddress10m) throw new HttpError(429, 'too_many_attempts');
-  const allKey = `reads:${new Date().toISOString().slice(0, 10)}`;
-  if ((perDay.get(allKey) ?? 0) >= config.tryon.readsDaily) throw new HttpError(429, 'tryon_daily_limit');
+  const list = (readsPerAddress.get(ip) ?? []).filter((t) => now - t < 24 * 3600_000);
+  if (list.filter((t) => now - t < RECENT_MS).length >= config.tryon.readsPerAddress10m || list.length >= config.tryon.readsPerAddressDaily) {
+    throw new HttpError(429, 'too_many_attempts');
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const salonKey = `reads:salon:${salonId}:${today}`;
+  const allKey = `reads:all:${today}`;
+  if ((perDay.get(salonKey) ?? 0) >= config.tryon.readsSalonDaily || (perDay.get(allKey) ?? 0) >= config.tryon.readsDaily) {
+    throw new HttpError(429, 'tryon_daily_limit');
+  }
   list.push(now);
   readsPerAddress.set(ip, list);
+  perDay.set(salonKey, (perDay.get(salonKey) ?? 0) + 1);
   perDay.set(allKey, (perDay.get(allKey) ?? 0) + 1);
 }
 
@@ -254,9 +266,12 @@ function promptFor(style: Style, shade: Shade | null): string {
 
 const READ_PROMPT = [
   'You are an experienced barber looking at a customer\'s photo before a haircut. Describe the hair he has NOW, as it is in the photo.',
-  'person: true only if one person\'s head and hair are clearly visible from the front or close to it.',
-  'length, the hair on top of the head: bald (no hair, or shaved to the skin), buzz (under 1 cm), short (1 to 5 cm), medium (5 to 12 cm), long (over 12 cm, or reaching the ears or collar).',
-  'texture: straight, wavy, curly or coily. density: thick, normal or thin (scalp visible through the hair). hairline: full, or receding (temples or crown clearly thinning).',
+  'person: true only if one person\'s head is clearly visible from the front or close to it (a bald or shaved head counts).',
+  'length: judge ONLY the hair on the top of the head, ignoring the sides and back however long they are.',
+  'bald (no hair on top, or shaved to the skin); buzz (under 1 cm); short (1 to 5 cm, the top cannot be combed down onto the forehead);',
+  'medium (5 to 10 cm, combed forward it would reach the middle of the forehead); long (10 to 15 cm, combed forward it would reach the eyebrows);',
+  'very_long (over 15 cm, combed forward it would cover the eyes).',
+  'texture: straight, wavy, curly or coily. density: thick, normal or thin (scalp visible through the hair on top). hairline: full, or receding (temples or crown clearly thinning).',
   'face, the shape of the face: oval, round, square, long, heart or diamond.',
   'If unsure between two lengths, choose the shorter one. Reply with the JSON only.',
 ].join(' ');
@@ -268,7 +283,7 @@ function hairFrom(raw: unknown): Hair {
   const r = (raw ?? {}) as Record<string, unknown>;
   if (r.person !== true) throw new HttpError(422, 'hair_unclear');
   for (const [k, allowed] of Object.entries(READ_FIELDS)) {
-    if (!(allowed as readonly unknown[]).includes(r[k])) throw new HttpError(502, 'tryon_failed');
+    if (!(allowed as readonly unknown[]).includes(r[k])) throw new HttpError(502, 'read_failed');
   }
   return { length: r.length, texture: r.texture, density: r.density, hairline: r.hairline, face: r.face } as Hair;
 }
@@ -293,8 +308,10 @@ async function readViaGemini(photo: Buffer, signal: AbortSignal): Promise<unknow
     }),
     signal,
   });
-  if (!res.ok) throw providerError(res.status, await res.text().catch(() => ''));
-  const json = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  if (!res.ok) throw providerError(res.status, await res.text().catch(() => ''), true);
+  const json = (await res.json()) as { promptFeedback?: { blockReason?: string }; candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  // Blocked by the model's own safety rules: as far as the customer can tell, the photo did not work.
+  if (json.promptFeedback?.blockReason) throw new HttpError(422, 'hair_unclear');
   const text = json.candidates?.[0]?.content?.parts?.map((p) => p.text ?? '').join('') ?? '';
   if (!text) throw new HttpError(422, 'hair_unclear');
   return JSON.parse(text);
@@ -306,10 +323,9 @@ async function readViaOpenAI(photo: Buffer, signal: AbortSignal): Promise<unknow
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.tryon.apiKey}` },
     body: JSON.stringify({
       model: config.tryon.visionModel || 'gpt-4.1-mini',
-      temperature: 0,
       messages: [{ role: 'user', content: [
         { type: 'text', text: READ_PROMPT },
-        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photo.toString('base64')}`, detail: 'low' } },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${photo.toString('base64')}`, detail: 'high' } },
       ] }],
       response_format: {
         type: 'json_schema',
@@ -327,14 +343,14 @@ async function readViaOpenAI(photo: Buffer, signal: AbortSignal): Promise<unknow
     }),
     signal,
   });
-  if (!res.ok) throw providerError(res.status, await res.text().catch(() => ''));
+  if (!res.ok) throw providerError(res.status, await res.text().catch(() => ''), true);
   const json = (await res.json()) as { choices?: { message?: { content?: string; refusal?: string } }[] };
   const text = json.choices?.[0]?.message?.content;
-  if (!text) throw new HttpError(422, 'hair_unclear');
+  if (!text || json.choices?.[0]?.message?.refusal) throw new HttpError(422, 'hair_unclear');
   return JSON.parse(text);
 }
 
-/** The stand-in reads every photo as medium, wavy hair on an oval face. */
+/** The stand-in reads every photo as medium (5-10 cm), wavy hair on an oval face. */
 async function readViaMock(): Promise<unknown> {
   await new Promise((r) => setTimeout(r, config.isProd ? 0 : 700));
   return { person: true, length: 'medium', texture: 'wavy', density: 'normal', hairline: 'full', face: 'oval' };
@@ -348,22 +364,24 @@ export async function readHair(ctx: Ctx, salon: Salon) {
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) throw new HttpError(415, 'unsupported_image');
   const photo = await intakePhoto(await readBody(ctx.req, config.maxUploadBytes), 768);
   if (reading >= MAX_READING) throw new HttpError(503, 'tryon_busy');
-  countRead(ctx.ip);
+  countRead(ctx.ip, salon.id);
 
   reading++;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 30_000);
+  const release = abortOnClose(ctx, abort);
   try {
     const raw = provider === 'gemini' ? await readViaGemini(photo, abort.signal) : provider === 'openai' ? await readViaOpenAI(photo, abort.signal) : await readViaMock();
     const hair = hairFrom(raw);
     return { hair, ...fitStyles(hair) };
   } catch (err) {
     if (err instanceof HttpError) throw err;
-    if ((err as Error).name === 'AbortError') throw new HttpError(504, 'tryon_failed');
-    console.error('tryon read', err);
-    throw new HttpError(502, 'tryon_failed');
+    if ((err as Error).name === 'AbortError') throw new HttpError(504, 'read_failed');
+    console.error('tryon read', (err as Error).message);
+    throw new HttpError(502, 'read_failed');
   } finally {
     clearTimeout(timer);
+    release();
     reading--;
   }
 }
@@ -422,12 +440,27 @@ async function viaMock(photo: Buffer, shade: Shade | null): Promise<Buffer> {
   return sharp(photo).composite([{ input: hair, blend: 'multiply' }]).jpeg({ quality: 88 }).toBuffer();
 }
 
-function providerError(status: number, body: string): HttpError {
+/**
+ * A provider's error as the customer should see it. A 400 on a drawing is usually the
+ * model turning the photo down; on a reading it is our request (a key, a model name),
+ * so it is a failed read, never "try another photo".
+ */
+function providerError(status: number, body: string, read = false): HttpError {
   // Never pass the provider's message on: it can echo request details. Log a short slice.
-  console.error(`tryon provider ${status}: ${body.slice(0, 300)}`);
+  console.error(`tryon provider${read ? ' (read)' : ''} ${status}: ${body.slice(0, 300)}`);
   if (status === 429 || status === 503) return new HttpError(503, 'tryon_busy');
+  if (read) return new HttpError(502, 'read_failed');
   if (status === 400) return new HttpError(422, 'tryon_refused');
   return new HttpError(502, 'tryon_failed');
+}
+
+/** Stops the provider call when the customer goes away (cancel, a new photo, a closed tab). */
+function abortOnClose(ctx: Ctx, abort: AbortController): () => void {
+  const onClose = () => {
+    if (!ctx.res.writableFinished) abort.abort();
+  };
+  ctx.res.once('close', onClose);
+  return () => ctx.res.off('close', onClose);
 }
 
 /** The customer's photo with the chosen cut, as a JPEG. Nothing is kept. */
@@ -450,6 +483,7 @@ export async function tryOn(ctx: Ctx, salon: Salon): Promise<Buffer> {
   inFlight++;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), 90_000);
+  const release = abortOnClose(ctx, abort);
   try {
     const prompt = promptFor(style, shade);
     const raw =
@@ -465,6 +499,7 @@ export async function tryOn(ctx: Ctx, salon: Salon): Promise<Buffer> {
     throw new HttpError(502, 'tryon_failed');
   } finally {
     clearTimeout(timer);
+    release();
     inFlight--;
   }
 }

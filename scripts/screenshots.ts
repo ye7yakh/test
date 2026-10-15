@@ -695,7 +695,7 @@ async function main() {
     await shopper.waitForSelector('.mr-working');
     await snap(shopper, 'mirror-reading', { wait: 300 });
     await shopper.waitForSelector('.mr-styles .mr-style');
-    await clickText(shopper, '.mr-style', 'بومبادور');
+    await clickText(shopper, '.mr-style', 'كويف');
     await clickText(shopper, '.mr-shade', 'بني غامق');
     await snap(shopper, 'mirror-styles');
     await clickText(shopper, '.sheet-foot button', 'أرني النتيجة');

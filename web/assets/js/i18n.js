@@ -44,6 +44,7 @@ const STRINGS = {
     'err.tryon_failed': 'تعذّر رسم القصة. حاول مرة أخرى.',
     'err.tryon_daily_limit': 'وصلت المرآة إلى حدّها لهذا اليوم. عد غدًا لتجربة المزيد.',
     'err.hair_unclear': 'لم نتمكن من رؤية شعرك بوضوح. التقط صورة من الأمام يظهر فيها شعرك كاملًا.',
+    'err.read_failed': 'تعذّرت قراءة شعرك. حاول مرة أخرى.',
     'err.too_large': 'الملف كبير جدًا.',
     'err.hours_overlap': 'الفترات متداخلة يوم {day}.',
     'err.conflict': 'هذا العنصر موجود مسبقًا.',
@@ -445,9 +446,7 @@ const STRINGS = {
     'tryon.cam_hint': 'ضع وجهك وشعرك داخل الإطار',
     'tryon.cancel': 'إلغاء',
     'tryon.your_photo': 'صورتك',
-    'tryon.pick_hint': 'اختر قصة، ولونًا إن أحببت',
     'tryon.change_photo': 'تغيير الصورة',
-    'tryon.pick_style': 'اختر القصة',
     'tryon.shade': 'اللون',
     'tryon.natural': 'لوني الطبيعي',
     'tryon.show': 'أرني النتيجة',
@@ -491,8 +490,11 @@ const STRINGS = {
     'tryon.for_you': 'الأنسب لك',
     'tryon.best': 'مقترحة',
     'tryon.also': 'تناسب شعرك أيضًا',
+    'tryon.pick_cut': 'اختر القصة',
+    'tryon.retry': 'حاول مرة أخرى',
+    'tryon.read_stopped': 'توقفت القراءة',
     'tryon.none_title': 'شعرك قصير جدًا لتجربة القصات',
-    'tryon.none_sub': 'جرّب المرآة بعد أن يطول شعرك قليلًا، أو احجز حلاقة وتحديد لحية الآن.',
+    'tryon.none_sub': 'جرّب المرآة مرة أخرى بعد أن يطول شعرك قليلًا.',
     'tryon.hidden': { one: 'أخفينا قصة واحدة تحتاج شعرًا أطول أو نوعًا آخر من الشعر.', two: 'أخفينا قصتين تحتاجان شعرًا أطول أو نوعًا آخر من الشعر.', few: 'أخفينا {n} قصات تحتاج شعرًا أطول أو نوعًا آخر من الشعر.', other: 'أخفينا {n} قصة تحتاج شعرًا أطول أو نوعًا آخر من الشعر.' },
     'pub.opens_today': 'يفتح اليوم {time}',
     'pub.opens_tomorrow': 'يفتح غدًا {time}',
@@ -781,6 +783,7 @@ const STRINGS = {
     'err.tryon_failed': 'Couldn\'t draw the cut. Please try again.',
     'err.tryon_daily_limit': 'The mirror has reached today\'s limit. Come back tomorrow to try more.',
     'err.hair_unclear': 'We couldn\'t see your hair clearly. Take a front photo that shows all of your hair.',
+    'err.read_failed': 'Couldn\'t read your hair. Please try again.',
     'err.too_large': 'The file is too large.',
     'err.hours_overlap': 'Time ranges overlap on {day}.',
     'err.conflict': 'This already exists.',
@@ -1182,9 +1185,7 @@ const STRINGS = {
     'tryon.cam_hint': 'Fit your face and hair in the frame',
     'tryon.cancel': 'Cancel',
     'tryon.your_photo': 'Your photo',
-    'tryon.pick_hint': 'Pick a cut, and a colour if you like',
     'tryon.change_photo': 'Change photo',
-    'tryon.pick_style': 'Pick a cut',
     'tryon.shade': 'Colour',
     'tryon.natural': 'My natural',
     'tryon.show': 'Show me',
@@ -1228,8 +1229,11 @@ const STRINGS = {
     'tryon.for_you': 'Best for you',
     'tryon.best': 'Top pick',
     'tryon.also': 'Also suits your hair',
+    'tryon.pick_cut': 'Pick a cut',
+    'tryon.retry': 'Try again',
+    'tryon.read_stopped': 'Reading stopped',
     'tryon.none_title': 'Your hair is too short to try cuts',
-    'tryon.none_sub': 'Try the mirror again once it grows a little, or book a shave and beard trim now.',
+    'tryon.none_sub': 'Try the mirror again once your hair grows a little.',
     'tryon.hidden': { one: 'One cut is hidden: it needs longer hair or another hair type.', other: '{n} cuts are hidden: they need longer hair or another hair type.' },
     'pub.opens_today': 'Opens today at {time}',
     'pub.opens_tomorrow': 'Opens tomorrow at {time}',
@@ -1533,7 +1537,7 @@ export function pick(obj, base) {
   return (lang === 'en' && obj[`${base}_en`]) || obj[`${base}_ar`] || obj[`${base}_en`] || '';
 }
 
-/** A cut from the AI mirror as the server describes it: "Skin fade · Honey". */
+/** A cut from the AI mirror as the server describes it: "Pompadour · Dark brown". */
 export const lookName = (look) => (look.shade ? `${pick(look, 'name')} · ${pick(look.shade, 'name')}` : pick(look, 'name'));
 
 const LOCALE = () => (lang === 'ar' ? 'ar-u-nu-latn' : 'en-u-nu-latn');

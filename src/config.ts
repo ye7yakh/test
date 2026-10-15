@@ -30,6 +30,8 @@ export const config = {
     platformDaily: Number(env.AI_TRYON_DAILY ?? 1500),
     // Reading the hair (one per photo) is far cheaper; it has its own caps.
     readsPerAddress10m: Number(env.AI_TRYON_READS_PER_ADDRESS_10M ?? 10),
+    readsPerAddressDaily: Number(env.AI_TRYON_READS_PER_ADDRESS_DAILY ?? 40),
+    readsSalonDaily: Number(env.AI_TRYON_READS_SALON_DAILY ?? 600),
     readsDaily: Number(env.AI_TRYON_READS_DAILY ?? 5000),
   },
 };

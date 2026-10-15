@@ -9,6 +9,7 @@ const SKIN_SHADE = '#cf9f78';
 // Hair drawn behind the head (longer cuts), then in front of it (tops, fringes).
 // 64 × 64 box; the face is centred at (32, 30).
 const ART = {
+  shaved: { sides: 0.12, shine: true },
   skin_fade: {
     front: ['M20.6 25.2c-.3-9.4 4.7-14.7 11.4-14.7s11.7 5.3 11.4 14.7c-2.4-3.4-6-5.2-11.4-5.2s-9 1.8-11.4 5.2z'],
     sides: 0.22,
@@ -87,6 +88,8 @@ export function styleArt(id, { hair = DEFAULT_HAIR, body = 'currentColor' } = {}
     svg.append(el('path', { d: 'M21 25c-.6 3.4-.2 6.6 1.2 9.6M43 25c.6 3.4.2 6.6-1.2 9.6', stroke: hair, 'stroke-width': 2.4, 'stroke-linecap': 'round', fill: 'none', opacity: art.sides }));
   }
   for (const [cx, cy, r] of art.curls ?? []) svg.append(el('circle', { cx, cy, r, fill: hair }));
+  // A shaved head: the light on the bare scalp.
+  if (art.shine) svg.append(el('ellipse', { cx: 28.4, cy: 19.6, rx: 4.6, ry: 2.2, fill: '#ffffff', opacity: 0.35, transform: 'rotate(-18 28.4 19.6)' }));
   (art.front ?? []).forEach((d, i) => {
     // The first path is the hair's shape; the rest are its lines (fringe, combing).
     svg.append(i === 0

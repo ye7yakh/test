@@ -196,11 +196,13 @@ name and an email address once the company is registered.
 Men's cuts only. A customer takes a selfie (or picks a photo) and an AI vision model
 reads his hair: how long it is on top (shaved, very short, short, medium, long), its
 texture, how thick it is, his hairline and his face shape. The mirror then offers only
-the cuts that hair can give, because scissors only take hair shorter: no slick back or
-long flow for short hair, curls only for curly or wavy hair, nothing for a shaved head.
+the cuts that hair can give, because scissors only take hair shorter: no pompadour or
+slick back under 10 cm on top, the long flow only past 15 cm, curls only for curly or
+coily hair, nothing that needs straightening for coily hair, and a clean shave offered
+first to a bald or thinning top.
 They are ranked by face shape, with volume cuts last on thin hair or a receding
 hairline; the top three are marked as picks, and the customer is told how many cuts
-were hidden. He picks one of 12 cuts and, if he likes, one of 4 colours, and an AI image
+were hidden. He picks one of 13 cuts and, if he likes, one of 4 colours, and an AI image
 model redraws only the hair on his photo. He compares before and after with a slider,
 tries more, saves the picture, and books the one he likes in one tap: the booking
 carries the look (`skin_fade` or `pompadour:brown`), and the owner sees "requested
@@ -227,8 +229,9 @@ the colour swatch. Only that name is stored, never a picture.
   medium, wavy hair on an oval face and tints the hair, so the whole flow works offline.
 - **Cost control:** tries are capped per address (6 per 10 minutes, 25 a day), per
   salon (150 a day) and for the platform (1500 a day), with at most 6 drawing at once;
-  reading the hair has its own caps (10 per address per 10 minutes, 5000 a day across
-  the platform, 12 at once). All are settings (`AI_TRYON_*`). A photo smaller than 256 pixels is refused before it
+  reading the hair has its own caps (10 per address per 10 minutes and 40 a day, 600 a
+  day per salon, 5000 a day across the platform, 12 at once), and a read or a drawing
+  the customer walks away from is cancelled at the provider. All are settings (`AI_TRYON_*`). A photo smaller than 256 pixels is refused before it
   costs anything.
 - **The camera:** the front camera in the page (`getUserMedia`, allowed by
   `Permissions-Policy: camera=(self)`), with an oval to frame the head; without it (or
@@ -363,7 +366,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 402 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 407 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
