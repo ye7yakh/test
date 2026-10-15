@@ -317,7 +317,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 269 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 361 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
@@ -331,7 +331,7 @@ brand-new salon's whole journey: the admin creating and handing it over and rese
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
 English and desktop, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 58 PNGs to `screenshots/` and fails on any page error,
+colours, and the launch splash. It writes 78 PNGs to `screenshots/` (23 of them the landing page at its scroll beats, plus still and lite runs) and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
