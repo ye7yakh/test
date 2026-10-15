@@ -231,7 +231,7 @@ export async function serveIndex(ctx: Ctx, page: Page): Promise<void> {
     if (page === 'landing') {
       head.push(...linkPreview({
         title: `${brand}: صالونك صار له تطبيق`,
-        description: 'صفحة وتطبيق باسم صالونك وألوانه، حجز على مدار الساعة، وعربون كليك بدون مكالمات. للصالونات ومحلات الحلاقة.',
+        description: 'صفحة وتطبيق باسم صالونك وألوانه، حجز على مدار الساعة، وعربون كليك بدون مكالمات. لصالونات الرجال ومحلات الحلاقة.',
         url: `${origin}/`,
         image: `${origin}/share.jpg`,
         siteName: brand,

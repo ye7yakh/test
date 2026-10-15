@@ -138,15 +138,18 @@ again. Two bookings for the same barber can never overlap: the database refuses 
 
 ## The landing page
 
-`salonak.app` sells the platform to salon owners, in Arabic and English, as "The Cover
-Issue": a luxury salon magazine whose cover star is the reader's own salon, in ink,
-bone paper and warm mirror-bulb light. Every colour on the page belongs to a salon; the
+`salonak.app` sells the platform to men's barbershops and salons (for now), in Arabic
+and English, as "The Cover Issue": a luxury magazine whose cover star is the reader's
+own shop, in ink, bone paper and warm light. On the cover the phone hangs in a round
+brass barber's mirror on a leather strap, the shop and a turning barber pole reflected
+in the glass; steel shears swing in and snip, and hair clippings fall (each cut brings
+in the next example shop). Every colour on the page belongs to a salon; the
 platform's violet and blue show only in its small mark. The scenes play as you scroll,
 with parallax and pinned spreads (transforms and opacity only): the cover, the
 editor's letter, a white-label anatomy spread (eight numbered parts around a live
 phone: name and logo, colours, cover, app icon, launch screen, link, link preview and
 dashboard, and a lens on the one small line that is ours: "your name on the cover,
-ours in the fine print"), a collection of three made-up salons, try it on your salon
+ours in the fine print"), a collection of made-up barbershops, try it on your salon
 (type its name, pick a palette and a night or day look, and the app dresses itself in
 them), the app in a customer's pocket, a whole booking with a CliQ deposit, the
 owner's dashboard backstage, three steps to start and the finale. The WhatsApp

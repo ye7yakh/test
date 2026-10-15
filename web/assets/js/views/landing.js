@@ -6,7 +6,7 @@
 // variables, transforms and opacity only); reduced motion gets a calm, complete page.
 
 // §1 imports
-import { appReady, clear, h, icon, legalLinks, salonIcon, scissorsMark } from '../dom.js';
+import { appReady, clear, h, icon, legalLinks, salonIcon } from '../dom.js';
 import { dayName, fmtDuration, fmtPrice, fmtTime, getLang, pick, setLang, t } from '../i18n.js';
 import { homeScreen, miniApp, phone, splashScreen } from '../preview.js';
 import { brandVars, dayBase, nightBase } from '../theme.js';
@@ -20,7 +20,7 @@ const COPY = {
     wa_text: 'مرحبًا! بدي أعرف أكثر عن تطبيق لصالوني.', examples: 'الصالونات في هذه الصفحة أمثلة للتوضيح.',
     heads: { cover: ['01', 'الغلاف'], letter: ['02', 'كلمة العدد'], 'white-label': ['03', 'علامتك الخاصة'], collection: ['04', 'المجموعة'], try: ['04', 'المجموعة'], pocket: ['05', 'في جيب زبونك'], booking: ['06', 'الحجز'], backstage: ['07', 'خلف الكرسي'], how: ['08', 'البداية'], finale: ['09', 'غلافك'] },
     night: 'ليلي', day: 'نهاري', cliq: 'كليك',
-    eyebrow: 'العدد 01 · للصالونات ومحلات الحلاقة في الأردن', mast: 'صالونك', sub: 'صار له تطبيق.',
+    eyebrow: 'العدد 01 · لصالونات الرجال ومحلات الحلاقة في الأردن', mast: 'صالونك', sub: 'صار له تطبيق.',
     deck: 'تطبيق وصفحة حجز باسم صالونك، بشعاره وألوانه. زبائنك يحجزون بأنفسهم على مدار الساعة، والعربون يوصلك على كليك.',
     how_btn: 'كيف يشتغل', scroll: 'مرّر',
     cl: ['حجز جديد', 'وصل العربون', 'رابطه الخاص', 'علامتك الخاصة'], cl_wl: 'اسمك على الغلاف',
@@ -40,10 +40,10 @@ const COPY = {
     ],
     wl_go: 'انتقل إلى {name}', mag: 'هذا كل اللي يشوفه زبونك منّا.', today_n: 'اليوم · 4 مواعيد',
     co_h2: ['كل صالون،', 'بشكله.'], co_deck: 'نفس النظام القوي من الداخل، وهوية مختلفة تمامًا من الخارج. هذه صالونات من خيالنا، وصالونك هو التالي.',
-    types: { ladies: 'صالون نسائي', barber: 'حلاقة رجالية', nails: 'أظافر وعناية' }, sw: ['اللون الأساسي', 'لون التمييز'],
+    types: { lounge: 'صالون رجالي فاخر', barber: 'حلاقة رجالية', fade: 'قصّات عصرية', grooming: 'عناية رجالية' }, sw: ['اللون الأساسي', 'لون التمييز'],
     swipe: 'اسحب', prev: 'السابق', next: 'التالي',
     try_kicker: 'صالونك هنا', try_h3: 'جرّبها على صالونك.', try_sub: 'اكتب اسم صالونك، واختر ألوانه وشكل صفحته، وشوف تطبيقه يتغيّر قدامك.',
-    try_name: 'اسم صالونك', try_ph: 'مثلًا: صالون الياسمين', try_colours: 'ألوان صالونك', try_look: 'شكل الصفحة',
+    try_name: 'اسم صالونك', try_ph: 'مثلًا: صالون النشامى', try_colours: 'ألوان صالونك', try_look: 'شكل الصفحة',
     try_cap: 'صالونك باللون: {palette} · {look}', try_foot: 'نفس اللوحات اللي بلوحة إدارتك، أو أي لونين بتختارهم.', try_about: 'خدماتك وأسعارك',
     pk_h2: ['من رابط بالبايو…', 'لأيقونة على شاشة زبونك.'],
     pk_deck: 'بدون متجر تطبيقات وبدون تنزيل. زبونك يفتح رابطك ويضيفه لشاشته الرئيسية، فيصير صالونك تطبيقًا على جواله، بأيقونتك.',
@@ -87,14 +87,14 @@ const COPY = {
     how_1_soon: ['تواصل معنا', 'نفتح لك صالونك، ونبعتلك رابطه وكلمة مرور لوحة الإدارة.'],
     fn_h2: ['جاهز يكون صالونك', 'على الغلاف؟'], fn_deck: 'احكي معنا على واتساب، ونجهّز تطبيق صالونك باسمه وألوانه.', logo_here: 'شعارك هنا',
     fn_deck_soon: 'نجهّز تطبيق صالونك باسمه وألوانه.',
-    col_line: 'تطبيقات وحجوزات للصالونات ومحلات الحلاقة في الأردن.', owner: 'عندك صالون معنا؟ لوحة إدارتك على رابط صالونك وبعده {path}',
+    col_line: 'تطبيقات وحجوزات لصالونات الرجال ومحلات الحلاقة في الأردن.', owner: 'عندك صالون معنا؟ لوحة إدارتك على رابط صالونك وبعده {path}',
   },
   en: {
     skip: 'Skip to contact', skip_end: 'Skip to the end', contact: 'Contact us', lang: 'العربية', cta: "Get your salon's app", soon: 'Coming soon.',
     wa_text: "Hi! I'd like to know more about an app for my salon.", examples: 'The salons on this page are examples.',
     heads: { cover: ['01', 'Cover'], letter: ['02', "Editor's letter"], 'white-label': ['03', 'White label'], collection: ['04', 'The collection'], try: ['04', 'The collection'], pocket: ['05', 'In their pocket'], booking: ['06', 'Booking'], backstage: ['07', 'Behind the chair'], how: ['08', 'Getting started'], finale: ['09', 'Your cover'] },
     night: 'Night', day: 'Day', cliq: 'CliQ',
-    eyebrow: 'Issue 01 · For salons and barbershops in Jordan', mast: 'Your salon', sub: 'now has its own app.',
+    eyebrow: "Issue 01 · For men's barbershops in Jordan", mast: 'Your salon', sub: 'now has its own app.',
     deck: "An app and a booking page in your salon's name, with its logo and colours. Customers book themselves around the clock, and deposits reach you by CliQ.",
     how_btn: 'How it works', scroll: 'Scroll',
     cl: ['New booking', 'Deposit received', 'Its own link', 'White label'], cl_wl: 'Your name on the cover',
@@ -114,10 +114,10 @@ const COPY = {
     ],
     wl_go: 'Go to {name}', mag: "That's all your customers see of us.", today_n: 'Today · 4 bookings',
     co_h2: ['Every salon,', 'in its own look.'], co_deck: 'The same strong system inside, a completely different identity outside. These salons are imaginary; yours is next.',
-    types: { ladies: "Ladies' salon", barber: 'Barbershop', nails: 'Nails and care' }, sw: ['Main colour', 'Accent colour'],
+    types: { lounge: "Men's lounge", barber: 'Barbershop', fade: 'Modern fades', grooming: "Men's grooming" }, sw: ['Main colour', 'Accent colour'],
     swipe: 'Swipe', prev: 'Previous', next: 'Next',
     try_kicker: 'Your salon here', try_h3: 'Try it on your salon.', try_sub: "Type your salon's name, pick its colours and its look, and watch its app change in front of you.",
-    try_name: "Your salon's name", try_ph: 'e.g. Jasmine Salon', try_colours: "Your salon's colours", try_look: 'Page look',
+    try_name: "Your salon's name", try_ph: 'e.g. Nashama Barbers', try_colours: "Your salon's colours", try_look: 'Page look',
     try_cap: 'Your salon in: {palette} · {look}', try_foot: 'The same palettes as in your dashboard, or any two colours you choose.', try_about: 'Your services and prices',
     pk_h2: ['From a link in your bio…', 'to an icon on their home screen.'],
     pk_deck: 'No app store, no download. Customers open your link and add it to their home screen, and your salon becomes an app on their phone, with your icon.',
@@ -160,7 +160,7 @@ const COPY = {
     how_1_soon: ['Get in touch', 'We open your salon and send you its link and your dashboard password.'],
     fn_h2: ['Ready to put your salon', 'on the cover?'], fn_deck: "Message us on WhatsApp and we'll set up your salon's app, in its name and colours.", logo_here: 'Your logo here',
     fn_deck_soon: "We'll set up your salon's app, in its name and colours.",
-    col_line: 'Apps and bookings for salons and barbershops in Jordan.', owner: "Already with us? Your dashboard is your salon's link followed by {path}",
+    col_line: "Apps and bookings for men's salons and barbershops in Jordan.", owner: "Already with us? Your dashboard is your salon's link followed by {path}",
   },
 };
 const tx = (key, vars) => {
@@ -177,11 +177,11 @@ const ALWAYS_OPEN = Array.from({ length: 7 }, () => [{ open: '00:00', close: '24
 const svc = (e, ar, en, min, price) => ({ icon: e, name_ar: ar, name_en: en, duration_min: min, price, active: true });
 const salon = (o) => ({ ...o, vars: brandVars(o.primary, o.accent) });
 const CAST = {
-  lamar: salon({
-    sub: 'lamar', name_ar: 'صالون لمار', name_en: 'Lamar Salon', about_ar: 'شعر، مكياج وعناية', about_en: 'Hair, makeup and care', type: 'ladies', look: 'night',
-    primary: '#5b2245', accent: '#e8b4c8', icon_bg: 'primary', mark: 'flower', fg: '#e8b4c8', fg2: '#fff3f7', deposit: 5, at: '10:30',
-    services: [svc('✂️', 'قص وسشوار', 'Cut and blow-dry', 60, 15), svc('🎨', 'صبغة كاملة', 'Full colour', 120, 45), svc('💄', 'مكياج سهرة', 'Evening makeup', 60, 35)],
-    staff: [['ليلى', 'Layla', 'long'], ['هبة', 'Hiba', 'bun']],
+  diwan: salon({
+    sub: 'diwan', name_ar: 'الديوان', name_en: 'The Diwan', about_ar: 'حلاقة فاخرة وعناية للرجل', about_en: 'Fine grooming for gentlemen', type: 'lounge', look: 'night',
+    primary: '#3b1518', accent: '#d9a066', icon_bg: 'primary', mark: 'moustache', fg: '#e0a96d', fg2: '#f2e3cf', deposit: 5, at: '10:30',
+    services: [svc('✂️', 'قصّة وتصفيف', 'Cut and style', 45, 15), svc('🪒', 'حلاقة ملكية بالفوطة', 'Royal hot-towel shave', 40, 12), svc('🧖‍♂️', 'عناية بالبشرة', "Men's facial", 45, 18)],
+    staff: [['خالد', 'Khaled', 'beard'], ['زيد', 'Zaid', 'quiff']],
   }),
   barber: salon({
     sub: 'barber-house', name_ar: 'بيت الحلاقة', name_en: 'Barber House', about_ar: 'قصّات ولحية على أصولها', about_en: 'Cuts and beards, done right', type: 'barber', look: 'night',
@@ -189,17 +189,17 @@ const CAST = {
     services: [svc('✂️', 'قص شعر', 'Haircut', 30, 7), svc('🧔', 'تشذيب لحية', 'Beard trim', 20, 4), svc('💈', 'قص ولحية', 'Cut and beard', 45, 10)],
     staff: [['فهد', 'Fahd', 'beard'], ['سامي', 'Sami', 'short']],
   }),
-  rana: salon({
-    sub: 'rana-nails', name_ar: 'أظافر رنا', name_en: 'Rana Nails', about_ar: 'مناكير وبديكير وتركيب', about_en: 'Manicure, pedicure and extensions', type: 'nails', look: 'night',
-    primary: '#2b2a63', accent: '#8fe3d2', icon_bg: 'white', mark: 'drop', fg: '#2b2a63', fg2: '#5fc9b4', deposit: 5, at: '13:15',
-    services: [svc('💅', 'مناكير جل', 'Gel manicure', 45, 12), svc('✨', 'بديكير', 'Pedicure', 50, 15), svc('💎', 'تركيب أظافر', 'Nail extensions', 90, 25)],
-    staff: [['رنا', 'Rana', 'long'], ['دانة', 'Dana', 'bob']],
+  fade: salon({
+    sub: 'fade-studio', name_ar: 'استوديو فيد', name_en: 'Fade Studio', about_ar: 'فيد وتحديد ولحية بدقّة', about_en: 'Sharp fades, line-ups and beards', type: 'fade', look: 'night',
+    primary: '#121417', accent: '#b8e62e', icon_bg: 'white', mark: 'clipper', fg: '#121417', fg2: '#8cc21a', deposit: 3, at: '19:30',
+    services: [svc('💈', 'قصّة فيد', 'Skin fade', 40, 8), svc('🧔', 'تحديد لحية', 'Beard line-up', 20, 4), svc('✂️', 'فيد ولحية', 'Fade and beard', 50, 11)],
+    staff: [['مهند', 'Mohannad', 'fade'], ['كرم', 'Karam', 'fadebeard']],
   }),
-  joud: salon({
-    sub: 'joud-studio', name_ar: 'استوديو جود', name_en: 'Joud Studio', about_ar: 'شعر وبشرة بلمسة هادئة', about_en: 'Hair and skin, gently done', type: 'ladies', look: 'day',
-    primary: '#efe6d8', accent: '#8a5a44', icon_bg: 'primary', mark: 'arches', fg: '#8a5a44', fg2: '#c4977a', deposit: 5, at: '11:00',
-    services: [svc('💇‍♀️', 'قص شعر', 'Haircut', 45, 14), svc('✨', 'استشوار', 'Blow-dry', 45, 10), svc('🌿', 'كيراتين', 'Keratin', 180, 60)],
-    staff: [['جود', 'Joud', 'bun'], ['سلمى', 'Salma', 'long']],
+  weibdeh: salon({
+    sub: 'weibdeh', name_ar: 'اللويبدة', name_en: 'Weibdeh', about_ar: 'قصّات ولحية وعناية بهدوء', about_en: 'Cuts, beards and care, unhurried', type: 'grooming', look: 'day',
+    primary: '#e4ddd0', accent: '#3f4a36', icon_bg: 'primary', mark: 'razor', fg: '#2f3a2f', fg2: '#8d9a78', deposit: 3, at: '11:00',
+    services: [svc('✂️', 'قص شعر', 'Haircut', 40, 10), svc('🧔', 'تهذيب لحية', 'Beard shaping', 25, 5), svc('🧖‍♂️', 'تنظيف بشرة', 'Facial', 40, 15)],
+    staff: [['رامي', 'Rami', 'moustache'], ['أنس', 'Anas', 'buzzbeard']],
   }),
   corner: salon({
     sub: 'corner-barber', name_ar: 'حلاق الحيّ', name_en: 'The Corner Barber', about_ar: 'قصّات كلاسيكية وحلاقة بالموس', about_en: 'Classic cuts and hot-towel shaves', type: 'barber', look: 'day',
@@ -208,8 +208,8 @@ const CAST = {
     staff: [['يزن', 'Yazan', 'beard'], ['عمر', 'Omar', 'short']],
   }),
 };
-const TRY_PALETTES = ['violet', 'ocean', 'gold', 'emerald', 'burgundy', 'coral', 'rose', 'lavender'];
-const TRY_SERVICES = [svc('✂️', 'قص شعر', 'Haircut', 30, 8), svc('✨', 'سشوار', 'Blow-dry', 45, 10), svc('🎨', 'صبغة شعر', 'Hair colour', 120, 35)];
+const TRY_PALETTES = ['gold', 'classic', 'ocean', 'emerald', 'copper', 'sage', 'coral'];
+const TRY_SERVICES = [svc('✂️', 'قص شعر', 'Haircut', 30, 8), svc('🧔', 'تشذيب لحية', 'Beard trim', 20, 4), svc('🪒', 'حلاقة بالموس', 'Hot towel shave', 30, 6)];
 const TILE = { primary: 'var(--primary)', night: 'var(--night)', white: '#fff' };
 
 // §4 art: SVG data URIs (presentation attributes only), built once per salon.
@@ -224,50 +224,55 @@ const n1 = (v) => v.toFixed(1);
 function markSvg(s) {
   const { fg, fg2 } = s;
   return art(`m-${s.sub}`, 128, 128, () => {
-    if (s.mark === 'flower') {
-      return [0, 1, 2, 3, 4].map((k) => `<ellipse cx="64" cy="38" rx="15" ry="25" fill="${fg}" transform="rotate(${k * 72} 64 64)"/>`).join('')
-        + `<circle cx="64" cy="64" r="12" fill="${fg2}"/><circle cx="64" cy="64" r="5" fill="${fg}"/>`;
+    if (s.mark === 'moustache') {
+      return `<path d="M64 30l9 11-9 11-9-11z" fill="${fg2}"/><rect x="40" y="96" width="48" height="5" rx="2.5" fill="${fg2}"/>`
+        + `<path d="M64 66C58 56 47 52 37 55C28 58 24 67 15 66C10 65 8 60 10 55C4 62 7 75 20 80C35 85 52 79 64 71C76 79 93 85 108 80C121 75 124 62 118 55C120 60 118 65 113 66C104 67 100 58 91 55C81 52 70 56 64 66Z" fill="${fg}"/>`;
     }
     if (s.mark === 'pole') {
       const stripes = [-4, -3, -2, -1, 0, 1, 2, 3, 4].map((k) => `<rect x="10" y="${60 + k * 20}" width="108" height="9" fill="${fg}" transform="rotate(-32 64 64)"/>`).join('');
       return `<defs><clipPath id="c"><rect x="46" y="24" width="36" height="80" rx="18"/></clipPath></defs><rect x="46" y="24" width="36" height="80" rx="18" fill="${fg2}"/>`
         + `<g clip-path="url(#c)">${stripes}</g><rect x="40" y="12" width="48" height="14" rx="7" fill="${fg}"/><rect x="40" y="102" width="48" height="14" rx="7" fill="${fg}"/>`;
     }
-    if (s.mark === 'drop') {
-      return `<path d="M38 114V60C38 30 50 14 64 14S90 30 90 60V114Z" fill="${fg}"/><path d="M38 94Q64 80 90 94" stroke="${fg2}" stroke-width="6" fill="none" stroke-linecap="round"/>`
-        + `<path d="M52 56C52 40 57 31 64 28" stroke="${fg2}" stroke-width="7" fill="none" stroke-linecap="round"/>`;
+    if (s.mark === 'clipper') {
+      const teeth = Array.from({ length: 8 }, (_, k) => `<rect x="${37.5 + k * 7}" y="13" width="4" height="12" rx="1.5" fill="${fg2}"/>`).join('');
+      return `${teeth}<rect x="34" y="22" width="60" height="16" rx="5" fill="${fg2}"/><path d="M40 40H88L84 108Q83 116 75 116H53Q45 116 44 108Z" fill="${fg}"/>`
+        + `<rect x="58" y="58" width="12" height="24" rx="6" fill="${fg2}"/>`;
     }
-    if (s.mark === 'arches') {
-      return `<path d="M22 112V58a26 26 0 0 1 52 0V112" fill="none" stroke="${fg}" stroke-width="9" stroke-linecap="round"/>`
-        + `<path d="M54 112V58a26 26 0 0 1 52 0V112" fill="none" stroke="${fg2}" stroke-width="9" stroke-linecap="round"/>`;
+    if (s.mark === 'razor') {
+      return `<path d="M36 58L92 106" stroke="${fg}" stroke-width="15" stroke-linecap="round"/><path d="M30 40H104Q114 40 114 50V62Q76 70 40 62Q28 60 24 50Q24 40 30 40Z" fill="${fg2}"/>`
+        + `<path d="M34 46H104" stroke="${fg}" stroke-width="3" stroke-linecap="round" opacity=".35"/><circle cx="36" cy="56" r="7" fill="${fg}"/><circle cx="36" cy="56" r="3" fill="${fg2}"/>`;
     }
     const teeth = Array.from({ length: 11 }, (_, k) => `<rect x="${23 + k * 8}" y="54" width="4.5" height="${k % 2 ? 28 : 38}" rx="2.2" fill="${fg}"/>`).join('');
     return `<rect x="18" y="34" width="92" height="24" rx="8" fill="${fg}"/><rect x="26" y="42" width="76" height="4" rx="2" fill="${fg2}" opacity=".5"/>${teeth}`;
   });
 }
 
-/** A cover photo drawn for the salon: three lit mirror arches over its colours. */
+/** A cover photo drawn for the salon: three barber stations (mirror, lamp bar, chair) over its colours. */
 function coverSvg(s) {
   return art(`c-${s.sub}`, 600, 320, () => {
     const v = s.vars;
     const day = s.look === 'day';
     const top = day ? dayBase(s.primary) : s.primary;
     const bot = day ? s.primary : nightBase(s.primary);
-    const arch = (cx) => {
-      const r = 56;
-      const y0 = 300;
-      const cy = 140;
-      const bulbs = Array.from({ length: 7 }, (_, k) => {
-        const a = Math.PI - (k * Math.PI) / 6;
-        const x = n1(cx + r * Math.cos(a));
-        const y = n1(cy - r * Math.sin(a));
-        return `<circle cx="${x}" cy="${y}" r="10" fill="#ffe2b0" opacity=".25"/><circle cx="${x}" cy="${y}" r="4" fill="#ffe2b0"/>`;
-      }).join('');
-      return `<path d="M${cx - r} ${y0}V${cy}A${r} ${r} 0 0 1 ${cx + r} ${cy}V${y0}Z" fill="${v['--primary-lift']}" fill-opacity=".18" stroke="${v['--accent-lift']}" stroke-width="2"/>${bulbs}`;
+    const chair = day ? nightBase(s.primary) : '#050507';
+    const station = (cx) => {
+      const mw = 96;
+      const mh = 116;
+      const y = 66;
+      const x = cx - mw / 2;
+      const lamps = [-33, -11, 11, 33].map((dx) => `<circle cx="${cx + dx}" cy="${y - 13}" r="10" fill="#ffe2b0" opacity=".22"/><circle cx="${cx + dx}" cy="${y - 13}" r="3.6" fill="#ffe2b0"/>`).join('');
+      return `<rect x="${cx - 46}" y="${y - 19}" width="92" height="5" rx="2.5" fill="${v['--accent-lift']}" opacity=".55"/>${lamps}`
+        + `<rect x="${x}" y="${y}" width="${mw}" height="${mh}" rx="8" fill="${v['--primary-lift']}" fill-opacity=".16" stroke="${v['--accent-lift']}" stroke-width="2.5"/>`
+        + `<path d="M${x + 16} ${y + mh - 18}L${x + mw - 34} ${y + 14}M${x + 34} ${y + mh - 10}L${x + mw - 18} ${y + 30}" stroke="#fff" stroke-opacity=".1" stroke-width="5" stroke-linecap="round"/>`
+        + `<rect x="${cx - 66}" y="${y + mh + 8}" width="132" height="7" rx="3.5" fill="${v['--accent-lift']}" opacity=".6"/>`
+        // The chair in front: headrest, back, arms, seat, pedestal and base.
+        + `<rect x="${cx - 11}" y="${y + mh - 50}" width="22" height="12" rx="5" fill="${chair}"/><rect x="${cx - 26}" y="${y + mh - 34}" width="52" height="62" rx="12" fill="${chair}"/>`
+        + `<rect x="${cx - 42}" y="${y + mh + 14}" width="84" height="12" rx="6" fill="${chair}"/><rect x="${cx - 34}" y="${y + mh + 24}" width="68" height="16" rx="6" fill="${chair}"/>`
+        + `<rect x="${cx - 5}" y="${y + mh + 40}" width="10" height="${300 - (y + mh + 40) - 6}" fill="${chair}"/><ellipse cx="${cx}" cy="296" rx="30" ry="5" fill="${chair}"/>`;
     };
     return `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${top}"/><stop offset="1" stop-color="${bot}"/></linearGradient>`
       + `<radialGradient id="f" cx=".5" cy="1" r=".8"><stop offset="0" stop-color="${v['--accent-lift']}" stop-opacity=".45"/><stop offset="1" stop-color="${v['--accent-lift']}" stop-opacity="0"/></radialGradient></defs>`
-      + `<rect width="600" height="320" fill="url(#g)"/><rect y="170" width="600" height="150" fill="url(#f)"/>${arch(150)}${arch(300)}${arch(450)}`
+      + `<rect width="600" height="320" fill="url(#g)"/><rect y="170" width="600" height="150" fill="url(#f)"/>${station(150)}${station(300)}${station(450)}`
       + `<rect y="300" width="600" height="20" fill="${bot}"/><rect y="299" width="600" height="1.5" fill="${v['--accent-lift']}" opacity=".5"/>`;
   });
 }
@@ -282,22 +287,74 @@ function portraitSvg(style, s, hair) {
       mono: { bg: '#29282c', bg2: '#5a595f', skin: '#a3a1a6', shade: '#86848a', hair: '#2f2e33', cloth: '#4d4c52' },
       brand: { bg: v['--night'], bg2: v['--accent-lift'], skin: v['--accent-lift'], shade: v['--accent-lift'], hair: v['--night'], cloth: v['--accent-lift'] },
     }[style];
-    const back = hair === 'long' ? `<path d="M33 70C30 40 44 29 60 29S90 40 87 70L92 118C78 126 42 126 28 118Z" fill="${P.hair}"/>`
-      : hair === 'bob' ? `<path d="M34 70C32 42 45 30 60 30S88 42 86 70L88 96C76 102 44 102 32 96Z" fill="${P.hair}"/>` : '';
+    const temples = `<path d="M38.6 47C37.6 53 37.6 59 38.8 65L41.4 62C40.8 57 40.8 52 41.8 48Z" fill="${P.hair}" opacity=".45"/><path d="M81.4 47C82.4 53 82.4 59 81.2 65L78.6 62C79.2 57 79.2 52 78.2 48Z" fill="${P.hair}" opacity=".45"/>`;
+    const highTop = `<path d="M39 50C37 33 48 26 61 26C75 26 85 33 81 50C76 45 69 43 60 43C51 43 44 45 39 50Z" fill="${P.hair}"/>`;
+    const beard = (o = '') => `<path d="M39 66C41 86 51 95 60 95S79 86 81 66C76 76 68 80 60 80S44 76 39 66Z" fill="${P.hair}"${o}/>`;
     const top = {
       short: `<path d="M37 62C36 41 48 34 61 34C75 34 85 42 83 60C79 51 70 47 60 48C50 48 41 53 37 62Z" fill="${P.hair}"/>`,
-      beard: `<path d="M37 60C36 41 48 34 61 34C75 34 85 42 83 58C79 50 70 46 60 47C50 47 41 52 37 60Z" fill="${P.hair}"/><path d="M39 66C41 86 51 95 60 95S79 86 81 66C76 76 68 80 60 80S44 76 39 66Z" fill="${P.hair}"/>`,
-      bun: `<circle cx="60" cy="30" r="11" fill="${P.hair}"/><path d="M37 62C36 41 48 35 61 35C75 35 85 43 83 60C78 50 70 46 60 46C50 46 41 52 37 62Z" fill="${P.hair}"/>`,
-      long: `<path d="M38 60C40 42 50 37 61 37C73 37 82 44 82 58C75 48 67 45 58 46C49 47 42 52 38 60Z" fill="${P.hair}"/>`,
-      bob: `<path d="M38 60C40 42 50 37 61 37C73 37 82 44 82 58C75 48 67 45 58 46C49 47 42 52 38 60Z" fill="${P.hair}"/>`,
+      beard: `<path d="M37 60C36 41 48 34 61 34C75 34 85 42 83 58C79 50 70 46 60 47C50 47 41 52 37 60Z" fill="${P.hair}"/>${beard()}`,
+      fade: temples + highTop,
+      fadebeard: `${temples}${highTop}<path d="M40 70C42 86 51 93 60 93S78 86 80 70C76 77 68 81 60 81S44 77 40 70Z" fill="${P.hair}" opacity=".8"/>`,
+      quiff: `<path d="M37 60C36 45 41 35 52 31C58 25 72 24 80 29C86 34 86 46 83 56C79 48 71 44 61 45C50 46 41 51 37 60Z" fill="${P.hair}"/>`,
+      buzzbeard: `<path d="M38 58C38 43 48 36 60 36C72 36 82 43 82 57C76 50 68 47 60 47C52 47 44 50 38 58Z" fill="${P.hair}" opacity=".55"/>${beard()}`,
+      moustache: `<path d="M37 61C36 41 48 33 63 33C76 34 85 42 83 59C80 50 74 46 66 45C60 45 56 41 54 40C49 45 41 50 37 61Z" fill="${P.hair}"/>`
+        + `<path d="M48 77C52 72 57 72 60 75C63 72 68 72 72 77C67 80 63 79 60 78C57 79 53 80 48 77Z" fill="${P.hair}"/>`,
     }[hair];
     const op = style === 'brand' ? ' opacity=".9"' : '';
     return `<defs><radialGradient id="b" cx=".5" cy=".3" r=".9"><stop offset="0" stop-color="${P.bg2}" stop-opacity=".55"/><stop offset="1" stop-color="${P.bg}" stop-opacity="0"/></radialGradient></defs>`
-      + `<rect width="120" height="150" fill="${P.bg}"/><rect width="120" height="150" fill="url(#b)"/>${back}`
+      + `<rect width="120" height="150" fill="${P.bg}"/><rect width="120" height="150" fill="url(#b)"/>`
       + `<path d="M8 150C12 120 36 106 60 106S108 120 112 150Z" fill="${P.cloth}"${op}/><rect x="51" y="84" width="18" height="26" rx="7" fill="${P.shade}"/>`
       + `<ellipse cx="60" cy="64" rx="22" ry="27" fill="${P.skin}"/>${top}`;
   });
 }
+
+/** Barber shears, drawn closed with the tips to +x, in two halves that share the screw at (150, 48) of a 260x96 box, so each
+ * half turns about the pivot on the compositor (its drop shadow is rasterised once, with the image). 'a': the upper blade, the
+ * lower finger ring with its rest tang and the brass screw on top; 'b': the lower blade and the thumb ring on a shorter, angled
+ * shank (the offset handle of a barber's pair). */
+function shearHalf(k) {
+  return art(`cv-sh-${k}`, 260, 96, () => {
+    const steel = (y1, y2, stops) => `<linearGradient id="b" gradientUnits="userSpaceOnUse" x1="0" y1="${y1}" x2="0" y2="${y2}">${stops}</linearGradient>`;
+    const defs = (k === 'a'
+      ? steel(38, 49, '<stop offset="0" stop-color="#5d6772"/><stop offset=".28" stop-color="#c3cad2"/><stop offset=".55" stop-color="#f4f6f8"/><stop offset=".8" stop-color="#8d97a2"/><stop offset=".92" stop-color="#e9edf1"/><stop offset="1" stop-color="#ffffff"/>')
+      : steel(47, 58, '<stop offset="0" stop-color="#ffffff"/><stop offset=".08" stop-color="#e9edf1"/><stop offset=".2" stop-color="#8d97a2"/><stop offset=".45" stop-color="#f4f6f8"/><stop offset=".72" stop-color="#c3cad2"/><stop offset="1" stop-color="#5d6772"/>'))
+      + '<linearGradient id="r" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#f2f4f6"/><stop offset=".45" stop-color="#9aa4ae"/><stop offset=".7" stop-color="#59626c"/><stop offset="1" stop-color="#c9cfd5"/></linearGradient>'
+      + '<radialGradient id="p" cx=".38" cy=".32" r=".75"><stop offset="0" stop-color="#fff1c8"/><stop offset=".45" stop-color="#d4a24c"/><stop offset="1" stop-color="#6e4b1a"/></radialGradient>'
+      + '<filter id="s" x="-20%" y="-40%" width="140%" height="190%"><feDropShadow dx="0" dy="5" stdDeviation="3.2" flood-color="#000" flood-opacity=".55"/></filter>';
+    const O = 'stroke="#141820" stroke-opacity=".55" stroke-width=".8"';
+    const body = k === 'a'
+      // Upper blade: a convex spine over a straight, hollow-ground edge along y = 48, with its lit edge line.
+      ? `<path d="M136 40C168 34 212 37 254 47.2L252 48.6L140 50Z" fill="url(#b)" ${O}/><path d="M150 47.4L251 47.9" stroke="#ffffff" stroke-width=".9" stroke-opacity=".9"/>`
+        + `<path d="M146 50C128 56 108 61 88 63L86 69.5C108 68 130 62 152 54Z" fill="url(#r)" ${O}/>`
+        + `<path fill-rule="evenodd" d="M66 52.5C79 52.5 88 59 88 67S79 81.5 66 81.5S44 75 44 67S53 52.5 66 52.5ZM66 58C56.5 58 50.5 62 50.5 67S56.5 76 66 76S81.5 72 81.5 67S75.5 58 66 58Z" fill="url(#r)" ${O}/>`
+        + `<path d="M48 76C40 84 28 88 14 86C24 84.5 34 80.5 43 72Z" fill="url(#r)" ${O}/><circle cx="14.5" cy="85.6" r="3.4" fill="url(#r)" ${O}/>`
+        + `<circle cx="150" cy="48" r="8" fill="url(#p)" ${O}/><circle cx="150" cy="48" r="4.6" fill="none" stroke="#6e4b1a" stroke-width="1" stroke-opacity=".7"/>`
+        + '<path d="M146.6 46.2L153.4 49.8" stroke="#5a3d14" stroke-width="1.4" stroke-linecap="round"/>'
+      : `<path d="M140 46L252 47.4L254 48.8C212 58 168 61 136 56Z" fill="url(#b)" ${O}/>`
+        + `<path d="M152 43C136 37 120 31 106 27L103.5 33C118 36 132 41 146 48Z" fill="url(#r)" ${O}/>`
+        + `<path fill-rule="evenodd" d="M88 12C100 12 108 18 108 26S100 40 88 40S68 34 68 26S76 12 88 12ZM88 17.5C79.5 17.5 74.5 21 74.5 26S79.5 34.5 88 34.5S101.5 31 101.5 26S96.5 17.5 88 17.5Z" fill="url(#r)" ${O}/>`;
+    return `<defs>${defs}</defs><g filter="url(#s)">${body}</g>`;
+  });
+}
+
+/** Hair clippings: four tapered slivers (long, short, an S-curl and a clipper stub) in three tones (chestnut, light brown and
+ * ash), light enough that the core itself shows on ink and on the dark glass, with a warm rim on the convex side. */
+const SHAPES = [
+  { w: 10, h: 46, core: 'M5 1C9 12 8.6 28 3 45C6.4 28 6.2 12 5 1Z', rim: 'M5.8 2C9.2 13 8.8 28 3.8 44' },
+  { w: 9, h: 30, core: 'M3.2 1C7.2 9 7.6 19 5.2 29C5.2 19 4.6 9 3.2 1Z', rim: 'M3.9 1.6C7.4 9.5 7.8 19 5.9 28' },
+  { w: 12, h: 42, core: 'M3.4 1C9.4 8 2 17 6.6 25.4C10.4 31.8 7.8 37 5.2 41C6.8 36.4 8.2 32 5.2 26.4C0.6 17.8 7.4 8.6 3.4 1Z', rim: 'M4.2 1.6C9.6 8.8 2.8 17.6 7.4 25.2C10.4 30.6 8.6 35.8 6 40' },
+  { w: 7, h: 16, core: 'M2.6 1C5.6 5 5.8 10 4 15C3.8 10 3.4 5 2.6 1Z', rim: 'M3.3 1.6C5.8 5.6 6 10 4.6 14.4' },
+];
+const TONES = [['#7a5638', '#4a3020', '#f6d6a6', '.8'], ['#9b7a5c', '#5e4430', '#ffe2b0', '.7'], ['#c9c1b6', '#8d857b', '#ffffff', '.6']];
+const strandSvg = (s, t) => art(`cv-hr-${s}-${t}`, SHAPES[s].w, SHAPES[s].h, () => {
+  const [a, b, rim, ro] = TONES[t];
+  return `<defs><linearGradient id="h" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs>`
+    + `<path d="${SHAPES[s].core}" fill="url(#h)"/><path d="${SHAPES[s].rim}" fill="none" stroke="${rim}" stroke-opacity="${ro}" stroke-width="1.15" stroke-linecap="round"/>`;
+});
+
+/** The platform's scissors mark (dom.js scissorsMark) in two halves that cross at (256, 259), for the finale tile's snip. */
+const snipHalf = (k) => art(`fn-sn-${k}`, 512, 512, () => `<g fill="none" stroke="#f2ede4" stroke-width="24" stroke-linecap="round">${
+  k === 'a' ? '<circle cx="190" cy="340" r="48"/><path d="M222 304L338 150"/>' : '<circle cx="322" cy="340" r="48"/><path d="M290 304L174 150"/>'}</g>`);
 
 const salonData = (s, over = {}) => ({
   name_ar: s.name_ar, name_en: s.name_en, about_ar: s.about_ar, about_en: s.about_en, logo_url: s.mark ? markSvg(s) : null, cover_url: s.mark ? coverSvg(s) : null,
@@ -801,13 +858,57 @@ const sectionHead = (id, h2, deckText, extra) => h(
 );
 
 // ---- 5.1 COVER
+// Clippings at the shears' tips (px; the same size on phones, where the flick narrows by .8 and the fall is shorter): shape and
+// tone, width, the flick off the blade, where each lands, its turn and timing (1-5 leave on the first snip, 6-7 on the second),
+// and the still page's cascade (sx, sy, sr, so).
+const CLIPS = [
+  { s: 0, t: 0, hw: 11.4, fx: -10, dx: -16, fall: 210, r0: 70, spin: 160, ms: 2000, delay: 0, sx: -8, sy: 34, sr: 62, so: 1 },
+  { s: 1, t: 1, hw: 9.1, fx: 8, dx: 14, fall: 170, r0: 110, spin: -140, ms: 1700, delay: 30, sx: 9, sy: 18, sr: 118, so: 1 },
+  { s: 2, t: 0, hw: 15.2, fx: -4, dx: -6, fall: 230, r0: 40, spin: 220, ms: 2300, delay: 60, sx: -2, sy: 62, sr: 24, so: 0.95 },
+  { s: 3, t: 2, hw: 5.3, fx: 12, dx: 22, fall: 150, r0: 95, spin: -260, ms: 1500, delay: 0, sx: 14, sy: 46, sr: -70, so: 0.9 },
+  { s: 0, t: 2, hw: 10.1, fx: -14, dx: -24, fall: 190, r0: 130, spin: 120, ms: 1900, delay: 90, sx: -16, sy: 84, sr: 150, so: 0.8 },
+  { s: 1, t: 0, hw: 7.9, fx: 6, dx: 10, fall: 160, r0: 60, spin: -180, ms: 1700, delay: 300, sx: 4, sy: 104, sr: 80, so: 0.6 },
+  { s: 3, t: 1, hw: 5.3, fx: -8, dx: -12, fall: 140, r0: 100, spin: 240, ms: 1500, delay: 320, sx: -10, sy: 120, sr: 30, so: 0.45 },
+];
+// Loose clippings in the air of the walk-in: x in mirror radii (in reading direction), y as a fraction of the phone's height.
+const DRIFT = [
+  { x: -0.62, y: 0.06, s: 0, t: 0 }, { x: 0.66, y: 0.28, s: 2, t: 1 }, { x: -0.5, y: 0.7, s: 1, t: 0 }, { x: 0.6, y: 0.9, s: 3, t: 2 },
+  { x: -0.18, y: 0.4, s: 1, t: 2 }, { x: 0.3, y: 0.6, s: 0, t: 1 }, { x: -0.72, y: 0.46, s: 3, t: 0 }, { x: 0.12, y: 1.02, s: 2, t: 0 },
+];
+// One cut: open, SNIP (the blades cross just past shut), open, SNIP, settle; the halves counter-rotate about the screw.
+const OPEN = 'cubic-bezier(.2,.7,.3,1)';
+const SNAP = 'cubic-bezier(.7,0,.9,.5)';
+const bladeKf = (s) => [
+  { rotate: `${-7 * s}deg`, easing: OPEN }, { offset: 0.22, rotate: `${-18 * s}deg`, easing: SNAP }, { offset: 0.34, rotate: `${1.5 * s}deg`, easing: OPEN },
+  { offset: 0.44, rotate: `${-11 * s}deg`, easing: SNAP }, { offset: 0.54, rotate: `${1.5 * s}deg`, easing: 'ease-in-out' },
+  { offset: 0.8, rotate: `${-3 * s}deg`, easing: 'ease-in-out' }, { rotate: `${-7 * s}deg` },
+];
+
 function coverScene(c) {
   const { mode, eng } = c;
   const still = mode === 'still';
-  const samples = [CAST.lamar, CAST.barber, CAST.rana];
-  const ring = bulbRing(mode === 'lite' ? 24 : 40, c.xs);
-  const glow = h('span', { class: 'cv-glow' });
-  const ringEl = h('div', { class: 'cv-ring rig', 'aria-hidden': 'true' }, glow, ring.groups);
+  const samples = [CAST.diwan, CAST.barber, CAST.fade];
+  // The barber's mirror: round glass in a brushed-brass rim on a leather strap, backlit, the shop's pole in its reflection.
+  const halo = h('span', { class: 'cv-halo' });
+  const pole = h('span', { class: 'cv-pole' }, h('b'), h('span', { class: 'cv-pole-t' }, h('i')), h('b'));
+  const sheen = h('span', { class: 'cv-sheen rig' });
+  const glint = h('span', { class: 'cv-glint' });
+  const glass = h('span', { class: 'cv-glass' }, h('span', { class: 'cv-refl' }), pole, sheen, glint, h('span', { class: 'cv-bevel' }));
+  const body = h('div', { class: 'cv-mbody' }, halo, h('span', { class: 'cv-strap' }, h('b')), h('span', { class: 'cv-rim' }), glass);
+  const mirrorIn = h('div', { class: 'cv-mirror-in rig' }, body);
+  const mirror = h('div', { class: 'cv-mirror rig', 'aria-hidden': 'true' }, mirrorIn);
+  // Shears and clippings ride in their own layer above the phone (a transformed mirror cannot lift a child over it).
+  const [bladeA, bladeB] = ['a', 'b'].map((k) => h('img', { class: `cv-sh-${k}`, src: shearHalf(k), alt: '' }));
+  const arc = h('span', { class: 'cv-sh-arc' }, bladeB, bladeA);
+  const HB = CLIPS.slice(0, mode === 'lite' ? 4 : 7);
+  const hb = HB.map((x) => h('img', { src: strandSvg(x.s, x.t), alt: '', style: { '--hw': `${x.hw}px`, '--sx': `${x.sx}px`, '--sy': `${x.sy}px`, '--sr': `${x.sr}deg`, '--so': String(x.so) } }));
+  const shears = h('span', { class: 'cv-sh' }, arc);
+  const fx = h('div', { class: 'cv-fx rig', 'aria-hidden': 'true' }, h('span', { class: 'cv-cut' }, shears, h('span', { class: 'cv-hb' }, hb)));
+  const drift = still ? null : h('div', { class: 'cv-drift rig', 'aria-hidden': 'true' }, DRIFT.slice(0, mode === 'lite' ? 4 : 8).map((d, i) => h(
+    'span',
+    { class: 'cv-hd', style: { '--x': String(d.x), '--y': String(d.y), '--i': String(i) } },
+    h('img', { src: strandSvg(d.s, d.t), alt: '', style: { '--hw': `${SHAPES[d.s].w}px` } }),
+  )));
   const spot = h('div', { class: 'cv-spot rig', 'aria-hidden': 'true' }, samples.map((s, i) => h('i', { class: i ? '' : 'on', style: { '--c': s.vars['--accent-lift'] } })));
   const dust = h('div', { class: 'cv-dust rig', 'aria-hidden': 'true' });
   const bloom = h('div', { class: 'cv-bloom rig', 'aria-hidden': 'true' });
@@ -822,7 +923,7 @@ function coverScene(c) {
   ];
   const chipLink = linkPill(samples[0].sub, c.domain, 'cv-plink');
   const phoneRig = h('div', { class: 'cv-phone rig', 'aria-hidden': 'true' }, h('div', { class: 'cv-phone-in' }, ph, chips, chipLink));
-  const hold = h('div', { class: 'cv-hold' }, ringEl, phoneRig, bloom);
+  const hold = h('div', { class: 'cv-hold' }, mirror, phoneRig, fx, drift, bloom);
 
   const mIn = h('span', { class: 'm-in', text: tx('mast') });
   const spanM = h('span', { class: 'm rig' }, mIn);
@@ -871,19 +972,31 @@ function coverScene(c) {
       { el: spanM, v: (p) => smooth(seg(p, 0, 0.32)) },
       { el: [eyebrow, spanS, deck, actions, scrim], v: (p) => seg(p, 0, 0.22) },
       ...lines.map((li) => ({ el: li, v: (p) => seg(p, 0, 0.25) })),
-      { el: ringEl, v: (p) => seg(p, 0, 0.6), w: (p) => seg(p, 0.35, 0.6) },
+      { el: mirror, v: (p) => smooth(seg(p, 0, 0.5)) },
+      { el: [mirrorIn, sheen], v: (p) => seg(p, 0.06, 0.6), w: (p) => seg(p, 0.35, 0.6) },
+      { el: fx, v: (p) => smooth(seg(p, 0, 0.5)), w: (p) => seg(p, 0.02, 0.28) },
+      { el: drift, v: (p) => seg(p, 0.03, 0.55), w: (p) => seg(p, 0.32, 0.55) },
       { el: phoneRig, v: (p) => smooth(seg(p, 0, 0.5)), w: (p) => seg(p, 0.38, 0.58) },
       { el: bloom, v: (p) => seg(p, 0.25, 0.85), w: (p) => seg(p, 0.25, 0.5) },
       { el: bone, v: (p) => seg(p, 0.72, 0.96) },
       { el: [dust, spot], v: (p) => p },
       { el: cue, v: (p) => seg(p, 0, 0.08) },
     ],
+    // The clippings flutter only while they are in the air, and the pole stops turning once the mirror has faded.
+    onP: still ? null : (p) => {
+      stage.classList.toggle('air', p > 0.02 && p < 0.6);
+      stage.classList.toggle('gone', p >= 0.6);
+    },
     measure(vw, vh) {
       const wide = vw >= 1024;
       let sc = 0.64;
       let top;
+      let eyeBottom = 0;
+      let lineW = 0;
       if (wide) {
         const fs = spanM.offsetHeight / 1.29;
+        eyeBottom = offIn(eyebrow, stage).y + eyebrow.offsetHeight;
+        lineW = lineList.offsetWidth;
         const mastTop = offIn(spanM, stage).y + fs * 0.12;
         sc = clamp((vh - 0.6 * fs * 1.05 - 140) / 630, 0.62, 0.9);
         top = mastTop + 0.6 * fs * 1.05;
@@ -891,46 +1004,129 @@ function coverScene(c) {
       } else {
         top = offIn(actions, stage).y + actions.offsetHeight + (still ? 64 : 44);
       }
+      const pw = 300 * sc;
+      const phh = 630 * sc;
       ph.style.setProperty('--scale', sc.toFixed(3));
       stage.style.setProperty('--ph-top', `${Math.round(top)}px`);
-      stage.style.setProperty('--ph-w', `${(300 * sc).toFixed(1)}px`);
-      stage.style.setProperty('--ph-h', `${(630 * sc).toFixed(1)}px`);
-      phoneRig.style.setProperty('--to-centre', `${Math.round(vh / 2 - (top + (630 * sc) / 2))}px`);
-      if (still && !wide) stage.style.setProperty('--still-h', `${Math.round(top + 630 * sc + 120)}px`);
+      stage.style.setProperty('--ph-w', `${pw.toFixed(1)}px`);
+      stage.style.setProperty('--ph-h', `${phh.toFixed(1)}px`);
+      // The mirror: on phones a close-up just inside the screen, its whole rim in the first view under the "how" link.
+      let d = Math.min(pw * 1.62, vw - 24);
+      let dy = -phh * 0.03;
+      if (wide) {
+        // As big as the clear centre between the coverline and copy columns allows (the scrim dims the rest); the crown
+        // tucks behind the masthead and the strap hangs from a peg that never lands on the eyebrow pill.
+        const g = clamp(vw * 0.04, 16, 64);
+        const cw = g + Math.min(470, (vw - 2 * g) * 0.36);
+        d = clamp(vw - 2 * cw + 180, pw * 1.55, phh * 0.98);
+        // The pole in the reflection stands in the clear strip between the copy column and the phone, on the side away from
+        // the falling clippings; a desktop too narrow for that strip (or a tall one, where the phone fills it) goes without it.
+        const strip = (vw - pw) / 2 - cw;
+        hold.style.setProperty('--pole-x', `${Math.round(pw / 2 + Math.min(strip / 2, 40))}px`);
+        hold.classList.toggle('no-pole', strip < d * 0.055 + 20);
+        dy = -phh * 0.08;
+        const room = top + (phh - d) / 2 + dy - (eyeBottom + 26);
+        hold.style.setProperty('--strap', `${Math.round(clamp(room, 0, d * 0.2))}px`);
+        // The shears rest in the lane between the phone and the coverline column (their handles reach .64 of their width
+        // out from the tips): full size where it is wide enough, and on a narrow desktop a smaller pair whose tips tuck over
+        // the phone's edge, so the steel and the falling clippings never run into the coverlines.
+        const lane = (vw - pw) / 2 - g - lineW - 14;
+        const shw = clamp((lane - 22) / 0.64, 96, pw * 0.6);
+        hold.style.setProperty('--sh-w', `${Math.round(shw)}px`);
+        hold.style.setProperty('--sh-x', `${Math.round(Math.min(22, lane - shw * 0.64))}px`);
+      }
+      hold.style.setProperty('--md', `${Math.round(d)}px`);
+      hold.style.setProperty('--m-dy', `${Math.round(dy)}px`);
+      // On the hold, so the phone, the mirror and the shears all rise by the same amount.
+      hold.style.setProperty('--to-centre', `${Math.round(vh / 2 - (top + phh / 2))}px`);
+      if (still) stage.style.setProperty('--still-h', `${Math.round(wide ? Math.max(vh, top + phh / 2 + dy + d / 2 + 40, top + phh + 40) : top + phh + 120)}px`);
     },
   });
   c.coverScene = scene;
-  if (!still) eng.pointer(scene, () => [phoneRig, ringEl, spanM, lineList]);
+  // The sheen drifts against the frame, so the glass has depth.
+  if (!still) eng.pointer(scene, () => [phoneRig, mirror, sheen, fx, spanM, lineList]);
 
   // A focused button is never left invisible in the faded copy.
   copy.addEventListener('focusin', () => {
     if (scene.p > 0.05) window.scrollTo(0, scene.top);
   });
 
+  // The cut: the pair swings in from the finger ring and snips twice; the clump under the tips splits, flutters and fades
+  // down the glass beside the phone. WAAPI on transforms and opacity, filling backwards only, so each run leaves nothing behind.
+  // No cut before the shears have glided in (their CSS intro runs on the frame clock, which a slow first paint holds back),
+  // and none over a cut still under way.
+  let calm = Infinity;
+  const cut = () => {
+    if (!arc.animate) return;
+    calm = performance.now() + 1600;
+    // Phones: smaller shears, and a shorter fall that fades out above the deposit chip.
+    const wide = innerWidth >= 1024;
+    const k = wide ? 1 : 0.8;
+    const X = (v) => `${(v * c.xs * k).toFixed(1)}px`;
+    const Y = (v) => `${(v * (wide ? 1 : 0.55)).toFixed(1)}px`;
+    for (const x of [bladeA, bladeB, arc, ...hb]) x.getAnimations?.().forEach((a) => a.cancel());
+    bladeA.animate(bladeKf(1), { duration: 1500 });
+    bladeB.animate(bladeKf(-1), { duration: 1500 });
+    arc.animate([
+      { rotate: '-8deg', translate: '0px 0px', easing: 'cubic-bezier(.45,0,.2,1)' }, { offset: 0.26, rotate: '0deg', translate: `${3 * k}px 0px` },
+      { offset: 0.58, rotate: '1deg', translate: `${7 * k}px 0px`, easing: 'cubic-bezier(.45,0,.2,1)' }, { rotate: '-8deg', translate: '0px 0px' },
+    ], { duration: 1500 });
+    hb.forEach((img, i) => {
+      const { fx: f, dx, fall, r0, spin, ms, delay } = HB[i];
+      const sway = i % 2 ? 7 : -7;
+      img.animate([
+        { translate: '0px 0px', rotate: `${r0}deg`, opacity: 0, easing: 'cubic-bezier(.2,.8,.4,1)' }, { offset: 0.05, opacity: 1 },
+        { offset: 0.14, translate: `${X(f)} ${Y(-6)}`, rotate: `${r0 + spin * 0.12}deg`, easing: 'cubic-bezier(.5,0,.8,.6)' },
+        { offset: 0.42, translate: `${X(f + (dx - f) * 0.3 + sway)} ${Y(fall * 0.36)}`, rotate: `${r0 + spin * 0.45}deg` },
+        { offset: 0.72, translate: `${X(f + (dx - f) * 0.7 - sway)} ${Y(fall * 0.7)}`, opacity: 1 },
+        { translate: `${X(dx)} ${Y(fall)}`, rotate: `${r0 + spin}deg`, opacity: 0 },
+      ], { duration: ms, delay: 510 + delay, fill: 'backwards' });
+    });
+  };
+  const resting = () => !eng.stopped && el.classList.contains('live') && !document.hidden && scene.p <= 0.02;
+
   if (mode === 'full') {
     eng.every(4800, () => {
-      if (!el.classList.contains('live') || document.hidden || c.view.dataset.motion !== 'full' || scene.p > 0.02) return;
-      cur = (cur + 1) % samples.length;
-      const s = samples[cur];
-      const inc = slots[front ^ 1];
-      const out = slots[front];
-      front ^= 1;
-      fill(inc, s);
-      inc.classList.remove('go', 'front');
-      inc.classList.add('next');
-      out.classList.remove('front');
-      inc.style.zIndex = '2';
-      out.style.zIndex = '1';
-      requestAnimationFrame(() => requestAnimationFrame(() => {
-        inc.classList.add('go', 'front');
-        inc.classList.remove('next');
-      }));
-      [...spot.children].forEach((x, i) => x.classList.toggle('on', i === cur));
-      glow.animate?.([{ opacity: 0 }, { opacity: 1, offset: 0.35 }, { opacity: 0 }], { duration: 1400, easing: 'ease-out' });
-      values(s, true);
+      if (performance.now() < calm || !resting() || c.view.dataset.motion !== 'full') return;
+      // The cut starts the slide: the next salon comes up on the first close of the blades.
+      cut();
+      eng.after(480, () => {
+        cur = (cur + 1) % samples.length;
+        const s = samples[cur];
+        const inc = slots[front ^ 1];
+        const out = slots[front];
+        front ^= 1;
+        fill(inc, s);
+        inc.classList.remove('go', 'front');
+        inc.classList.add('next');
+        out.classList.remove('front');
+        inc.style.zIndex = '2';
+        out.style.zIndex = '1';
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          inc.classList.add('go', 'front');
+          inc.classList.remove('next');
+        }));
+        [...spot.children].forEach((x, i) => x.classList.toggle('on', i === cur));
+        // The backlight swells and the new salon's colour flashes across the glass.
+        halo.animate?.([{ opacity: 0.6 }, { opacity: 1, offset: 0.3 }, { opacity: 0.6 }], { duration: 1100, easing: 'ease-out' });
+        glint.style.setProperty('--gc', s.vars['--accent-lift']);
+        // (+-21% puts the band on the rim; it stays lit across the glass on both sides of the phone.)
+        glint.animate?.([{ opacity: 0, translate: `${24 * c.xs}% 0` }, { offset: 0.12, opacity: 1 }, { offset: 0.86, opacity: 1 }, { opacity: 0, translate: `${-24 * c.xs}% 0` }], { duration: 1300, delay: 450, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'backwards' });
+        values(s, true);
+      });
     });
   }
-  if (!still) c.ready.then(() => el.classList.add('go'));
+  if (!still) {
+    eng.on(shears, 'animationend', (e) => {
+      if (e.animationName !== 'cv-sh-in') return;
+      calm = 0;
+      // The first cut, once the mirror has hung, its light has steadied and the shears have glided in.
+      eng.after(150, () => {
+        if (resting() && c.view.dataset.motion !== 'still') cut();
+      });
+    });
+    c.ready.then(() => el.classList.add('go'));
+  }
   return el;
 }
 
@@ -1027,7 +1223,7 @@ function plate(c, s, i) {
 
 function whiteLabelScene(c) {
   const { mode, eng } = c;
-  const chapters = [CAST.lamar, CAST.barber, CAST.joud];
+  const chapters = [CAST.diwan, CAST.barber, CAST.weibdeh];
   const head = sectionHead('white-label', tx('wl_h2'), tx('wl_deck'), h('p', { class: 'l-note', text: tx('examples') }));
   const labelLine = (line) => line.replace('{domain}', ltr(`.${c.domain}`));
   const labelItems = () => tx('wl_labels').map(([title, line], i) => h(
@@ -1176,7 +1372,7 @@ function whiteLabelScene(c) {
 function collectionScene(c) {
   const { mode, eng } = c;
   const still = mode === 'still';
-  const list = [CAST.lamar, CAST.barber, CAST.rana, CAST.joud];
+  const list = [CAST.diwan, CAST.barber, CAST.fade, CAST.weibdeh];
   const spreads = list.map((s, i) => {
     const data = salonData(s);
     const arc = Array.from({ length: 12 }, (_, k) => h('i', { style: { '--k': String(k), '--a': `${n1(-55 + (110 * k) / 11)}deg` } }));
@@ -1413,7 +1609,7 @@ function pocketScene(c) {
   const s = CAST.corner;
   const data = salonData(s, { page_theme: 'day' });
   const steps = tx('pk_steps');
-  const subs = ['lamar', 'barber-house', 'rana-nails', 'joud-studio', 'corner-barber', 'your-salon'];
+  const subs = ['diwan', 'barber-house', 'fade-studio', 'weibdeh', 'corner-barber', 'your-salon'];
   const row = (order) => h('div', { class: 'pk-row rig', dir: 'ltr' }, order.map((x) => h('span', { class: x === 'corner-barber' ? 'me' : '' }, h('b', { text: x }), `.${c.domain}`)));
   const rowsA = row(subs);
   const rowsB = row([...subs.slice(3), ...subs.slice(0, 3)]);
@@ -1736,12 +1932,13 @@ function finaleScene(c) {
   const { mode, eng } = c;
   const N = mode === 'lite' ? 20 : 28;
   const ring = bulbRing(N, c.xs, 'fn-b');
-  const moons = [CAST.lamar, CAST.barber, CAST.rana, CAST.joud, CAST.corner].map((s, i) => {
+  const moons = [CAST.diwan, CAST.barber, CAST.fade, CAST.weibdeh, CAST.corner].map((s, i) => {
     const m = h('span', { class: 'fn-moon', style: { '--a': `${i * 72}deg` } }, h('span', { class: 'up' }, salonIcon(salonData(s))));
     paintSalon(m, s);
     return m;
   });
-  const tile = h('span', { class: 'fn-tile' }, h('span', { class: 'sc' }, scissorsMark()), h('span', { class: 'lb', text: tx('logo_here') }));
+  // The "your logo here" scissors, in two halves that snip when the last bulb lights.
+  const tile = h('span', { class: 'fn-tile' }, h('span', { class: 'sc' }, ['a', 'b'].map((k) => h('img', { class: `sn-${k}`, src: snipHalf(k), alt: '' }))), h('span', { class: 'lb', text: tx('logo_here') }));
   // The moons ride a flattened orbit around the mirror and stay upright as it turns.
   const ringEl = h('span', { class: 'fn-ring rig' }, h('span', { class: 'fn-glow' }), ring.groups, tile, h('span', { class: 'fn-orbit' }, h('span', { class: 'fn-spin' }, moons)));
   const [a, b] = tx('fn_h2');

@@ -628,7 +628,21 @@ async function main() {
     await page.$eval('.day-chip .badge', (el) => (el.closest('.day-chip') as HTMLElement).click());
     await page.waitForSelector('.appt');
     await page.click('.sched-head .add-btn:not([disabled])');
-    await page.waitForSelector('.sheet .slot-q');
+    // Late in the evening the day can have no time left (the customer took the last
+    // slot): the booking then goes on the next day that has some.
+    const slotsShown = () => page.waitForSelector('.sheet .slot-q, .sheet .new-booking .empty');
+    await slotsShown();
+    let bookedOn: string | null = null;
+    for (let tries = 0; !(await page.$('.sheet .slot-q')) && tries < 3; tries++) {
+      bookedOn = await page.$eval('.sheet .day-chip[aria-pressed="true"]', (el) => {
+        let next = el.nextElementSibling as HTMLButtonElement;
+        while (next.disabled) next = next.nextElementSibling as HTMLButtonElement;
+        next.click();
+        return next.dataset.date!;
+      });
+      await page.waitForFunction(() => !document.querySelector('.sheet .slot-skel'));
+      await slotsShown();
+    }
     await page.$$eval('.sheet .slot-q', (els) => (els[Math.min(4, els.length - 1)] as HTMLElement).click());
     await page.type('.sheet input[name=name]', 'ليث');
     await page.type('.sheet input[name=phone]', '0791234567');
@@ -636,7 +650,12 @@ async function main() {
     // The button names the time it saves: «احفظ · اليوم 4:00 م».
     await clickText(page, '.sheet-foot button', 'احفظ');
     await find(page, '.toast', 'تم الحجز');
-    await page.waitForFunction(() => document.querySelectorAll('.appt').length >= 2);
+    if (bookedOn) {
+      await page.$eval(`.sched-strip .day-chip[data-date="${bookedOn}"], .day-chip[data-date="${bookedOn}"]`, (el) => (el as HTMLElement).click());
+      await page.waitForSelector('.appt');
+    } else {
+      await page.waitForFunction(() => document.querySelectorAll('.appt').length >= 2);
+    }
     await snap(page, 'bookings-day', { full: true, wait: 1200 });
     await page.click('.appt.s-confirmed');
     await page.waitForSelector('.sheet .customer-box');
