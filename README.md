@@ -331,7 +331,7 @@ brand-new salon's whole journey: the admin creating and handing it over and rese
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
 English and desktop, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 78 PNGs to `screenshots/` (23 of them the landing page at its scroll beats, plus still and lite runs) and fails on any page error,
+colours, and the launch splash. It writes 78 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
