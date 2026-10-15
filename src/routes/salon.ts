@@ -41,7 +41,7 @@ async function updateSalon(ctx: Ctx) {
     icon_bg: b.opt('icon_bg', oneOf(['auto', 'white', 'primary', 'night'] as const)),
     page_theme: b.opt('page_theme', oneOf(['night', 'day'] as const)),
     studio_theme: b.opt('studio_theme', oneOf(['studio', 'brand'] as const)),
-    tryon: b.opt('tryon', oneOf(['off', 'men', 'women', 'all'] as const)),
+    tryon: b.opt('tryon', oneOf(['off', 'on'] as const)),
     booking_enabled: b.opt('booking_enabled', bool),
     cliq_required: b.opt('cliq_required', bool),
     cliq_alias: b.opt('cliq_alias', text(60)),

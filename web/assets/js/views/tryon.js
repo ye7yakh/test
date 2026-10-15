@@ -1,7 +1,9 @@
-// The AI mirror: a customer takes a selfie (or picks a photo), chooses a haircut and,
-// if they like, a colour, and sees it on themselves: drawn by an AI image model,
-// compared before/after with a slider, then booked in one tap. Nothing is kept: the
-// photo goes to the server only to be redrawn, and the results live in this tab.
+// The AI mirror: a customer takes a selfie (or picks a photo), the AI reads his hair
+// (length, texture, thickness, hairline, face shape) and offers only the men's cuts that
+// hair can give, best suited first. He picks one and, if he likes, a colour, and sees it
+// on himself: drawn by an AI image model, compared before/after with a slider, then
+// booked in one tap. Nothing is kept: the photo goes to the server only to be read and
+// redrawn, and the results live in this tab.
 import { ApiError, api, prepareImage } from '../api.js';
 import { clear, h, icon, legalLink, sheet, sparkles, toast, toastError } from '../dom.js';
 import { pick, t } from '../i18n.js';
@@ -13,11 +15,12 @@ let consented = false;
 const tried = [];
 
 const MESSAGES = ['tryon.msg1', 'tryon.msg2', 'tryon.msg3', 'tryon.msg4'];
+const READING = ['tryon.read1', 'tryon.read2', 'tryon.read3'];
 
 /** Opens the mirror. `onBook(look)` books the cut tried: { id, name, url }. */
 export function openTryon(app, data, { onBook } = {}) {
   const canBook = data.salon.booking_enabled && data.services.length > 0;
-  const state = { step: 'photo', photo: null, photoUrl: null, catalogue: null, group: null, style: null, shade: null, stream: null, request: null, shown: null };
+  const state = { step: 'photo', photo: null, photoUrl: null, catalogue: null, read: null, style: null, shade: null, stream: null, request: null, shown: null };
   const body = h('div', { class: 'mirror' });
   const back = h('button', { class: 'btn btn-secondary', type: 'button' });
   const next = h('button', { class: 'btn btn-primary sheen', type: 'button' });
@@ -29,7 +32,6 @@ export function openTryon(app, data, { onBook } = {}) {
   const catalogue = api('GET', '/api/public/tryon/styles')
     .then((c) => {
       state.catalogue = c;
-      state.group = c.audience === 'women' ? 'women' : 'men';
       return c;
     })
     .catch((err) => {
@@ -49,7 +51,7 @@ export function openTryon(app, data, { onBook } = {}) {
     for (const id of timers) clearInterval(id);
     timers.clear();
     state.step = step;
-    clear(body, { photo: photoStep, camera: cameraStep, style: styleStep, working: workingStep, result: resultStep }[step]());
+    clear(body, { photo: photoStep, camera: cameraStep, reading: readingStep, style: styleStep, working: workingStep, result: resultStep }[step]());
     panel.el.querySelector('.sheet-body').scrollTop = 0;
   }
 
@@ -113,7 +115,75 @@ export function openTryon(app, data, { onBook } = {}) {
     if (state.photoUrl) URL.revokeObjectURL(state.photoUrl);
     state.photo = blob;
     state.photoUrl = URL.createObjectURL(blob);
-    catalogue.then((c) => c && go('style'));
+    // A new photo is read afresh: the cuts on offer depend on the hair in it.
+    state.read = null;
+    state.style = null;
+    catalogue.then((c) => c && go('reading'));
+  }
+
+  /** The photo sent as it is (JPEG, PNG or WebP); the answer is JSON, or an error code. */
+  async function send(path, controller) {
+    const res = await fetch(path, {
+      method: 'POST',
+      body: state.photo,
+      headers: { 'Content-Type': state.photo.type || 'image/jpeg' },
+      credentials: 'same-origin',
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, data.error || 'tryon_failed', data.field);
+    }
+    return res;
+  }
+
+  /** A frame around the photo while the AI looks at it: a scan line, glints, a line of words. */
+  function busyFrame(keys) {
+    const line = h('p', { class: 'mr-msg', 'aria-live': 'polite', text: t(keys[0]) });
+    let n = 0;
+    timers.add(setInterval(() => {
+      n = (n + 1) % keys.length;
+      line.classList.remove('in');
+      void line.offsetWidth;
+      line.textContent = t(keys[n]);
+      line.classList.add('in');
+    }, 2400));
+    const frame = h('div', { class: 'mr-frame' }, h('img', { src: state.photoUrl, alt: '' }), h('div', { class: 'mr-scan', 'aria-hidden': 'true' }), h('div', { class: 'mr-glints', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')));
+    return { frame, line };
+  }
+
+  // ---------------------------------------------------------------- 1c. reading the hair
+
+  function readingStep() {
+    showFoot(true);
+    back.textContent = t('tryon.cancel');
+    next.hidden = true;
+    back.onclick = () => {
+      state.request?.abort();
+      state.request = null;
+      go('photo');
+    };
+    const { frame, line } = busyFrame(READING);
+    readHair();
+    return h('div', { class: 'mr-step mr-working' }, frame, h('h3', { text: t('tryon.reading') }), line);
+  }
+
+  async function readHair() {
+    const controller = new AbortController();
+    state.request = controller;
+    try {
+      const res = await send('/api/public/tryon/read', controller);
+      const read = await res.json();
+      if (state.request !== controller) return;
+      state.read = read;
+      go('style');
+    } catch (err) {
+      if (controller.signal.aborted) return;
+      toastError(err instanceof ApiError ? err : new ApiError(0, 'network'));
+      if (state.step === 'reading') go('photo');
+    } finally {
+      if (state.request === controller) state.request = null;
+    }
   }
 
   // ---------------------------------------------------------------- 1b. the camera
@@ -158,6 +228,10 @@ export function openTryon(app, data, { onBook } = {}) {
 
   function styleStep() {
     const c = state.catalogue;
+    const read = state.read;
+    const byId = new Map(c.styles.map((x) => [x.id, x]));
+    const fits = read.styles.map((id) => byId.get(id)).filter(Boolean);
+    const picks = new Set(read.picks);
     showFoot(true);
     back.textContent = t('tryon.change_photo');
     back.onclick = () => go('photo');
@@ -166,30 +240,30 @@ export function openTryon(app, data, { onBook } = {}) {
     next.disabled = !state.style;
     next.onclick = () => go('working');
 
-    const grid = h('div', { class: 'mr-styles', role: 'radiogroup', 'aria-label': t('tryon.pick_style') });
-    const shades = h('div', { class: 'mr-shades', role: 'radiogroup', 'aria-label': t('tryon.shade') });
-    const hair = () => c.shades.find((s) => s.id === state.shade)?.hex;
-    const drawStyles = () => {
-      const list = c.styles.filter((s) => c.audience !== 'all' || s.audience === state.group);
-      clear(grid, list.map((s, i) => h(
-        'button',
-        {
-          class: `mr-style ${state.style?.id === s.id ? 'on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(state.style?.id === s.id), style: { '--i': String(i) },
-          onclick: () => {
-            state.style = s;
-            // A colour men's cuts do not offer is dropped when switching to one.
-            if (s.audience === 'men' && !c.shades.find((x) => x.id === state.shade)?.men) state.shade = null;
-            next.disabled = false;
-            drawStyles();
-            drawShades();
-          },
+    const hair = () => c.shades.find((x) => x.id === state.shade)?.hex;
+    const card = (x, i) => h(
+      'button',
+      {
+        class: `mr-style ${state.style?.id === x.id ? 'on' : ''}`, type: 'button', role: 'radio', 'aria-checked': String(state.style?.id === x.id), style: { '--i': String(i) },
+        onclick: () => {
+          state.style = x;
+          next.disabled = false;
+          drawStyles();
         },
-        h('span', { class: 'art' }, styleArt(s.id, { hair: hair() })),
-        h('span', { class: 'n', text: pick(s, 'name') }),
-      )));
+      },
+      picks.has(x.id) ? h('span', { class: 'mr-best' }, icon('sparkles'), t('tryon.best')) : null,
+      h('span', { class: 'art' }, styleArt(x.id, { hair: hair() })),
+      h('span', { class: 'n', text: pick(x, 'name') }),
+    );
+    // The cuts best suited first, then the others his hair can give.
+    const best = h('div', { class: 'mr-styles', role: 'radiogroup', 'aria-label': t('tryon.for_you') });
+    const more = h('div', { class: 'mr-styles', role: 'radiogroup', 'aria-label': t('tryon.also') });
+    const drawStyles = () => {
+      clear(best, fits.filter((x) => picks.has(x.id)).map(card));
+      clear(more, fits.filter((x) => !picks.has(x.id)).map((x, i) => card(x, i + picks.size)));
     };
+    const shades = h('div', { class: 'mr-shades', role: 'radiogroup', 'aria-label': t('tryon.shade') });
     const drawShades = () => {
-      const men = (state.style?.audience ?? state.group) === 'men';
       const swatch = (id, label, hex) => h(
         'button',
         { class: `mr-shade ${state.shade === id ? 'on' : ''} ${id ? '' : 'natural'}`, type: 'button', role: 'radio', 'aria-checked': String(state.shade === id), title: label,
@@ -201,34 +275,37 @@ export function openTryon(app, data, { onBook } = {}) {
         h('i', { style: hex ? { '--sw': hex } : {} }),
         h('span', { text: label }),
       );
-      clear(shades, swatch(null, t('tryon.natural'), null), c.shades.filter((s) => !men || s.men).map((s) => swatch(s.id, pick(s, 'name'), s.hex)));
+      clear(shades, swatch(null, t('tryon.natural'), null), c.shades.map((x) => swatch(x.id, pick(x, 'name'), x.hex)));
     };
     drawStyles();
     drawShades();
 
-    const groups = c.audience === 'all'
-      ? h('div', { class: 'segmented mr-groups', role: 'radiogroup', 'aria-label': t('tryon.pick_style') }, ['men', 'women'].map((g) => {
-          const input = h('input', { type: 'radio', name: 'mr-group', value: g, checked: state.group === g });
-          input.addEventListener('change', () => {
-            state.group = g;
-            if (state.style?.audience !== g) {
-              state.style = null;
-              next.disabled = true;
-            }
-            drawStyles();
-            drawShades();
-          });
-          return h('label', null, input, h('span', { text: t(`tryon.${g}`) }));
-        }))
-      : null;
-
+    // What the AI saw: his hair's length and texture, and his face shape.
+    const profile = h(
+      'div',
+      { class: 'mr-me' },
+      h('img', { src: state.photoUrl, alt: t('tryon.your_photo') }),
+      h(
+        'div',
+        { class: 'grow' },
+        h('b', { text: t('tryon.your_hair') }),
+        h('div', { class: 'mr-traits' }, [`len_${read.hair.length}`, `tex_${read.hair.texture}`, `face_${read.hair.face}`].map((k) => h('span', { text: t(`tryon.${k}`) }))),
+      ),
+    );
+    if (!fits.length) {
+      next.hidden = true;
+      return h('div', { class: 'mr-step' }, profile, h('div', { class: 'mr-none' }, h('span', { class: 'ic' }, icon('scissors')), h('h3', { text: t('tryon.none_title') }), h('p', { class: 'muted', text: t('tryon.none_sub') })));
+    }
+    const others = fits.length > picks.size;
     return h(
       'div',
       { class: 'mr-step' },
-      h('div', { class: 'mr-me' }, h('img', { src: state.photoUrl, alt: t('tryon.your_photo') }), h('div', { class: 'grow' }, h('b', { text: t('tryon.your_photo') }), h('span', { class: 'muted', text: t('tryon.pick_hint') }))),
-      groups,
-      h('h3', { class: 'mr-h', text: t('tryon.pick_style') }),
-      grid,
+      profile,
+      h('h3', { class: 'mr-h' }, icon('sparkles'), t('tryon.for_you')),
+      best,
+      others ? h('h3', { class: 'mr-h', text: t('tryon.also') }) : null,
+      others ? more : null,
+      read.hidden ? h('p', { class: 'mr-hidden' }, icon('clock'), h('span', { text: t('tryon.hidden', { n: read.hidden }) })) : null,
       h('h3', { class: 'mr-h', text: t('tryon.shade') }),
       shades,
     );
@@ -240,29 +317,21 @@ export function openTryon(app, data, { onBook } = {}) {
     showFoot(true);
     back.textContent = t('tryon.cancel');
     next.hidden = true;
-    const line = h('p', { class: 'mr-msg', 'aria-live': 'polite', text: t(MESSAGES[0]) });
-    let n = 0;
     back.onclick = () => {
       // Stopped: the picture on its way is no longer wanted.
       state.request?.abort();
       state.request = null;
       go('style');
     };
-    timers.add(setInterval(() => {
-      n = (n + 1) % MESSAGES.length;
-      line.classList.remove('in');
-      void line.offsetWidth;
-      line.textContent = t(MESSAGES[n]);
-      line.classList.add('in');
-    }, 2400));
+    const { frame, line } = busyFrame(MESSAGES);
     run();
     return h(
       'div',
       { class: 'mr-step mr-working' },
-      h('div', { class: 'mr-frame' }, h('img', { src: state.photoUrl, alt: '' }), h('div', { class: 'mr-scan', 'aria-hidden': 'true' }), h('div', { class: 'mr-glints', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))),
+      frame,
       h('h3', { text: t('tryon.working') }),
       line,
-      h('div', { class: 'mr-chip' }, h('span', { class: 'art' }, styleArt(state.style.id, { hair: state.catalogue.shades.find((s) => s.id === state.shade)?.hex })), h('span', { text: lookName(state.style, shadeOf(state.shade)) })),
+      h('div', { class: 'mr-chip' }, h('span', { class: 'art' }, styleArt(state.style.id, { hair: state.catalogue.shades.find((x) => x.id === state.shade)?.hex })), h('span', { text: lookName(state.style, shadeOf(state.shade)) })),
     );
   }
 
@@ -276,17 +345,7 @@ export function openTryon(app, data, { onBook } = {}) {
     const shade = shadeOf(state.shade);
     const query = `style=${encodeURIComponent(style.id)}${shade ? `&shade=${encodeURIComponent(shade.id)}` : ''}`;
     try {
-      const res = await fetch(`/api/public/tryon?${query}`, {
-        method: 'POST',
-        body: state.photo,
-        headers: { 'Content-Type': state.photo.type || 'image/jpeg' },
-        credentials: 'same-origin',
-        signal: controller.signal,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new ApiError(res.status, data.error || 'tryon_failed', data.field);
-      }
+      const res = await send(`/api/public/tryon?${query}`, controller);
       const blob = await res.blob();
       if (state.request !== controller) return;
       const look = { id: shade ? `${style.id}:${shade.id}` : style.id, name: lookName(style, shade), style, shade, blob, url: URL.createObjectURL(blob) };
@@ -296,7 +355,7 @@ export function openTryon(app, data, { onBook } = {}) {
     } catch (err) {
       if (controller.signal.aborted) return;
       toastError(err instanceof ApiError ? err : new ApiError(0, 'network'));
-      if (state.step === 'working') go(err?.code === 'tryon_refused' || err?.code === 'image_too_small' || err?.code === 'unsupported_image' ? 'photo' : 'style');
+      if (state.step === 'working') go(['tryon_refused', 'hair_unclear', 'image_too_small', 'unsupported_image'].includes(err?.code) ? 'photo' : 'style');
     } finally {
       if (state.request === controller) state.request = null;
     }

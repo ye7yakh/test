@@ -193,30 +193,42 @@ name and an email address once the company is registered.
 
 ## The AI mirror (try a cut before booking)
 
-A customer takes a selfie (or picks a photo), chooses one of 16 cuts (8 men's, 8
-women's) and, if they like, one of 7 colours, and an AI image model redraws only the
-hair on their own photo. They compare before and after with a slider, try more, save
-the picture, and book the one they like in one tap: the booking carries the look
-(`skin_fade` or `bob:honey`), and the owner sees "requested cut: Bob · Honey
-balayage" on the schedule and in the booking, with the cut drawn and the colour
-swatch. Only that name is stored, never a picture.
+Men's cuts only. A customer takes a selfie (or picks a photo) and an AI vision model
+reads his hair: how long it is on top (shaved, very short, short, medium, long), its
+texture, how thick it is, his hairline and his face shape. The mirror then offers only
+the cuts that hair can give, because scissors only take hair shorter: no slick back or
+long flow for short hair, curls only for curly or wavy hair, nothing for a shaved head.
+They are ranked by face shape, with volume cuts last on thin hair or a receding
+hairline; the top three are marked as picks, and the customer is told how many cuts
+were hidden. He picks one of 12 cuts and, if he likes, one of 4 colours, and an AI image
+model redraws only the hair on his photo. He compares before and after with a slider,
+tries more, saves the picture, and books the one he likes in one tap: the booking
+carries the look (`skin_fade` or `pompadour:brown`), and the owner sees "requested
+cut: Pompadour · Dark brown" on the schedule and in the booking, with the cut drawn and
+the colour swatch. Only that name is stored, never a picture.
 
-- **Owners choose** in Settings: off, men's cuts, women's cuts or both. The switch
-  shows only when the platform has an AI provider configured; without one the mirror
-  is off everywhere.
+- **Owners turn it on** in Settings. The switch shows only when the platform has an AI
+  provider configured; without one the mirror is off everywhere.
+- **The AI only describes; rules decide.** The model answers in fixed JSON (checked
+  field by field); which cuts fit is decided by plain rules in `fitStyles`
+  (`src/tryon.ts`), each cut stating the least hair it needs, any texture it needs,
+  whether it relies on volume and the face shapes it flatters.
 - **Privacy:** nothing is sent until the customer agrees; the photo and the result
-  pass through the api in memory (`POST /api/public/tryon`, no storage, no logs of
-  the image), come back as a metadata-free JPEG with `Cache-Control: no-store`, and
+  pass through the api in memory (`POST /api/public/tryon/read` to read the hair,
+  `POST /api/public/tryon` to draw; no storage, no logs of the image), come back as a metadata-free JPEG with `Cache-Control: no-store`, and
   live in the customer's tab until it closes. The privacy policy and terms describe it.
-- **Providers** (`src/tryon.ts`): Google Gemini (default, `gemini-2.5-flash-image`,
-  roughly US$0.04 a picture) or OpenAI (`gpt-image-2`, roughly US$0.05 at medium
-  quality), chosen with `AI_TRYON_PROVIDER`; the prompt asks for a photorealistic
+- **Providers** (`src/tryon.ts`): Google Gemini (default: `gemini-2.5-flash` reads the
+  hair, `gemini-2.5-flash-image` draws, roughly US$0.04 a picture) or OpenAI
+  (`gpt-4.1-mini` reads, `gpt-image-2` draws, roughly US$0.05 a picture at medium
+  quality), chosen with `AI_TRYON_PROVIDER` (models with `AI_TRYON_VISION_MODEL` and
+  `AI_TRYON_MODEL`); reading a photo costs a small fraction of a picture; the prompt asks for a photorealistic
   edit that changes only the hair and keeps the face, beard, glasses, clothes,
-  background and light. In development a built-in stand-in tints the hair so the whole
-  flow works offline.
+  background and light. In development a built-in stand-in reads every photo as
+  medium, wavy hair on an oval face and tints the hair, so the whole flow works offline.
 - **Cost control:** tries are capped per address (6 per 10 minutes, 25 a day), per
-  salon (150 a day) and for the platform (1500 a day), with at most 6 drawing at once.
-  All are settings (`AI_TRYON_*`). A photo smaller than 256 pixels is refused before it
+  salon (150 a day) and for the platform (1500 a day), with at most 6 drawing at once;
+  reading the hair has its own caps (10 per address per 10 minutes, 5000 a day across
+  the platform, 12 at once). All are settings (`AI_TRYON_*`). A photo smaller than 256 pixels is refused before it
   costs anything.
 - **The camera:** the front camera in the page (`getUserMedia`, allowed by
   `Permissions-Policy: camera=(self)`), with an oval to frame the head; without it (or
@@ -351,7 +363,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 391 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 402 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
@@ -367,7 +379,7 @@ owner's first visit, ready menu, photos, brand, hours and bookings, a customer b
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
 English and desktop, the owner turning on the AI mirror and a customer trying a cut on a
 selfie and booking it, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 86 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
+colours, and the launch splash. It writes 87 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 

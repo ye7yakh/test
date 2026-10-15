@@ -2802,7 +2802,8 @@ body:has(.brand-nav.stuck) .s-header.scrolled { border-color: transparent; }
 /* The sheet. */
 .mirror-sheet .sheet-body { overflow-x: hidden; }
 .mr-step { display: grid; gap: 4px; animation: rise .5s var(--ease-out) both; }
-.mr-h { margin: 18px 2px 10px; font-size: 15px; }
+.mr-h { display: flex; align-items: center; gap: 7px; margin: 18px 2px 10px; font-size: 15px; }
+.mr-h .icon { width: 16px; height: 16px; color: var(--brand); }
 
 /* 1. The photo: a vanity mirror's ring of bulbs, the tips, the consent. */
 .mr-intro { justify-items: center; text-align: center; gap: 8px; }
@@ -2842,7 +2843,17 @@ body:has(.brand-nav.stuck) .s-header.scrolled { border-color: transparent; }
 .mr-me img { flex: none; width: 54px; height: 54px; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--brand-line); }
 .mr-me .grow { display: grid; gap: 1px; font-size: 13px; }
 .mr-me b { font-size: 15px; }
-.mr-groups { margin-top: 14px; }
+/* What the AI saw in his hair: small chips under his photo. */
+.mr-traits { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+.mr-traits span { display: inline-flex; align-items: center; height: 24px; padding: 0 9px; border-radius: 99px; background: var(--brand-soft); color: var(--text); font-size: 12px; font-weight: 500; }
+.mr-best { position: absolute; top: 7px; inset-inline-start: 7px; display: inline-flex; align-items: center; gap: 3px; height: 20px; padding: 0 7px; border-radius: 99px; background: var(--grad, var(--brand)); color: var(--on-brand); font-size: 10.5px; font-weight: 600; }
+.mr-best .icon { width: 11px; height: 11px; }
+.mr-hidden { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; font-size: 12.5px; line-height: 1.6; color: var(--text-3); }
+.mr-hidden .icon { flex: none; width: 15px; height: 15px; margin-top: 2px; }
+.mr-none { display: grid; justify-items: center; gap: 8px; margin-top: 16px; padding: 26px 18px; border-radius: 20px; border: 1px dashed var(--line-2); text-align: center; }
+.mr-none .ic { display: grid; place-items: center; width: 52px; height: 52px; border-radius: 50%; background: var(--brand-soft); color: var(--brand); }
+.mr-none h3 { font-size: 17px; }
+.mr-none p { max-width: 34ch; font-size: 13.5px; line-height: 1.6; }
 .mr-styles { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
 .mr-style { position: relative; display: grid; justify-items: center; gap: 6px; padding: 12px 6px 10px; border-radius: 20px; border: 1px solid var(--line); background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--brand) 12%, transparent), transparent 70%), var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: border-color .2s, box-shadow .25s, transform .3s var(--spring); animation: pop .45s var(--spring) both; animation-delay: calc(var(--i) * 30ms); }
 .mr-style .art { display: block; width: 76px; height: 76px; color: var(--brand); transition: transform .35s var(--spring); }
@@ -2920,8 +2931,6 @@ body:has(.brand-nav.stuck) .s-header.scrolled { border-color: transparent; }
 .look-sw { flex: none; width: 24px; height: 24px; border-radius: 50%; background: var(--sw); box-shadow: inset 0 0 0 1px rgb(255 255 255 / .2), 0 0 0 3px var(--surface-3); }
 .st-look { min-width: 0; color: var(--violet, var(--brand)); }
 .st-look .icon { flex: none; width: 13px; height: 13px; }
-.tryon-setting { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-.tryon-setting p { line-height: 1.6; }
 
 /* ---------------------------------------------------------------- motion preferences */
 @media (prefers-reduced-motion: reduce) {

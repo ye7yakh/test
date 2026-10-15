@@ -47,8 +47,8 @@ export interface Salon {
   icon_bg: IconBg;
   page_theme: 'night' | 'day';
   studio_theme: 'studio' | 'brand';
-  /** Which haircuts the AI mirror offers customers (src/tryon.ts). */
-  tryon: 'off' | 'men' | 'women' | 'all';
+  /** Whether customers see the AI mirror (src/tryon.ts). */
+  tryon: 'off' | 'on';
 }
 
 export type IconBg = 'auto' | 'white' | 'primary' | 'night';

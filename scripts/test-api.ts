@@ -11,6 +11,7 @@ import { addDays, availability, clock, createBooking, purgeProofs } from '../src
 import { nightBase } from '../src/colors.js';
 import { pool, query, tx } from '../src/db.js';
 import { renderPortrait } from '../src/media.js';
+import { fitStyles } from '../src/tryon.js';
 import type { Salon } from '../src/tenancy.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
@@ -1053,19 +1054,41 @@ async function tryonTests(K: string, owner: Client, customer: () => Client, { cu
   const selfie = await portraitJpeg(600, 800);
   expectStatus(await guest.get(K, '/api/public/tryon/styles'), 404, 'off until the owner turns it on', 'not_found');
   expectStatus(await tryOn(guest, 'style=skin_fade', selfie), 404, 'no pictures while it is off', 'not_found');
-  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === null, 'the salon page does not offer it');
+  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === false, 'the salon page does not offer it');
+  expectStatus(await guest.request(K, 'POST', '/api/public/tryon/read', { raw: selfie, type: 'image/jpeg' }), 404, 'no reading while it is off', 'not_found');
   expect((await owner.get(K, '/api/manage/salon')).json?.options?.tryon_available === true, 'the owner is told the platform can draw');
-  expectStatus(await owner.patch(K, '/api/manage/salon', { tryon: 'sideways' }), 400, 'an unknown setting', 'invalid');
-  const on = await owner.patch(K, '/api/manage/salon', { tryon: 'men' });
-  expect(on.status === 200 && on.json?.salon?.tryon === 'men', "the owner offers men's cuts", on.json?.salon?.tryon);
-  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === 'men', 'the salon page offers the mirror');
+  expectStatus(await owner.patch(K, '/api/manage/salon', { tryon: 'women' }), 400, "women's cuts are not a setting any more", 'invalid');
+  const on = await owner.patch(K, '/api/manage/salon', { tryon: 'on' });
+  expect(on.status === 200 && on.json?.salon?.tryon === 'on', 'the owner turns the mirror on', on.json?.salon?.tryon);
+  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === true, 'the salon page offers the mirror');
   const styles = await guest.get(K, '/api/public/tryon/styles');
-  expect(styles.status === 200 && styles.json.audience === 'men' && styles.json.styles.length > 0 && styles.json.styles.every((x: any) => x.audience === 'men'), "only men's cuts in the catalogue", styles.json);
-  expect(styles.json?.shades?.some((x: any) => x.id === 'black' && x.men) && styles.json.shades.some((x: any) => x.id === 'honey' && !x.men), 'colours say which suit the men\'s cuts');
-  expectStatus(await tryOn(guest, 'style=bob', selfie), 400, "a women's cut when only men's are offered", 'invalid');
+  const ids = (styles.json?.styles ?? []).map((x: any) => x.id);
+  expect(styles.status === 200 && ids.length === 12 && !['bob', 'pixie', 'long_layers', 'waves'].some((x) => ids.includes(x)), "only men's cuts in the catalogue", ids);
+  expect(styles.json?.shades?.map((x: any) => x.id).join() === 'black,brown,silver,platinum', "men's colours only", styles.json?.shades);
+  expectStatus(await tryOn(guest, 'style=bob', selfie), 400, "a women's cut", 'invalid');
   expectStatus(await tryOn(guest, 'style=nope', selfie), 400, 'an unknown cut', 'invalid');
-  expectStatus(await tryOn(guest, 'style=skin_fade&shade=honey', selfie), 400, "a colour the men's cuts do not offer", 'invalid');
+  expectStatus(await tryOn(guest, 'style=skin_fade&shade=honey', selfie), 400, 'a colour no longer offered', 'invalid');
   expectStatus(await tryOn(guest, 'style=skin_fade&shade=nope', selfie), 400, 'an unknown colour', 'invalid');
+
+  // Reading the hair: the cuts on offer are the ones it can give.
+  const read = (c: Client, body: Buffer, type = 'image/jpeg') => c.request(K, 'POST', '/api/public/tryon/read', { raw: body, type });
+  const reader = customer();
+  const hairRead = await read(reader, selfie);
+  expect(hairRead.status === 200 && hairRead.json.hair.length === 'medium' && hairRead.json.hair.texture === 'wavy' && hairRead.headers['cache-control'] === 'no-store', 'the hair is read from the photo (the stand-in sees medium, wavy hair)', hairRead.json);
+  expect(hairRead.json?.styles.includes('side_part') && hairRead.json.styles.includes('curls_fade') && !hairRead.json.styles.includes('slick_back') && !hairRead.json.styles.includes('flow') && hairRead.json.hidden === 2, 'medium hair: no cuts that need long hair', hairRead.json?.styles);
+  expect(hairRead.json?.picks.length === 3 && hairRead.json.picks.every((x: string) => hairRead.json.styles.includes(x)) && hairRead.json.picks.join() === hairRead.json.styles.slice(0, 3).join(), 'the three best suited come first');
+  expectStatus(await read(reader, Buffer.from('hello'), 'text/plain'), 415, 'reading something that is not an image', 'unsupported_image');
+  expectStatus(await read(reader, await portraitJpeg(120, 160)), 422, 'reading a photo too small', 'image_too_small');
+  const short = fitStyles({ length: 'short', texture: 'straight', density: 'normal', hairline: 'full', face: 'square' });
+  expect(short.styles.length === 5 && short.styles.every((x) => ['buzz', 'crew_cut', 'skin_fade', 'low_taper', 'crop'].includes(x)) && short.hidden === 7, 'short hair: only cuts from short hair (no side part, quiff or pompadour)', short);
+  const bald = fitStyles({ length: 'bald', texture: 'straight', density: 'thin', hairline: 'receding', face: 'oval' });
+  expect(bald.styles.length === 0 && bald.picks.length === 0, 'a shaved head: no cuts to try', bald);
+  const longStraight = fitStyles({ length: 'long', texture: 'straight', density: 'thick', hairline: 'full', face: 'oval' });
+  expect(longStraight.styles.includes('slick_back') && longStraight.styles.includes('flow') && !longStraight.styles.includes('curls_fade'), 'long straight hair: long cuts, but no curls', longStraight.styles);
+  const curly = fitStyles({ length: 'medium', texture: 'coily', density: 'thick', hairline: 'full', face: 'round' });
+  expect(curly.picks[0] === 'curls_fade', 'curly hair: the curls cut first', curly.picks);
+  const thinning = fitStyles({ length: 'long', texture: 'wavy', density: 'thin', hairline: 'receding', face: 'oval' });
+  expect(!thinning.picks.some((x) => ['pompadour', 'quiff', 'slick_back'].includes(x)), 'thin hair or a receding hairline: volume cuts are not the top picks', thinning.picks);
   expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('hello'), 'text/plain'), 415, 'not an image type', 'unsupported_image');
   expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('definitely not a jpeg at all')), 415, 'bytes that are not a picture', 'unsupported_image');
   expectStatus(await tryOn(guest, 'style=skin_fade', await portraitJpeg(120, 160)), 422, 'a photo too small to draw on', 'image_too_small');
@@ -1088,12 +1111,10 @@ async function tryonTests(K: string, owner: Client, customer: () => Client, { cu
   expect(seen?.look?.id === 'skin_fade:black' && seen.look.shade?.hex, 'the owner sees the requested cut', seen?.look);
   const plain = await book(customer(), { time: 930, name: 'باسل', phone: '0795550002' });
   expect(plain.status === 201 && plain.json.booking.look === null, 'a booking without one has none');
-  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 'skin_fade:honey' }), 400, "a men's cut with a colour it does not offer", 'invalid');
+  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 'bob:black' }), 400, "a women's cut", 'invalid');
+  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 'skin_fade:honey' }), 400, 'a colour no longer offered', 'invalid');
   expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: "x'; drop table bookings;--" }), 400, 'a look that is not in the catalogue', 'invalid');
   expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 42 }), 400, 'a look that is not text', 'invalid');
-  const both = await owner.patch(K, '/api/manage/salon', { tryon: 'all' });
-  const all = await guest.get(K, '/api/public/tryon/styles');
-  expect(both.status === 200 && all.json?.styles.some((x: any) => x.audience === 'women') && all.json.styles.some((x: any) => x.audience === 'men'), 'both menus when the owner offers all');
   await owner.patch(K, '/api/manage/salon', { tryon: 'off' });
   expectStatus(await guest.get(K, '/api/public/tryon/styles'), 404, 'off again', 'not_found');
 }

@@ -21,10 +21,15 @@ export const config = {
     provider: (env.AI_TRYON_PROVIDER ?? (env.AI_TRYON_API_KEY ? 'gemini' : isProd ? 'none' : 'mock')) as 'gemini' | 'openai' | 'mock' | 'none',
     apiKey: env.AI_TRYON_API_KEY ?? '',
     model: env.AI_TRYON_MODEL ?? '',
+    // The model that reads the customer's hair (a vision model that answers in JSON).
+    visionModel: env.AI_TRYON_VISION_MODEL ?? '',
     // Each picture costs a few cents: caps per address, per salon and platform-wide per day.
     perAddress10m: Number(env.AI_TRYON_PER_ADDRESS_10M ?? 6),
     perAddressDaily: Number(env.AI_TRYON_PER_ADDRESS_DAILY ?? 25),
     salonDaily: Number(env.AI_TRYON_SALON_DAILY ?? 150),
     platformDaily: Number(env.AI_TRYON_DAILY ?? 1500),
+    // Reading the hair (one per photo) is far cheaper; it has its own caps.
+    readsPerAddress10m: Number(env.AI_TRYON_READS_PER_ADDRESS_10M ?? 10),
+    readsDaily: Number(env.AI_TRYON_READS_DAILY ?? 5000),
   },
 };

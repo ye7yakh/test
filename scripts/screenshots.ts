@@ -674,11 +674,10 @@ async function main() {
     await page.bringToFront();
     await go(page, STUDIO, '.hero-card');
     await page.click('.s-header .icon-btn[aria-label="الإعدادات"]');
-    await page.waitForSelector('.sheet input[name=tryon]');
+    await page.waitForSelector('.sheet .switch-row');
     await settle(page, 400);
-    await page.$eval('.sheet input[name=tryon][value=all]', (el) => (el.closest('label') as HTMLElement).click());
+    await clickText(page, '.sheet .switch-row', 'المرآة الذكية لزبائنك');
     await find(page, '.toast', 'المرآة الذكية تعمل');
-    await page.$eval('.sheet input[name=tryon]', (el) => el.closest('section')!.scrollIntoView({ block: 'center' }));
     await snap(page, 'settings-ai-mirror');
     await page.keyboard.press('Escape');
     await settle(page, 400);
@@ -692,6 +691,9 @@ async function main() {
     await shopper.click('.mr-check-input');
     await snap(shopper, 'mirror-start');
     await upload(shopper, '.mr-actions .btn-secondary', files.p1);
+    // The AI reads his hair first; only the cuts it can give are offered.
+    await shopper.waitForSelector('.mr-working');
+    await snap(shopper, 'mirror-reading', { wait: 300 });
     await shopper.waitForSelector('.mr-styles .mr-style');
     await clickText(shopper, '.mr-style', 'بومبادور');
     await clickText(shopper, '.mr-shade', 'بني غامق');

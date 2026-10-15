@@ -469,7 +469,7 @@ function render(app, data) {
     : null;
 
   // ---- the AI mirror: three drawn heads in the cuts on offer, and the way in
-  const heads = { men: [['skin_fade', '#2b1d16'], ['pompadour', '#3b2418'], ['curls_fade', '#15110f']], women: [['bob', '#3b2418'], ['waves', '#b9803f'], ['pixie', '#a24a22']], all: [['pompadour', '#2b1d16'], ['waves', '#b9803f'], ['bob', '#5e1a2a']] }[salon.tryon];
+  const heads = salon.tryon ? [['skin_fade', '#2b1d16'], ['pompadour', '#3b2418'], ['curls_fade', '#15110f']] : null;
   const mirrorSection = heads
     ? h(
         'section',
