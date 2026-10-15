@@ -5,10 +5,11 @@
 // CliQ transfers, marks visits, adds bookings taken by phone and sets how booking works.
 import { api } from '../api.js';
 import { avatar, busy, clear, field, h, icon, input, markInvalid, sheet, stagger, switchRow, toast, trackOverlay } from '../dom.js';
-import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, iso, pick, t, westernDigits } from '../i18n.js';
+import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, getLang, iso, lookName, pick, t, westernDigits } from '../i18n.js';
 import { addDays, dateOf, dayLabel, dayStrip, fmtDate, periodIcon } from '../slots.js';
 import { reducedMotion } from '../theme.js';
 import { nowIn, toMin } from '../time.js';
+import { styleArt } from '../tryon-art.js';
 
 const HOLDING = new Set(['pending_payment', 'payment_sent', 'confirmed']);
 const COUNTED = new Set([...HOLDING, 'completed', 'no_show']);
@@ -511,6 +512,17 @@ function detailView(ctx, b, { done, onProofDecided }) {
     lifecycle(b),
     kv('calendar', h('span', { text: `${dayLabel(b.date, today)} · ${fmtDate(b.date, { day: 'numeric', month: 'long' })}` })),
     kv(avatar(b.staff.photo_url, pick(b.staff, 'name')), h('span', { text: `${t('bk.with')} ${pick(b.staff, 'name')}` })),
+    // What they came for: the cut (and colour) tried on in the AI mirror. Only its
+    // name is kept, never the photo.
+    b.look
+      ? h(
+          'div',
+          { class: 'look-box' },
+          h('span', { class: 'art', 'aria-hidden': 'true' }, styleArt(b.look.style, { hair: b.look.shade?.hex })),
+          h('div', { class: 'grow' }, h('div', { class: 'eyebrow' }, icon('wand'), t('sched.look')), h('b', { text: lookName(b.look) }), h('span', { class: 'small muted', text: t('sched.look_sub') })),
+          b.look.shade ? h('i', { class: 'look-sw', title: pick(b.look.shade, 'name'), style: { '--sw': b.look.shade.hex } }) : null,
+        )
+      : null,
     h(
       'div',
       { class: 'customer-box' },
@@ -682,6 +694,8 @@ function apptRow(ctx, b, { now, isToday, isPast, fresh, i }) {
   const status = [
     live ? h('span', { class: 'live-tag' }, h('i', { 'aria-hidden': 'true' }), t('sched.live')) : null,
     b.status !== 'confirmed' ? h('span', { class: `st st-${b.status}` }, h('i', { 'aria-hidden': 'true' }), t(`status.${b.status}`)) : null,
+    // The cut the customer tried on in the AI mirror before booking.
+    b.look ? h('span', { class: 'st st-look' }, icon('wand'), h('span', { class: 'truncate', text: lookName(b.look) })) : null,
   ].filter(Boolean);
   const row = h(
     'div',

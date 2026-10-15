@@ -188,6 +188,37 @@ is set (without it, the sentences that point to it are left out). The text lives
 not legal advice: have it reviewed by a lawyer in Jordan, and add the company's legal
 name and an email address once the company is registered.
 
+## The AI mirror (try a cut before booking)
+
+A customer takes a selfie (or picks a photo), chooses one of 16 cuts (8 men's, 8
+women's) and, if they like, one of 7 colours, and an AI image model redraws only the
+hair on their own photo. They compare before and after with a slider, try more, save
+the picture, and book the one they like in one tap: the booking carries the look
+(`skin_fade` or `bob:honey`), and the owner sees "requested cut: Bob · Honey
+balayage" on the schedule and in the booking, with the cut drawn and the colour
+swatch. Only that name is stored, never a picture.
+
+- **Owners choose** in Settings: off, men's cuts, women's cuts or both. The switch
+  shows only when the platform has an AI provider configured; without one the mirror
+  is off everywhere.
+- **Privacy:** nothing is sent until the customer agrees; the photo and the result
+  pass through the api in memory (`POST /api/public/tryon`, no storage, no logs of
+  the image), come back as a metadata-free JPEG with `Cache-Control: no-store`, and
+  live in the customer's tab until it closes. The privacy policy and terms describe it.
+- **Providers** (`src/tryon.ts`): Google Gemini (default, `gemini-2.5-flash-image`,
+  roughly US$0.04 a picture) or OpenAI (`gpt-image-2`, roughly US$0.05 at medium
+  quality), chosen with `AI_TRYON_PROVIDER`; the prompt asks for a photorealistic
+  edit that changes only the hair and keeps the face, beard, glasses, clothes,
+  background and light. In development a built-in stand-in tints the hair so the whole
+  flow works offline.
+- **Cost control:** tries are capped per address (6 per 10 minutes, 25 a day), per
+  salon (150 a day) and for the platform (1500 a day), with at most 6 drawing at once.
+  All are settings (`AI_TRYON_*`). A photo smaller than 256 pixels is refused before it
+  costs anything.
+- **The camera:** the front camera in the page (`getUserMedia`, allowed by
+  `Permissions-Policy: camera=(self)`), with an oval to frame the head; without it (or
+  without permission) the phone's own camera through the file picker.
+
 ## The platform dashboard (admin)
 
 Leads with new bookings across all salons over the last 30 days (the last 7 days
@@ -317,7 +348,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 361 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 391 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
@@ -325,13 +356,15 @@ npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400
 changes and payments nobody decided), the admin tools, the addresses (landing,
 dashboard, `www.`, the owners' door at `/admin`, `/book`, trailing slashes, redirects,
 404s, unknown and suspended salons), seeding a brand, link previews, the privacy
-policy and terms, and the security edges: tenant isolation, CSRF, upload validation,
+policy and terms, the AI mirror (owner switch, catalogue, picture, limits and the
+look on a booking), and the security edges: tenant isolation, CSRF, upload validation,
 private payment screenshots, rate limits and session revocation. `screenshots` drives Chrome through the landing page and a
 brand-new salon's whole journey: the admin creating and handing it over and resetting the owner's password, the
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
-English and desktop, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 78 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
+English and desktop, the owner turning on the AI mirror and a customer trying a cut on a
+selfie and booking it, then a cover photo, the page by day and the dashboard in the salon's
+colours, and the launch splash. It writes 86 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 

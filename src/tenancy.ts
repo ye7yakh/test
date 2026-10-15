@@ -47,6 +47,8 @@ export interface Salon {
   icon_bg: IconBg;
   page_theme: 'night' | 'day';
   studio_theme: 'studio' | 'brand';
+  /** Which haircuts the AI mirror offers customers (src/tryon.ts). */
+  tryon: 'off' | 'men' | 'women' | 'all';
 }
 
 export type IconBg = 'auto' | 'white' | 'primary' | 'night';
@@ -89,7 +91,7 @@ export function clearTenantCache(): void {
 export const SALON_COLUMNS = `id, tenant_id, subdomain, name_ar, name_en, about_ar, about_en, phone, address,
   timezone, currency, color_primary, color_accent, photo_style, logo_media_id, active, updated_at,
   booking_enabled, cliq_required, cliq_alias, cliq_name, deposit_kind, trim_scale(deposit_amount)::text as deposit_amount,
-  payment_window_min, cover_media_id, icon_media_id, icon_bg, page_theme, studio_theme`;
+  payment_window_min, cover_media_id, icon_media_id, icon_bg, page_theme, studio_theme, tryon`;
 
 interface ParsedHost {
   tenant: Tenant;

@@ -7,6 +7,7 @@ import { loadSalonWeek } from '../hours.js';
 import { one, query, pool } from '../db.js';
 import { HttpError, ok, type Ctx, type Router } from '../http.js';
 import { legalPage } from '../legal.js';
+import { catalogue, salonTryon, tryOn } from '../tryon.js';
 import { addOwnerBadge, loadMediaBytes, mediaUrl, renderIcon, renderPlatformIcon, renderShareCard, renderSplash } from '../media.js';
 import type { Salon } from '../tenancy.js';
 
@@ -26,6 +27,8 @@ export function salonSummary(s: Salon) {
     icon_v: iconVersion(s),
     page_theme: s.page_theme,
     studio_theme: s.studio_theme,
+    // Which haircuts customers can try on with the AI mirror; null when it is off.
+    tryon: salonTryon(s),
     booking_enabled: s.booking_enabled,
     cliq_required: s.cliq_required,
     deposit_kind: s.deposit_kind,
@@ -289,6 +292,23 @@ export function publicRoutes(r: Router) {
   r.get('/admin.webmanifest', (ctx) => manifest(ctx, true));
   r.get('/share.jpg', shareImage);
   r.get('/robots.txt', robots);
+  // The AI mirror: the catalogue, and a try-on (the photo in, the picture out; nothing kept).
+  r.get('/api/public/tryon/styles', (ctx) => {
+    const setting = salonTryon(requireSalon(ctx));
+    if (!setting) throw new HttpError(404, 'not_found');
+    ok(ctx, catalogue(setting));
+  });
+  r.post('/api/public/tryon', async (ctx) => {
+    const jpg = await tryOn(ctx, requireSalon(ctx));
+    ctx.res.writeHead(200, {
+      'Content-Type': 'image/jpeg',
+      'Content-Length': jpg.length,
+      'Cache-Control': 'no-store',
+      'Content-Security-Policy': "default-src 'none'; sandbox",
+      'Cross-Origin-Resource-Policy': 'same-origin',
+    });
+    ctx.res.end(jpg);
+  });
   // The privacy policy and the terms, on every host.
   r.get('/privacy', (ctx) => legalPage(ctx, 'privacy'));
   r.get('/terms', (ctx) => legalPage(ctx, 'terms'));

@@ -129,6 +129,7 @@ export function baseSecurityHeaders(res: ServerResponse, hsts: boolean): void {
   res.setHeader('Referrer-Policy', 'same-origin');
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  // The camera is for the AI mirror's selfie, on this origin only.
+  res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
   if (hsts) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
 }

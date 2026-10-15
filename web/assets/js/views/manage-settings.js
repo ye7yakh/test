@@ -100,6 +100,29 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
     }),
   );
 
+  // ---- the AI mirror: which cuts customers can try on before booking (offered only
+  // when the platform has an AI image model)
+  const mirror = store.options?.tryon_available
+    ? h(
+        'div',
+        { class: 'segmented', role: 'radiogroup', 'aria-label': t('settings.tryon') },
+        ['off', 'men', 'women', 'all'].map((value) => {
+          const radio = h('input', { type: 'radio', name: 'tryon', value, checked: (s.tryon ?? 'off') === value });
+          radio.addEventListener('change', async () => {
+            try {
+              const res = await api('PATCH', '/api/manage/salon', { tryon: value });
+              store.set({ salon: res.salon });
+              toast(t(value === 'off' ? 'settings.tryon_saved_off' : 'settings.tryon_saved'));
+            } catch (err) {
+              toastError(err);
+              mirror.querySelector(`input[value="${store.salon.tryon ?? 'off'}"]`).checked = true;
+            }
+          });
+          return h('label', null, radio, h('span', { text: t(`settings.tryon_${value}`) }));
+        }),
+      )
+    : null;
+
   const group_ = (title, ...children) => h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', { text: title })), h('div', { class: 'card' }, children));
   const logout = h('button', { class: 'btn btn-ghost btn-sm logout-btn', type: 'button', onclick: () => { panel.close(); clearManageCache(); app.logout(); } }, icon('logout', 'flip-rtl'), t('logout'));
   const form = h(
@@ -118,6 +141,7 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
       pwRow,
       pwFold,
     ),
+    mirror ? group_(t('settings.tryon'), h('div', { class: 'tryon-setting' }, h('span', { class: 'tile', 'aria-hidden': 'true' }, icon('wand')), h('p', { class: 'small muted grow', text: t('settings.tryon_sub') })), mirror) : null,
     group_(t('settings.language'), langs),
     h('div', { class: 'settings-end' }, logout, legalLinks('in-sheet')),
   );

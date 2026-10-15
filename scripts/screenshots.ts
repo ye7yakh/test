@@ -651,6 +651,66 @@ async function main() {
     await desk.waitForSelector('.appt');
     await snap(desk, 'desktop-bookings', { wait: 1200 });
 
+    // ---- the AI mirror: the owner turns it on, a customer tries a cut on a selfie and books it
+    await page.bringToFront();
+    await go(page, STUDIO, '.hero-card');
+    await page.click('.s-header .icon-btn[aria-label="الإعدادات"]');
+    await page.waitForSelector('.sheet input[name=tryon]');
+    await settle(page, 400);
+    await page.$eval('.sheet input[name=tryon][value=all]', (el) => (el.closest('label') as HTMLElement).click());
+    await find(page, '.toast', 'المرآة الذكية تعمل');
+    await page.$eval('.sheet input[name=tryon]', (el) => el.closest('section')!.scrollIntoView({ block: 'center' }));
+    await snap(page, 'settings-ai-mirror');
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    const shopper = await newPage(await browser.createBrowserContext());
+    await go(shopper, `${SALON}/`, '.p-tryon');
+    await shopper.$eval('#mirror', (el) => el.scrollIntoView({ block: 'center' }));
+    await snap(shopper, 'mirror-card', { wait: 1200 });
+    await shopper.click('.p-tryon-go');
+    await shopper.waitForSelector('.mr-intro');
+    await settle(shopper, 500); // the sheet slides up first
+    await shopper.click('.mr-check-input');
+    await snap(shopper, 'mirror-start');
+    await upload(shopper, '.mr-actions .btn-secondary', files.p1);
+    await shopper.waitForSelector('.mr-styles .mr-style');
+    await clickText(shopper, '.mr-style', 'بومبادور');
+    await clickText(shopper, '.mr-shade', 'بني غامق');
+    await snap(shopper, 'mirror-styles');
+    await clickText(shopper, '.sheet-foot button', 'أرني النتيجة');
+    await shopper.waitForSelector('.mr-working');
+    await snap(shopper, 'mirror-working', { wait: 300 });
+    await shopper.waitForSelector('.mr-compare');
+    await shopper.waitForFunction(() => (document.querySelector('.mr-after img') as HTMLImageElement)?.complete);
+    await snap(shopper, 'mirror-result', { wait: 1600 });
+    await clickText(shopper, '.sheet-foot button', 'احجز هذه القصة');
+    await shopper.waitForSelector('.book-sheet .p-svc');
+    await snap(shopper, 'mirror-book');
+    await shopper.click('.book-sheet .p-svc');
+    await shopper.waitForSelector('.sheet .pick-card, .sheet .slot');
+    if (await shopper.$('.sheet .pick-card')) await shopper.click('.sheet .pick-card.anyone');
+    await shopper.waitForSelector('.sheet .slot');
+    await shopper.click('.sheet .slot');
+    await clickText(shopper, '.sheet-foot button', 'التالي');
+    await shopper.waitForSelector('.sheet input[name=name]');
+    await shopper.type('.sheet input[name=name]', 'زيد');
+    await shopper.type('.sheet input[name=phone]', `078${String(Date.now()).slice(-7)}`);
+    await shopper.waitForSelector('.sheet .tk-look');
+    await clickText(shopper, '.sheet-foot button', 'تأكيد الحجز');
+    await shopper.waitForSelector('.cliq-card');
+    // The look is named on the booking; the owner sees it on their schedule.
+    const lookDate = (await shopper.evaluate(`fetch('/api/public/bookings/' + location.pathname.split('/').pop()).then((r) => r.json()).then((j) => j.booking.look && j.booking.date)`)) as string | null;
+    if (!lookDate) problems.push('the booking from the AI mirror has no look');
+    await page.bringToFront();
+    await go(page, `${STUDIO}/bookings`, '.sched-summary');
+    await page.$eval(`.day-chip[data-date="${lookDate}"]`, (el) => (el as HTMLElement).click());
+    await page.waitForSelector('.appt .st-look');
+    await page.$eval('.appt .st-look', (el) => (el.closest('.appt') as HTMLElement).click());
+    await page.waitForSelector('.sheet .look-box');
+    await snap(page, 'booking-detail-ai-look');
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+
     // ---- the salon's look, its way: a cover photo, its page by day, the dashboard in its colours
     await page.bringToFront();
     await go(page, `${STUDIO}/brand`, '.look-grid');

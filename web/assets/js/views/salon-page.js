@@ -11,6 +11,7 @@ import { homeScreen, phone } from '../preview.js';
 import { fmtDate } from '../slots.js';
 import { applyColors, reducedMotion } from '../theme.js';
 import { nowIn, openStatus, toMin } from '../time.js';
+import { styleArt } from '../tryon-art.js';
 
 export function salonPage(app, { book = false } = {}) {
   const el = h('div', { class: 'p-page' }, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
@@ -316,6 +317,17 @@ function render(app, data) {
   const { salon, services, staff, hours } = data;
   const canBook = salon.booking_enabled && services.length > 0;
   const book = (serviceId) => (canBook ? openBooking(app, data, { serviceId }) : null);
+  // The AI mirror: loaded when first opened; the cut tried on can go straight to booking.
+  const mirror = async () => {
+    let tryon;
+    try {
+      tryon = await import('./tryon.js');
+    } catch {
+      toast(errorText({ code: 'network' }), 'error');
+      return;
+    }
+    tryon.openTryon(app, data, { onBook: (look) => openBooking(app, data, { look }) });
+  };
   const name = pick(salon, 'name');
   const about = pick(salon, 'about');
   const now = nowIn(salon.timezone);
@@ -456,6 +468,29 @@ function render(app, data) {
       ))
     : null;
 
+  // ---- the AI mirror: three drawn heads in the cuts on offer, and the way in
+  const heads = { men: [['skin_fade', '#2b1d16'], ['pompadour', '#3b2418'], ['curls_fade', '#15110f']], women: [['bob', '#3b2418'], ['waves', '#b9803f'], ['pixie', '#a24a22']], all: [['pompadour', '#2b1d16'], ['waves', '#b9803f'], ['bob', '#5e1a2a']] }[salon.tryon];
+  const mirrorSection = heads
+    ? h(
+        'section',
+        { class: 'p-section', id: 'mirror', 'aria-labelledby': 'mirror-t' },
+        h(
+          'div',
+          { class: 'p-tryon reveal' },
+          h('div', { class: 'p-tryon-glow', 'aria-hidden': 'true' }),
+          h('div', { class: 'p-tryon-heads', 'aria-hidden': 'true' }, heads.map(([id, hair], i) => h('span', { style: { '--i': String(i) } }, styleArt(id, { hair })))),
+          h(
+            'div',
+            { class: 'p-tryon-text' },
+            h('span', { class: 'eyebrow' }, icon('sparkles'), t('tryon.eyebrow')),
+            h('h2', { id: 'mirror-t', tabindex: '-1', text: t('tryon.section_title') }),
+            h('p', { text: t('tryon.section_sub') }),
+          ),
+          h('button', { class: 'btn btn-primary sheen p-tryon-go', type: 'button', onclick: mirror }, icon('wand'), t('tryon.cta')),
+        ),
+      )
+    : null;
+
   // ---- contact
   const contactSection = tel || salon.address
     ? section('contact', t('pub.contact'), 0, h(
@@ -483,6 +518,7 @@ function render(app, data) {
     h('span', { class: 'l', text: label }),
   );
   const actions = [
+    heads ? action('wand', t('tryon.cta_short'), { onclick: mirror, class: 'p-action ai' }) : null,
     tel ? action('phone', t('pub.call'), { href: `tel:${tel}` }) : null,
     wa ? action('chat', t('pub.whatsapp'), { href: `https://wa.me/${wa}` }) : null,
     map ? action('pin', t('pub.map'), { href: map }) : null,
@@ -540,9 +576,9 @@ function render(app, data) {
 
   // ---- the page under the hero: on a wide screen, the menu beside the details
   const visits = myVisits(salon, head);
-  const col = visits || servicesSection || teamSection ? h('div', { class: 'p-col' }, visits, servicesSection, teamSection) : null;
+  const col = visits || mirrorSection || servicesSection || teamSection ? h('div', { class: 'p-col' }, visits, mirrorSection, servicesSection, teamSection) : null;
   const aside = hoursSection || contactSection ? h('aside', { class: 'p-aside' }, hoursSection, contactSection) : null;
-  const split = !!(servicesSection || teamSection) && !!aside;
+  const split = !!(mirrorSection || servicesSection || teamSection) && !!aside;
 
   const footer = h(
     'footer',

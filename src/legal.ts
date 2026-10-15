@@ -16,7 +16,7 @@ export type LegalDoc = 'privacy' | 'terms';
 type Lang = 'ar' | 'en';
 
 /** When the text last changed in substance. */
-const UPDATED = '2026-10-14';
+const UPDATED = '2026-10-15';
 
 type Block = string | string[];
 interface Section {
@@ -66,7 +66,7 @@ const PRIVACY: Record<Lang, Doc> = {
             'معلومات الصالون التي تضيفها: الاسم والوصف والعنوان والهاتف والشعار والصور وأسماء الفريق وصورهم والخدمات والأسعار وأوقات الدوام وبيانات كليك لاستلام العربون.',
             'آخر وقت استخدمت فيه لوحة الإدارة.',
           ],
-          'ونستخدم عنوان IP لجهازك بشكل مؤقت للحدّ من محاولات الدخول والحجوزات المتكررة، ولا نحفظه في قاعدة بياناتنا. لا نطلب بريدك الإلكتروني ولا موقعك الجغرافي ولا بيانات بطاقتك البنكية.',
+          'ونستخدم عنوان IP لجهازك بشكل مؤقت للحدّ من محاولات الدخول والحجوزات ومعاينات المرآة الذكية المتكررة، ولا نحفظه في قاعدة بياناتنا. لا نطلب بريدك الإلكتروني ولا موقعك الجغرافي ولا بيانات بطاقتك البنكية.',
         ],
       },
       {
@@ -90,6 +90,7 @@ const PRIVACY: Record<Lang, Doc> = {
             '**صورة التحويل** لا تُنشر أبدًا: يراها صاحب الصالون، وأنت من خلال رابط حجزك.',
             '**فريق {brand}،** عند الحاجة فقط، لدعم صالون أو حل مشكلة تقنية.',
             '**مزوّد الاستضافة السحابية** Amazon Web Services، الذي تعمل عليه خوادمنا وقاعدة بياناتنا، وقد تكون خارج الأردن.',
+            '**مزوّد الذكاء الاصطناعي،** إذا جرّبت قصة في المرآة الذكية فقط: يتلقّى الصورة التي اخترتها ليرسم المعاينة (انظر «المرآة الذكية»).',
             '**الجهات الرسمية،** إذا ألزمنا القانون بذلك.',
           ],
           'أما معلومات الصالون وصور فريقه وأسعار خدماته فهي منشورة للجميع على صفحة الصالون، وتظهر عند مشاركة رابطه وفي نتائج محركات البحث.',
@@ -98,6 +99,17 @@ const PRIVACY: Record<Lang, Doc> = {
       {
         title: 'المدفوعات',
         body: ['لا نستلم أي أموال ولا تمرّ عبرنا. يُحوَّل العربون عبر كليك من تطبيق بنكك إلى الصالون مباشرة، ونحن نحفظ فقط صورة التحويل التي ترفعها ليتحقق منها الصالون.'],
+      },
+      {
+        title: 'المرآة الذكية',
+        body: [
+          'إذا كان الصالون يقدّم المرآة الذكية وجرّبت قصة، تُرسَل الصورة التي تلتقطها أو تختارها إلى خوادمنا ثم إلى مزوّد ذكاء اصطناعي (مثل Google أو OpenAI) ليرسم عليها القصة واللون اللذين اخترتهما. لا تُرسَل الصورة قبل موافقتك.',
+          [
+            '**لا نحفظ صورتك ولا المعاينة:** تمرّ عبر خوادمنا في الذاكرة فقط، ولا تُكتب في قاعدة بياناتنا ولا في ملفاتنا. تبقى المعاينات في متصفحك حتى تغلق الصفحة، إلا إذا حفظتها أنت.',
+            '**مزوّد الذكاء الاصطناعي** يعالج الصورة وفق شروطه، وقد تكون خوادمه خارج الأردن، وقد يحتفظ بها لفترة قصيرة لمنع إساءة الاستخدام.',
+            '**مع الحجز** يُحفظ اسم القصة واللون فقط إذا حجزت القصة التي جرّبتها، ليعرف الصالون ما تريده. لا تُحفظ أي صورة.',
+          ],
+        ],
       },
       {
         title: 'مدة الاحتفاظ بها',
@@ -186,7 +198,7 @@ const PRIVACY: Record<Lang, Doc> = {
             'The salon information you add: name, description, address, phone, logo, photos, team names and photos, services, prices, opening hours, and the CliQ details for receiving deposits.',
             'When you last used the dashboard.',
           ],
-          'We use your device\'s IP address briefly to limit repeated sign-in attempts and bookings; we do not store it in our database. We do not ask for your email address, your location or your card details.',
+          'We use your device\'s IP address briefly to limit repeated sign-in attempts, bookings and AI mirror previews; we do not store it in our database. We do not ask for your email address, your location or your card details.',
         ],
       },
       {
@@ -210,6 +222,7 @@ const PRIVACY: Record<Lang, Doc> = {
             '**The transfer screenshot** is never published: the salon\'s owner sees it, and you do through your booking link.',
             '**The {brand} team,** only when needed to support a salon or fix a technical problem.',
             '**Our cloud hosting provider,** Amazon Web Services, which runs our servers and database, possibly outside Jordan.',
+            '**An AI image provider,** only if you try a cut in the AI mirror: it receives the photo you chose to draw the preview (see "The AI mirror").',
             '**Authorities,** when the law requires us to share it.',
           ],
           'A salon\'s own information, team photos and prices are public on its page, and appear when its link is shared and in search results.',
@@ -218,6 +231,17 @@ const PRIVACY: Record<Lang, Doc> = {
       {
         title: 'Payments',
         body: ['We never receive or hold money. Deposits go by CliQ from your banking app straight to the salon; we only keep the screenshot you upload so the salon can check it.'],
+      },
+      {
+        title: 'The AI mirror',
+        body: [
+          'If a salon offers the AI mirror and you try a cut, the photo you take or choose is sent to our servers and on to an AI image provider (such as Google or OpenAI), which draws the cut and colour you picked onto it. Nothing is sent until you agree.',
+          [
+            '**We keep neither your photo nor the preview:** they pass through our servers in memory only and are never written to our database or files. Previews stay in your browser until you close the page, unless you save them yourself.',
+            '**The AI provider** processes the photo under its own terms, possibly outside Jordan, and may keep it briefly to prevent abuse.',
+            '**With a booking,** only the name of the cut and colour is kept, if you book the cut you tried, so the salon knows what you want. No picture is kept.',
+          ],
+        ],
       },
       {
         title: 'How long we keep it',
@@ -304,6 +328,16 @@ const TERMS: Record<Lang, Doc> = {
         ],
       },
       {
+        title: 'المرآة الذكية',
+        body: [
+          [
+            'المعاينة صورة تقريبية يرسمها الذكاء الاصطناعي للتوضيح فقط. قد تختلف النتيجة في الصالون بحسب طبيعة شعرك وكثافته ولونه، ولا يلتزم الصالون بأن تطابقها.',
+            'جرّب بصورتك أنت، أو بصورة شخص أنت وليّ أمره وبموافقته. لا ترفع صور غيرك دون إذنهم، ولا صورًا مسيئة أو غير لائقة.',
+            'عدد المحاولات محدود في اليوم، وقد تتوقف المرآة مؤقتًا عند الضغط عليها.',
+          ],
+        ],
+      },
+      {
         title: 'العربون عن طريق كليك',
         body: [
           [
@@ -382,6 +416,16 @@ const TERMS: Record<Lang, Doc> = {
             'If you cannot come, cancel from your booking page as early as you can, so someone else can have the time.',
             'The salon may cancel a booking if something unexpected comes up, and will contact you.',
             'Do not book times you do not mean to keep. Each number has a limit on upcoming bookings, and salons may turn away fake bookings.',
+          ],
+        ],
+      },
+      {
+        title: 'The AI mirror',
+        body: [
+          [
+            'A preview is an approximate picture drawn by AI, for illustration only. The result at the salon can differ with your hair\'s texture, thickness and colour, and the salon does not promise to match it.',
+            'Use a photo of yourself, or of someone you are the guardian of, with their agreement. Do not upload photos of others without their permission, or offensive or inappropriate images.',
+            'The number of tries a day is limited, and the mirror may pause for a while when it is busy.',
           ],
         ],
       },

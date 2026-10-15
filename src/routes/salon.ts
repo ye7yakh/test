@@ -9,6 +9,7 @@ import { SALON_COLUMNS, type PhotoStyle, type Salon } from '../tenancy.js';
 import { bool, color, currency, CURRENCIES, Input, int, oneOf, price, text, timezone } from '../validate.js';
 import { HttpError } from '../http.js';
 import { SERVICE_ICONS } from './services.js';
+import { tryonProvider } from '../tryon.js';
 
 async function salonBody(salonId: number) {
   const s = (await one<Salon>(`select ${SALON_COLUMNS} from salons where id = $1`, [salonId]))!;
@@ -16,7 +17,8 @@ async function salonBody(salonId: number) {
   return {
     salon: { ...rest, logo_url: mediaUrl(logo_media_id), cover_url: mediaUrl(cover_media_id), icon_url: mediaUrl(icon_media_id), icon_v: iconVersion(s) },
     hours: await loadSalonWeek(pool, salonId),
-    options: { currencies: CURRENCIES, photo_styles: PHOTO_STYLES, service_icons: SERVICE_ICONS },
+    // tryon_available: the platform has an AI image model, so the owner can offer the mirror.
+    options: { currencies: CURRENCIES, photo_styles: PHOTO_STYLES, service_icons: SERVICE_ICONS, tryon_available: tryonProvider() !== null },
   };
 }
 
@@ -39,6 +41,7 @@ async function updateSalon(ctx: Ctx) {
     icon_bg: b.opt('icon_bg', oneOf(['auto', 'white', 'primary', 'night'] as const)),
     page_theme: b.opt('page_theme', oneOf(['night', 'day'] as const)),
     studio_theme: b.opt('studio_theme', oneOf(['studio', 'brand'] as const)),
+    tryon: b.opt('tryon', oneOf(['off', 'men', 'women', 'all'] as const)),
     booking_enabled: b.opt('booking_enabled', bool),
     cliq_required: b.opt('cliq_required', bool),
     cliq_alias: b.opt('cliq_alias', text(60)),

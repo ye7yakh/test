@@ -6,6 +6,7 @@ import { one, query, type Db } from './db.js';
 import { HttpError } from './http.js';
 import { publish } from './events.js';
 import type { Salon } from './tenancy.js';
+import { describeLook } from './tryon.js';
 
 export const HOLDING = ['pending_payment', 'payment_sent', 'confirmed'] as const;
 export const STEP_MIN = 15;
@@ -158,6 +159,8 @@ interface CreateInput extends AvailabilityInput {
   name: string;
   phone: string;
   source: 'online' | 'owner';
+  /** The look tried on in the AI mirror (catalogue ids, checked by parseLook). */
+  look?: string | null;
 }
 
 /** Books a slot. Runs inside the caller's transaction; the database refuses overlaps. */
@@ -218,17 +221,17 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
     const row = await one<{ id: number; status: string }>(
       // The deposit hold never outlives the appointment's start: nobody should be
       // paying for a visit that has begun (online slots start at least LEAD_MIN out).
-      `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, deposit, expires_at, source, token_hash, customer_name)
+      `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, deposit, expires_at, source, token_hash, customer_name, look)
        select $1, $2, $3, $4, t.start_at, t.start_at + make_interval(mins => $7),
               case when d.deposit > 0 then 'pending_payment' else 'confirmed' end,
               $8::numeric, d.deposit,
               case when d.deposit > 0 then least(now() + make_interval(mins => $12), t.start_at) end,
-              $13, $14, $16
+              $13, $14, $16, $17
          from (select ($5::timestamp + make_interval(mins => $6)) at time zone $15 as start_at) t,
               (select case when $9 then (case when $10 = 'full' then $8::numeric else least($11::numeric, $8::numeric) end) else 0 end as deposit) d
        returning id, status`,
       [salon.id, customer!.id, staffId, service.id, input.date, input.min, service.duration_min, service.price,
-        needsDeposit, salon.deposit_kind, salon.deposit_amount, salon.payment_window_min, input.source, hashToken(token), salon.timezone, input.name],
+        needsDeposit, salon.deposit_kind, salon.deposit_amount, salon.payment_window_min, input.source, hashToken(token), salon.timezone, input.name, input.look ?? null],
       db,
     );
     publish(salon.id, 'booking', { id: row!.id, status: row!.status });
@@ -248,7 +251,7 @@ export function bookingSelect(where: string): string {
   return `
     select b.id,
            case when b.status = 'pending_payment' and b.expires_at <= now() then 'expired' else b.status end as status,
-           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note, b.payment_rejected,
+           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note, b.payment_rejected, b.look,
            -- Changes when the screenshot is replaced, so the image URL does too (no stale cache).
            floor(extract(epoch from p.created_at) * 1000)::bigint::text as proof_v,
            greatest(0, floor(extract(epoch from b.expires_at - now())))::int as expires_in_s,
@@ -283,6 +286,8 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     deposit: r.deposit,
     payment_note: r.payment_note,
     payment_rejected: r.payment_rejected,
+    // The haircut tried on in the AI mirror before booking, in words.
+    look: describeLook(r.look),
     // The owner's view of the screenshot; the customer's page swaps in its own link.
     proof_url: r.proof_v ? `/api/manage/bookings/${r.id}/proof?v=${r.proof_v}` : null,
     expires_in_s: r.status === 'pending_payment' ? r.expires_in_s : null,

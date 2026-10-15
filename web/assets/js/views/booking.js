@@ -2,7 +2,7 @@
 // own page, which walks the customer through a CliQ deposit when the salon asks for one.
 import { api, pickImage, prepareImage } from '../api.js';
 import { appIcon, appReady, avatar, busy, clear, confetti, confirmDelete, field, h, icon, input, legalLink, markInvalid, salonIcon, sheet, sparkles, stagger, toast, toastError } from '../dom.js';
-import { errorText, fmtDuration, fmtPrice, fmtTime, getLang, pick, t, westernDigits } from '../i18n.js';
+import { errorText, fmtDuration, fmtPrice, fmtTime, getLang, lookName, pick, t, westernDigits } from '../i18n.js';
 import { addDays, dateOf, dayLabel, dayStrip, fmtDate, fmtRange, monthCaption, periodIcon, slotGrid } from '../slots.js';
 import { applyColors, reducedMotion } from '../theme.js';
 
@@ -124,7 +124,7 @@ function flashCopied(el, iconBox) {
  * The booking as a ticket: when, on top; a perforation; then what, with whom and the
  * deposit. The same ticket is the summary before booking and the booking's own page.
  */
-function ticket({ date, start, end, today, label, note, number, service, duration, price, priceFrom, currency, staff, deposit = 0, isVoid = false }) {
+function ticket({ date, start, end, today, label, note, number, service, duration, price, priceFrom, currency, staff, look = null, deposit = 0, isVoid = false }) {
   const weekday = fmtDate(date, { weekday: 'long' });
   const relative = label || (today ? dayLabel(date, today) : weekday);
   return h(
@@ -159,6 +159,8 @@ function ticket({ date, start, end, today, label, note, number, service, duratio
         staff ? avatar(staff.photo, staff.name) : h('span', { class: 'tk-ic' }, icon('sparkles')),
         staff ? h('span', null, `${t('bk.with')} `, h('bdi', { text: staff.name })) : h('span', { text: t('book.anyone') }),
       ),
+      // The cut tried on in the AI mirror: the picture while it is still in this tab.
+      look ? h('div', { class: 'tk-row tk-look' }, look.url ? h('img', { class: 'tk-look-img', src: look.url, alt: '' }) : h('span', { class: 'tk-ic' }, icon('wand')), h('div', { class: 'grow' }, h('div', { class: 'tk-s', text: t('tryon.look_label') }), h('bdi', { class: 'tk-n', text: look.name }))) : null,
       deposit > 0 ? h('div', { class: 'tk-row' }, h('span', { class: 'tk-ic' }, icon('lock')), h('span', { text: `${t('bk.deposit')}: ${fmtPrice(deposit, currency)}` })) : null,
     ),
   );
@@ -166,7 +168,11 @@ function ticket({ date, start, end, today, label, note, number, service, duratio
 
 // ---------------------------------------------------------------- the booking sheet
 
-export function openBooking(app, data, { serviceId, staffId = null, onClose } = {}) {
+/**
+ * `look` is a cut tried on in the AI mirror ({ id, name, url }): it rides along with the
+ * booking so the salon knows what the customer came for.
+ */
+export function openBooking(app, data, { serviceId, staffId = null, onClose, look = null } = {}) {
   const { salon, staff, hours } = data;
   const staffById = new Map(staff.map((m) => [m.id, m]));
   // Opened from a team portrait: that person is the "who", so the menu is what they do
@@ -266,6 +272,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
   function renderCrumbs(dir) {
     const s = state.step > 1 ? service() : null;
     const items = [];
+    if (look) items.push(crumb(null, look.url ? h('img', { class: 'crumb-look', src: look.url, alt: '' }) : icon('wand'), h('bdi', { text: look.name })));
     if (s) {
       items.push(crumb(
         lockedService ? null : () => go(1),
@@ -534,6 +541,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
         priceFrom: s.price_is_from,
         currency: salon.currency,
         staff: m ? { photo: m.photo_url, name: pick(m, 'name') } : null,
+        look,
       }),
       h('div', { class: 'bk-fields' }, field(t('book.name'), name)),
       h('div', { class: 'phone-input bk-fields' }, h('div', { class: 'cc', text: `+${app.ctx.tenant.calling_code}` }), field(t('book.phone'), phone)),
@@ -549,6 +557,7 @@ export function openBooking(app, data, { serviceId, staffId = null, onClose } = 
         try {
           const res = await api('POST', '/api/public/bookings', {
             service_id: s.id, staff_id: state.staffId, date: state.slot.date, time: state.slot.min, name: name.value, phone: phone.value,
+            ...(look ? { look: look.id } : {}),
           });
           rememberMe(name.value.trim(), phone.value.trim());
           remember(salon.id, { token: res.token, date: res.booking.date, start: res.booking.start, service_ar: s.name_ar, service_en: s.name_en });
@@ -801,6 +810,7 @@ export function bookingPage(app, token) {
       price: b.price,
       currency: s.currency,
       staff: { photo: b.staff.photo_url, name: pick(b.staff, 'name') },
+      look: b.look ? { name: lookName(b.look) } : null,
       deposit: Number(b.deposit),
       isVoid: ['expired', 'cancelled', 'no_show'].includes(b.status),
     });

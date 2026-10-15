@@ -131,7 +131,8 @@ const WEEK = (open: string, close: string) => Array.from({ length: 7 }, () => [{
 async function startServer(): Promise<() => void> {
   const child = spawn(process.execPath, ['--import', 'tsx', 'src/server.ts'], {
     // Trust X-Forwarded-For so each test can act as its own client address.
-    env: { ...process.env, PORT: String(PORT), NODE_ENV: 'development', TRUST_PROXY: 'true' },
+    // The AI mirror draws with the built-in stand-in, and allows three tries per address.
+    env: { ...process.env, PORT: String(PORT), NODE_ENV: 'development', TRUST_PROXY: 'true', AI_TRYON_PROVIDER: 'mock', AI_TRYON_API_KEY: '', AI_TRYON_PER_ADDRESS_10M: '3' },
     stdio: ['ignore', 'pipe', 'inherit'],
   });
   await new Promise<void>((resolve, reject) => {
@@ -1029,6 +1030,8 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   await lateNightTests(admin, customer);
   await clockChangeTests(admin);
 
+  await tryonTests(K, owner, customer, { cut, tomorrow });
+
   section('Booking limits');
   const busy = customer();
   const same = { phone: '0791112233', name: 'تجربة' };
@@ -1040,6 +1043,59 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   await owner.patch(K, '/api/manage/salon', { booking_enabled: false });
   expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`), 403, 'online booking switched off', 'booking_closed');
   expect(createdK.status === 201, 'booking salon was created');
+}
+
+/** The AI mirror: the owner's switch, the catalogue, the picture, its limits, and the look booked. */
+async function tryonTests(K: string, owner: Client, customer: () => Client, { cut, tomorrow }: { cut: number; tomorrow: string }) {
+  section('AI mirror');
+  const guest = customer();
+  const tryOn = (c: Client, q: string, body: Buffer, type = 'image/jpeg') => c.request(K, 'POST', `/api/public/tryon?${q}`, { raw: body, type });
+  const selfie = await portraitJpeg(600, 800);
+  expectStatus(await guest.get(K, '/api/public/tryon/styles'), 404, 'off until the owner turns it on', 'not_found');
+  expectStatus(await tryOn(guest, 'style=skin_fade', selfie), 404, 'no pictures while it is off', 'not_found');
+  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === null, 'the salon page does not offer it');
+  expect((await owner.get(K, '/api/manage/salon')).json?.options?.tryon_available === true, 'the owner is told the platform can draw');
+  expectStatus(await owner.patch(K, '/api/manage/salon', { tryon: 'sideways' }), 400, 'an unknown setting', 'invalid');
+  const on = await owner.patch(K, '/api/manage/salon', { tryon: 'men' });
+  expect(on.status === 200 && on.json?.salon?.tryon === 'men', "the owner offers men's cuts", on.json?.salon?.tryon);
+  expect((await guest.get(K, '/api/public/salon')).json?.salon?.tryon === 'men', 'the salon page offers the mirror');
+  const styles = await guest.get(K, '/api/public/tryon/styles');
+  expect(styles.status === 200 && styles.json.audience === 'men' && styles.json.styles.length > 0 && styles.json.styles.every((x: any) => x.audience === 'men'), "only men's cuts in the catalogue", styles.json);
+  expect(styles.json?.shades?.some((x: any) => x.id === 'black' && x.men) && styles.json.shades.some((x: any) => x.id === 'honey' && !x.men), 'colours say which suit the men\'s cuts');
+  expectStatus(await tryOn(guest, 'style=bob', selfie), 400, "a women's cut when only men's are offered", 'invalid');
+  expectStatus(await tryOn(guest, 'style=nope', selfie), 400, 'an unknown cut', 'invalid');
+  expectStatus(await tryOn(guest, 'style=skin_fade&shade=honey', selfie), 400, "a colour the men's cuts do not offer", 'invalid');
+  expectStatus(await tryOn(guest, 'style=skin_fade&shade=nope', selfie), 400, 'an unknown colour', 'invalid');
+  expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('hello'), 'text/plain'), 415, 'not an image type', 'unsupported_image');
+  expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('definitely not a jpeg at all')), 415, 'bytes that are not a picture', 'unsupported_image');
+  expectStatus(await tryOn(guest, 'style=skin_fade', await portraitJpeg(120, 160)), 422, 'a photo too small to draw on', 'image_too_small');
+  const drawn = await tryOn(guest, 'style=skin_fade&shade=black', selfie);
+  const meta = drawn.status === 200 ? await sharp(drawn.body).metadata() : null;
+  expect(drawn.status === 200 && drawn.headers['content-type'] === 'image/jpeg' && meta?.format === 'jpeg' && meta.width === 600 && meta.height === 800, 'the look comes back as a plain JPEG, same shape', { status: drawn.status, meta: meta && { format: meta.format, w: meta.width, h: meta.height }, body: drawn.json });
+  expect(drawn.headers['cache-control'] === 'no-store' && String(drawn.headers['content-security-policy']).includes('sandbox'), 'never cached, and sandboxed if opened on its own');
+  const big = await tryOn(guest, 'style=crop', await portraitJpeg(2400, 3200));
+  const bigMeta = big.status === 200 ? await sharp(big.body).metadata() : null;
+  expect(big.status === 200 && Math.max(bigMeta?.width ?? 0, bigMeta?.height ?? 0) <= 1024, 'a large photo comes back at most 1024 pixels', bigMeta && { w: bigMeta.width, h: bigMeta.height });
+  expectStatus(await tryOn(guest, 'style=buzz', selfie), 200, 'a third try');
+  expectStatus(await tryOn(guest, 'style=buzz', selfie), 429, 'too many tries from one address', 'too_many_attempts');
+  expectStatus(await tryOn(customer(), 'style=buzz', selfie, 'image/png'), 200, 'another customer can still try (a JPEG sent as PNG is read by its bytes)');
+
+  // The look tried rides along with the booking.
+  const book = (c: Client, body: Record<string, unknown>) => c.post(K, '/api/public/bookings', { service_id: cut, date: tomorrow, ...body });
+  const withLook = await book(customer(), { time: 900, name: 'زيد', phone: '0795550001', look: 'skin_fade:black' });
+  expect(withLook.status === 201 && withLook.json.booking.look?.style === 'skin_fade' && withLook.json.booking.look.name_en === 'Skin fade' && withLook.json.booking.look.shade?.id === 'black', 'a booking keeps the cut and colour tried', withLook.json);
+  const seen = (await owner.get(K, `/api/manage/bookings?date=${tomorrow}`)).json?.bookings.find((b: any) => b.id === withLook.json?.booking.id);
+  expect(seen?.look?.id === 'skin_fade:black' && seen.look.shade?.hex, 'the owner sees the requested cut', seen?.look);
+  const plain = await book(customer(), { time: 930, name: 'باسل', phone: '0795550002' });
+  expect(plain.status === 201 && plain.json.booking.look === null, 'a booking without one has none');
+  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 'skin_fade:honey' }), 400, "a men's cut with a colour it does not offer", 'invalid');
+  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: "x'; drop table bookings;--" }), 400, 'a look that is not in the catalogue', 'invalid');
+  expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 42 }), 400, 'a look that is not text', 'invalid');
+  const both = await owner.patch(K, '/api/manage/salon', { tryon: 'all' });
+  const all = await guest.get(K, '/api/public/tryon/styles');
+  expect(both.status === 200 && all.json?.styles.some((x: any) => x.audience === 'women') && all.json.styles.some((x: any) => x.audience === 'men'), 'both menus when the owner offers all');
+  await owner.patch(K, '/api/manage/salon', { tryon: 'off' });
+  expectStatus(await guest.get(K, '/api/public/tryon/styles'), 404, 'off again', 'not_found');
 }
 
 /** A new salon with one barber and a 30- (or other) minute service, open on `week`. */

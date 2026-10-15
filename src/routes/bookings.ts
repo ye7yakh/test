@@ -10,6 +10,7 @@ import { one, pool, query, tx } from '../db.js';
 import { publish, subscribe } from '../events.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
 import { intakeProof, mediaUrl, readImageUpload } from '../media.js';
+import { parseLook } from '../tryon.js';
 import type { Salon } from '../tenancy.js';
 import { Input, int, oneOf, text } from '../validate.js';
 
@@ -125,8 +126,10 @@ async function publicCreate(ctx: Ctx) {
   const name = b.req('name', text(60, 2));
   const phone = normalizePhone(b.req('phone', text(30, 1)), ctx.host.tenant.default_calling_code);
   if (!phone) throw new HttpError(400, 'invalid', 'phone');
+  // The cut (and colour) tried on in the AI mirror, if the customer came from there.
+  const look = parseLook(b.opt('look', (v) => v));
   await checkDateWindow(salon, date, DAYS_AHEAD);
-  const booking = await tx((db) => createBooking(db, salon, { serviceId, staffId, date, min, name, phone, source: 'online', lead: LEAD_MIN }));
+  const booking = await tx((db) => createBooking(db, salon, { serviceId, staffId, date, min, name, phone, source: 'online', lead: LEAD_MIN, look }));
   ok(ctx, { token: booking.token, booking: await publicBooking(salon, booking.token) }, 201);
 }
 
