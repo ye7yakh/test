@@ -90,7 +90,7 @@ const PRIVACY: Record<Lang, Doc> = {
             '**صورة التحويل** لا تُنشر أبدًا: يراها صاحب الصالون، وأنت من خلال رابط حجزك.',
             '**فريق {brand}،** عند الحاجة فقط، لدعم صالون أو حل مشكلة تقنية.',
             '**مزوّد الاستضافة السحابية** Amazon Web Services، الذي تعمل عليه خوادمنا وقاعدة بياناتنا، وقد تكون خارج الأردن.',
-            '**مزوّد الذكاء الاصطناعي،** إذا استخدمت المرآة الذكية فقط: يتلقّى الصورة التي اخترتها ليقرأ شعرك ويرسم المعاينة (انظر «المرآة الذكية»).',
+            '**مزوّد الذكاء الاصطناعي،** إذا استخدمت المرآة الذكية فقط: يتلقّى الصورة التي اخترتها ليقرأ شعرك ولحيتك ويرسم المعاينة (انظر «المرآة الذكية»).',
             '**الجهات الرسمية،** إذا ألزمنا القانون بذلك.',
           ],
           'أما معلومات الصالون وصور فريقه وأسعار خدماته فهي منشورة للجميع على صفحة الصالون، وتظهر عند مشاركة رابطه وفي نتائج محركات البحث.',
@@ -103,11 +103,11 @@ const PRIVACY: Record<Lang, Doc> = {
       {
         title: 'المرآة الذكية',
         body: [
-          'إذا كان الصالون يقدّم المرآة الذكية وجرّبتها، تُرسَل الصورة التي تلتقطها أو تختارها إلى خوادمنا ثم إلى مزوّد ذكاء اصطناعي (مثل Google أو OpenAI): أولًا ليقرأ شعرك (طوله ونوعه وكثافته وخط الشعر وشكل الوجه) فنقترح القصات التي تناسبه، ثم ليرسم عليها القصة واللون اللذين تختارهما. لا تُرسَل الصورة قبل موافقتك.',
+          'إذا كان الصالون يقدّم المرآة الذكية وجرّبتها، تُرسَل الصورة التي تلتقطها أو تختارها إلى خوادمنا ثم إلى مزوّد ذكاء اصطناعي (مثل Google أو OpenAI): أولًا ليقرأ شعرك ولحيتك (طول الشعر ونوعه وكثافته وخط الشعر، وطول اللحية وكثافتها، وشكل الوجه) فنقترح القصات وأشكال اللحية التي تناسبك، ثم ليرسم عليها ما تختاره. لا تُرسَل الصورة قبل موافقتك.',
           [
             '**لا نحفظ صورتك ولا قراءة شعرك ولا المعاينة:** تمرّ عبر خوادمنا في الذاكرة فقط، ولا تُكتب في قاعدة بياناتنا ولا في ملفاتنا. تبقى في متصفحك حتى تغلق الصفحة، إلا إذا حفظت المعاينة أنت.',
             '**مزوّد الذكاء الاصطناعي** يعالج الصورة وفق شروطه، وقد تكون خوادمه خارج الأردن، وقد يحتفظ بها لفترة قصيرة لمنع إساءة الاستخدام.',
-            '**مع الحجز** يُحفظ اسم القصة واللون فقط إذا حجزت القصة التي جرّبتها، ليعرف الصالون ما تريده. لا تُحفظ أي صورة.',
+            '**مع الحجز** يُحفظ اسم القصة وشكل اللحية واللون فقط إذا حجزت ما جرّبته، ليعرف الصالون ما تريده. لا تُحفظ أي صورة.',
           ],
         ],
       },
@@ -222,7 +222,7 @@ const PRIVACY: Record<Lang, Doc> = {
             '**The transfer screenshot** is never published: the salon\'s owner sees it, and you do through your booking link.',
             '**The {brand} team,** only when needed to support a salon or fix a technical problem.',
             '**Our cloud hosting provider,** Amazon Web Services, which runs our servers and database, possibly outside Jordan.',
-            '**An AI provider,** only if you use the AI mirror: it receives the photo you chose to read your hair and draw the preview (see "The AI mirror").',
+            '**An AI provider,** only if you use the AI mirror: it receives the photo you chose to read your hair and beard and draw the preview (see "The AI mirror").',
             '**Authorities,** when the law requires us to share it.',
           ],
           'A salon\'s own information, team photos and prices are public on its page, and appear when its link is shared and in search results.',
@@ -235,11 +235,11 @@ const PRIVACY: Record<Lang, Doc> = {
       {
         title: 'The AI mirror',
         body: [
-          'If a salon offers the AI mirror and you use it, the photo you take or choose is sent to our servers and on to an AI provider (such as Google or OpenAI): first to read your hair (its length, texture and thickness, your hairline and face shape) so we can suggest the cuts that suit it, then to draw the cut and colour you pick onto it. Nothing is sent until you agree.',
+          'If a salon offers the AI mirror and you use it, the photo you take or choose is sent to our servers and on to an AI provider (such as Google or OpenAI): first to read your hair and beard (the hair\'s length, texture and thickness, your hairline, your beard\'s length and fullness, and your face shape) so we can suggest the cuts and beard styles that suit you, then to draw what you pick onto it. Nothing is sent until you agree.',
           [
             '**We keep neither your photo, nor what was read from it, nor the preview:** they pass through our servers in memory only and are never written to our database or files. They stay in your browser until you close the page, unless you save the preview yourself.',
             '**The AI provider** processes the photo under its own terms, possibly outside Jordan, and may keep it briefly to prevent abuse.',
-            '**With a booking,** only the name of the cut and colour is kept, if you book the cut you tried, so the salon knows what you want. No picture is kept.',
+            '**With a booking,** only the names of the cut, beard style and colour are kept, if you book what you tried, so the salon knows what you want. No picture is kept.',
           ],
         ],
       },
@@ -331,7 +331,7 @@ const TERMS: Record<Lang, Doc> = {
         title: 'المرآة الذكية',
         body: [
           [
-            'القصات المقترحة والمعاينة تقديرات يقدّمها الذكاء الاصطناعي للتوضيح فقط. قد تختلف النتيجة في الصالون بحسب طبيعة شعرك وكثافته ولونه، والحلاق هو من يقرّر ما يناسبك، ولا يلتزم الصالون بأن تطابق المعاينة.',
+            'القصات وأشكال اللحية المقترحة والمعاينة تقديرات يقدّمها الذكاء الاصطناعي للتوضيح فقط. قد تختلف النتيجة في الصالون بحسب طبيعة شعرك ولحيتك وكثافتهما ولونهما، والحلاق هو من يقرّر ما يناسبك، ولا يلتزم الصالون بأن تطابق المعاينة.',
             'جرّب بصورتك أنت، أو بصورة شخص أنت وليّ أمره وبموافقته. لا ترفع صور غيرك دون إذنهم، ولا صورًا مسيئة أو غير لائقة.',
             'عدد المحاولات محدود في اليوم، وقد تتوقف المرآة مؤقتًا عند الضغط عليها.',
           ],
@@ -423,7 +423,7 @@ const TERMS: Record<Lang, Doc> = {
         title: 'The AI mirror',
         body: [
           [
-            'The suggested cuts and the preview are AI estimates, for illustration only. The result at the salon can differ with your hair\'s texture, thickness and colour; your barber decides what suits you, and the salon does not promise to match the preview.',
+            'The suggested cuts and beard styles and the preview are AI estimates, for illustration only. The result at the salon can differ with your hair\'s and beard\'s texture, thickness and colour; your barber decides what suits you, and the salon does not promise to match the preview.',
             'Use a photo of yourself, or of someone you are the guardian of, with their agreement. Do not upload photos of others without their permission, or offensive or inappropriate images.',
             'The number of tries a day is limited, and the mirror may pause for a while when it is busy.',
           ],

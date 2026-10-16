@@ -16,7 +16,12 @@ export const TEXTURES = ['straight', 'wavy', 'curly', 'coily'] as const;
 export const DENSITIES = ['thick', 'normal', 'thin'] as const;
 export const HAIRLINES = ['full', 'receding'] as const;
 export const FACES = ['oval', 'round', 'square', 'long', 'heart', 'diamond'] as const;
+/** The beard he has now, shortest first: like hair, it can only be trimmed shorter. */
+export const BEARD_LENGTHS = ['none', 'stubble', 'short', 'full'] as const;
+/** Whether it grows evenly over the cheeks and jaw, or in patches. */
+export const COVERAGES = ['even', 'patchy'] as const;
 type Length = (typeof LENGTHS)[number];
+type BeardLength = (typeof BEARD_LENGTHS)[number];
 type Texture = (typeof TEXTURES)[number];
 type Face = (typeof FACES)[number];
 
@@ -27,6 +32,8 @@ export interface Hair {
   density: (typeof DENSITIES)[number];
   hairline: (typeof HAIRLINES)[number];
   face: Face;
+  beard: BeardLength;
+  coverage: (typeof COVERAGES)[number];
 }
 
 interface Style {
@@ -41,6 +48,20 @@ interface Style {
   textures?: readonly Texture[];
   /** Built on volume on top: last for thin hair or a receding hairline. */
   volume?: boolean;
+  /** The face shapes it flatters. */
+  faces: readonly Face[];
+}
+
+interface Beard {
+  id: string;
+  name_ar: string;
+  name_en: string;
+  /** What the image model is asked to draw. */
+  prompt: string;
+  /** The least beard it can be trimmed from. */
+  needs: BeardLength;
+  /** Needs a beard that grows evenly (a patchy one cannot hold its shape). */
+  even?: boolean;
   /** The face shapes it flatters. */
   faces: readonly Face[];
 }
@@ -85,6 +106,25 @@ export const STYLES: readonly Style[] = [
     prompt: 'a medium-long men\'s flow: the hair pushed back from the face and falling naturally to just above the collar' },
 ];
 
+// Beards, from none to the fullest. Lengths: stubble under 3 mm, short 3 mm to 2 cm,
+// full over 2 cm.
+export const BEARDS: readonly Beard[] = [
+  { id: 'clean', name_ar: 'بدون ذقن', name_en: 'Clean shaven', needs: 'none', faces: ['oval', 'square', 'diamond', 'heart'],
+    prompt: 'completely clean-shaven, no beard and no moustache, smooth freshly shaved skin' },
+  { id: 'stubble', name_ar: 'ذقن خفيفة', name_en: 'Stubble', needs: 'stubble', faces: ['oval', 'round', 'square', 'long', 'heart', 'diamond'],
+    prompt: 'an even light designer stubble about 2 mm long over the jaw, chin and upper lip' },
+  { id: 'short_beard', name_ar: 'لحية قصيرة', name_en: 'Short beard', needs: 'short', faces: ['oval', 'round', 'square', 'long', 'diamond'],
+    prompt: 'a short, neatly trimmed full beard about 5 mm long with a clean neckline and cheek line' },
+  { id: 'boxed', name_ar: 'لحية مربّعة', name_en: 'Boxed beard', needs: 'short', even: true, faces: ['round', 'oval', 'heart', 'diamond'],
+    prompt: 'a boxed beard about 1.5 cm long, sharply lined up on the cheeks and the neck, with a matching trimmed moustache' },
+  { id: 'goatee', name_ar: 'سكسوكة', name_en: 'Goatee', needs: 'short', faces: ['round', 'square', 'oval'],
+    prompt: 'a neat goatee: a short trimmed beard on the chin connected to the moustache, the cheeks and jaw sides shaved clean' },
+  { id: 'moustache', name_ar: 'شنب فقط', name_en: 'Moustache', needs: 'short', faces: ['oval', 'long', 'heart'],
+    prompt: 'a full, neatly trimmed moustache, with the cheeks, jaw and chin shaved clean' },
+  { id: 'full_beard', name_ar: 'لحية كاملة', name_en: 'Full beard', needs: 'full', even: true, faces: ['oval', 'square', 'heart', 'diamond', 'round'],
+    prompt: 'a full, thick, groomed beard about 4 cm long with a full moustache, neatly shaped at the cheeks and neck' },
+];
+
 export const SHADES: readonly Shade[] = [
   { id: 'black', name_ar: 'أسود', name_en: 'Jet black', hex: '#15110f', prompt: 'deep jet black' },
   { id: 'brown', name_ar: 'بني غامق', name_en: 'Dark brown', hex: '#3b2418', prompt: 'rich dark chocolate brown' },
@@ -94,6 +134,7 @@ export const SHADES: readonly Shade[] = [
 
 const styleById = new Map(STYLES.map((s) => [s.id, s]));
 const shadeById = new Map(SHADES.map((s) => [s.id, s]));
+const beardById = new Map(BEARDS.map((b) => [b.id, b]));
 
 // ---------------------------------------------------------------- availability
 
@@ -112,12 +153,30 @@ export function salonTryon(s: Pick<Salon, 'tryon'>): boolean {
   return s.tryon === 'on' && tryonProvider() !== null;
 }
 
-/** The catalogue (names and colours); which cuts a customer sees comes from his photo. */
+/** The catalogue (names and colours); which cuts and beards a customer sees comes from his photo. */
 export function catalogue() {
   return {
     styles: STYLES.map(({ id, name_ar, name_en }) => ({ id, name_ar, name_en })),
+    beards: BEARDS.map(({ id, name_ar, name_en }) => ({ id, name_ar, name_en })),
     shades: SHADES.map(({ id, name_ar, name_en, hex }) => ({ id, name_ar, name_en, hex })),
   };
+}
+
+/**
+ * The beards his can become, best suited first: at most its own length (a trimmer only
+ * takes it shorter), shapes that need an even beard only when it grows evenly, then
+ * the face shapes each flatters.
+ */
+export function fitBeards(hair: Hair) {
+  const have = BEARD_LENGTHS.indexOf(hair.beard);
+  const fits = BEARDS.filter((b) => have >= BEARD_LENGTHS.indexOf(b.needs) && (!b.even || hair.coverage === 'even'));
+  const score = (b: Beard) =>
+    (b.faces.includes(hair.face) ? 3 : 0)
+    // Closest to what he wears now first; a clean shave last for a man who keeps a beard.
+    - 0.5 * (have - BEARD_LENGTHS.indexOf(b.needs))
+    + (b.id === 'clean' && have >= BEARD_LENGTHS.indexOf('short') ? -1 : 0);
+  const ranked = fits.map((b, i) => ({ b, i, v: score(b) })).sort((a, z) => z.v - a.v || a.i - z.i).map((x) => x.b.id);
+  return { beards: ranked, beard_picks: ranked.slice(0, 2), beards_hidden: BEARDS.length - fits.length };
 }
 
 /**
@@ -144,29 +203,41 @@ export function fitStyles(hair: Hair) {
   return { styles: ranked, picks: ranked.slice(0, 3), hidden: STYLES.length - fits.length };
 }
 
-/** A look ("skin_fade" or "skin_fade:black") checked against the catalogue; null if not given. */
+/**
+ * A look checked against the catalogue: "cut[:colour[:beard]]", with "keep" for the
+ * hair he has and an empty colour for his own ("skin_fade", "quiff:brown",
+ * "keep::full_beard", "crop::stubble"). Null if not given.
+ */
 export function parseLook(value: unknown): string | null {
   if (value === undefined || value === null || value === '') return null;
   if (typeof value !== 'string') throw new HttpError(400, 'invalid', 'look');
-  const [styleId, shadeId, extra] = value.split(':');
-  const style = styleById.get(styleId ?? '');
-  const shade = shadeId === undefined ? null : shadeById.get(shadeId);
-  if (!style || shade === undefined || extra !== undefined) throw new HttpError(400, 'invalid', 'look');
-  return shade ? `${style.id}:${shade.id}` : style.id;
+  const [styleId = '', shadeId = '', beardId = '', ...extra] = value.split(':');
+  const style = styleId === 'keep' ? null : styleById.get(styleId);
+  const shade = shadeId ? shadeById.get(shadeId) : null;
+  const beard = beardId ? beardById.get(beardId) : null;
+  // Something has to change, and every part named must be in the catalogue.
+  if (style === undefined || shade === undefined || beard === undefined || extra.length || (!style && !shade && !beard)) {
+    throw new HttpError(400, 'invalid', 'look');
+  }
+  return [style?.id ?? 'keep', shade?.id ?? '', beard?.id ?? ''].join(':').replace(/:+$/, '');
 }
 
 /** A stored look in words, for the owner's schedule and the customer's ticket. */
 export function describeLook(look: string | null) {
   if (!look) return null;
-  const [styleId, shadeId] = look.split(':');
-  const style = styleById.get(styleId ?? '');
-  if (!style) return null;
-  const shade = shadeId ? shadeById.get(shadeId) : null;
+  const [styleId = '', shadeId = '', beardId = ''] = look.split(':');
+  const style = styleById.get(styleId) ?? null;
+  const beard = beardById.get(beardId) ?? null;
+  const shade = shadeId ? shadeById.get(shadeId) ?? null : null;
+  if (!style && !beard && !shade) return null;
+  const parts = [style, beard].filter((x): x is Style | Beard => !!x);
   return {
     id: look,
-    style: style.id,
-    name_ar: style.name_ar,
-    name_en: style.name_en,
+    // The photo that shows it best: the cut, or the beard when the hair is kept.
+    style: style?.id ?? null,
+    beard: beard ? { id: beard.id, name_ar: beard.name_ar, name_en: beard.name_en } : null,
+    name_ar: parts.map((x) => x.name_ar).join(' · '),
+    name_en: parts.map((x) => x.name_en).join(' · '),
     shade: shade ? { id: shade.id, name_ar: shade.name_ar, name_en: shade.name_en, hex: shade.hex } : null,
   };
 }
@@ -253,19 +324,21 @@ async function intakePhoto(buf: Buffer, side = 1024): Promise<Buffer> {
   }
 }
 
-function promptFor(style: Style, shade: Shade | null): string {
+function promptFor(style: Style | null, beard: Beard | null, shade: Shade | null): string {
   return [
-    `Edit this photo of a person. Change ONLY their hairstyle to ${style.prompt}.`,
-    shade ? `Colour the hair ${shade.prompt}.` : 'Keep their natural hair colour.',
-    'Keep everything else exactly as it is: the face and its features, the identity, expression, skin tone, any beard or moustache, glasses, clothing, background, lighting, camera angle and framing.',
-    'Make it photorealistic, with a natural hairline and real hair texture, like a professional salon result. Do not add text, logos or other people.',
+    'Edit this photo of a man.',
+    style ? `Change his hairstyle to ${style.prompt}.` : 'Keep his hairstyle exactly as it is.',
+    beard ? `Change his facial hair to ${beard.prompt}.` : 'Keep his beard and moustache exactly as they are.',
+    shade ? `Colour the hair${beard && beard.id !== 'clean' ? ' and the beard' : ''} ${shade.prompt}.` : 'Keep his natural hair colour.',
+    'Keep everything else exactly as it is: the face and its features, the identity, expression, skin tone, glasses, clothing, background, lighting, camera angle and framing.',
+    'Make it photorealistic, with a natural hairline, real hair and beard texture, like a professional barbershop result. Do not add text, logos or other people.',
   ].join(' ');
 }
 
 // ---------------------------------------------------------------- reading the hair
 
 const READ_PROMPT = [
-  'You are an experienced barber looking at a customer\'s photo before a haircut. Describe the hair he has NOW, as it is in the photo.',
+  'You are an experienced barber looking at a customer\'s photo before a haircut. Describe the hair and beard he has NOW, as they are in the photo.',
   'person: true only if one person\'s head is clearly visible from the front or close to it (a bald or shaved head counts).',
   'length: judge ONLY the hair on the top of the head, ignoring the sides and back however long they are.',
   'bald (no hair on top, or shaved to the skin); buzz (under 1 cm); short (1 to 5 cm, the top cannot be combed down onto the forehead);',
@@ -273,10 +346,11 @@ const READ_PROMPT = [
   'very_long (over 15 cm, combed forward it would cover the eyes).',
   'texture: straight, wavy, curly or coily. density: thick, normal or thin (scalp visible through the hair on top). hairline: full, or receding (temples or crown clearly thinning).',
   'face, the shape of the face: oval, round, square, long, heart or diamond.',
+  'beard, his facial hair now: none (clean-shaven), stubble (under 3 mm), short (3 mm to 2 cm), full (over 2 cm). coverage: even, or patchy (gaps on the cheeks or jaw); even if he has no beard.',
   'If unsure between two lengths, choose the shorter one. Reply with the JSON only.',
 ].join(' ');
 
-const READ_FIELDS = { length: LENGTHS, texture: TEXTURES, density: DENSITIES, hairline: HAIRLINES, face: FACES } as const;
+const READ_FIELDS = { length: LENGTHS, texture: TEXTURES, density: DENSITIES, hairline: HAIRLINES, face: FACES, beard: BEARD_LENGTHS, coverage: COVERAGES } as const;
 
 /** The model's answer, checked field by field: anything off the lists is a failed read. */
 function hairFrom(raw: unknown): Hair {
@@ -285,7 +359,7 @@ function hairFrom(raw: unknown): Hair {
   for (const [k, allowed] of Object.entries(READ_FIELDS)) {
     if (!(allowed as readonly unknown[]).includes(r[k])) throw new HttpError(502, 'read_failed');
   }
-  return { length: r.length, texture: r.texture, density: r.density, hairline: r.hairline, face: r.face } as Hair;
+  return { length: r.length, texture: r.texture, density: r.density, hairline: r.hairline, face: r.face, beard: r.beard, coverage: r.coverage } as Hair;
 }
 
 async function readViaGemini(photo: Buffer, signal: AbortSignal): Promise<unknown> {
@@ -350,13 +424,13 @@ async function readViaOpenAI(photo: Buffer, signal: AbortSignal): Promise<unknow
   return JSON.parse(text);
 }
 
-/** The stand-in reads every photo as medium (5-10 cm), wavy hair on an oval face. */
+/** The stand-in reads every photo as medium (5-10 cm), wavy hair on an oval face, with a short, even beard. */
 async function readViaMock(): Promise<unknown> {
   await new Promise((r) => setTimeout(r, config.isProd ? 0 : 700));
-  return { person: true, length: 'medium', texture: 'wavy', density: 'normal', hairline: 'full', face: 'oval' };
+  return { person: true, length: 'medium', texture: 'wavy', density: 'normal', hairline: 'full', face: 'oval', beard: 'short', coverage: 'even' };
 }
 
-/** Reads the hair in the customer's photo and answers with the cuts it can give. Nothing is kept. */
+/** Reads the hair and beard in the customer's photo and answers with the cuts and beards they can give. Nothing is kept. */
 export async function readHair(ctx: Ctx, salon: Salon) {
   const provider = tryonProvider();
   if (!salonTryon(salon) || !provider) throw new HttpError(404, 'not_found');
@@ -373,7 +447,7 @@ export async function readHair(ctx: Ctx, salon: Salon) {
   try {
     const raw = provider === 'gemini' ? await readViaGemini(photo, abort.signal) : provider === 'openai' ? await readViaOpenAI(photo, abort.signal) : await readViaMock();
     const hair = hairFrom(raw);
-    return { hair, ...fitStyles(hair) };
+    return { hair, ...fitStyles(hair), ...fitBeards(hair) };
   } catch (err) {
     if (err instanceof HttpError) throw err;
     if ((err as Error).name === 'AbortError') throw new HttpError(504, 'read_failed');
@@ -467,11 +541,18 @@ function abortOnClose(ctx: Ctx, abort: AbortController): () => void {
 export async function tryOn(ctx: Ctx, salon: Salon): Promise<Buffer> {
   const provider = tryonProvider();
   if (!salonTryon(salon) || !provider) throw new HttpError(404, 'not_found');
-  const style = styleById.get(ctx.url.searchParams.get('style') ?? '');
-  if (!style) throw new HttpError(400, 'invalid', 'style');
-  const shadeParam = ctx.url.searchParams.get('shade');
+  // The cut (or "keep" for his own hair), a beard, a colour: at least one of them changes.
+  const q = ctx.url.searchParams;
+  const styleParam = q.get('style') ?? 'keep';
+  const style = styleParam === 'keep' ? null : styleById.get(styleParam);
+  if (style === undefined) throw new HttpError(400, 'invalid', 'style');
+  const beardParam = q.get('beard');
+  const beard = beardParam ? beardById.get(beardParam) : null;
+  if (beard === undefined) throw new HttpError(400, 'invalid', 'beard');
+  const shadeParam = q.get('shade');
   const shade = shadeParam ? shadeById.get(shadeParam) : null;
   if (shade === undefined) throw new HttpError(400, 'invalid', 'shade');
+  if (!style && !beard && !shade) throw new HttpError(400, 'invalid', 'style');
 
   const type = (ctx.req.headers['content-type'] ?? '').split(';')[0]!.trim();
   if (!['image/jpeg', 'image/png', 'image/webp'].includes(type)) throw new HttpError(415, 'unsupported_image');
@@ -485,7 +566,7 @@ export async function tryOn(ctx: Ctx, salon: Salon): Promise<Buffer> {
   const timer = setTimeout(() => abort.abort(), 90_000);
   const release = abortOnClose(ctx, abort);
   try {
-    const prompt = promptFor(style, shade);
+    const prompt = promptFor(style, beard, shade);
     const raw =
       provider === 'gemini' ? await viaGemini(photo, prompt, abort.signal)
       : provider === 'openai' ? await viaOpenAI(photo, prompt, abort.signal)

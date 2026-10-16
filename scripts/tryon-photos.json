@@ -1,0 +1,28 @@
+{
+  "_about": "The AI mirror menu photos: one model (Higgsfield Soul 2, edited per cut and per beard with Nano Banana). Run `npm run tryon-photos` to download them into web/assets/img/tryon/ as small WebP files.",
+  "model": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_034614_f5db977e-5359-4e15-8c3c-2f1a1a1ded31.png",
+  "hair": {
+    "shaved": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_47da8617-fb33-462b-8dbd-923416a3a63f.png",
+    "buzz": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_dee8b62b-0549-466e-91dc-c49a7cd03659.png",
+    "crew_cut": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_73bcc71f-a15b-47c6-a428-0d6fee1897da.png",
+    "skin_fade": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041758_404df5c9-cbe3-4e77-a8e2-3ad986613186.png",
+    "low_taper": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_43f9a8af-20de-4f67-bc7b-c1a24a7885f0.png",
+    "crop": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041758_75892908-ec08-4519-824d-46503c297995.png",
+    "curls_fade": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_6c7ca1b0-79c4-4d95-a7a0-1e3f9d4ca831.png",
+    "side_part": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_e7acc127-326f-4b9f-b907-d4d91d410d99.png",
+    "quiff": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_bf711b02-431a-45b0-a9ce-28047fbed093.png",
+    "pompadour": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_4479adcb-7ff9-4938-bbc5-8126cce786e6.png",
+    "undercut": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_896c1bbe-9528-4f83-9175-264e58ddcc73.png",
+    "slick_back": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041756_33e536fa-d47c-4446-8fb2-1ac128715fd2.png",
+    "flow": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_ae26516a-971d-44b4-bd44-03846148aa2d.png"
+  },
+  "beard": {
+    "clean": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_65332853-1436-42b6-b40f-061757019172.png",
+    "stubble": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_d6e88cfa-4f20-4f55-9b62-37a907f16a1d.png",
+    "short_beard": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_034614_f5db977e-5359-4e15-8c3c-2f1a1a1ded31.png",
+    "boxed": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_862e6001-9421-4426-87ff-879d4deaea6b.png",
+    "goatee": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_4f80206c-ffee-41d8-bf72-769b617b5ca6.png",
+    "moustache": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_2b7c9afc-56e2-4709-8d65-5a85de2a2563.png",
+    "full_beard": "https://d8j0ntlcm91z4.cloudfront.net/user_38tjxTN3LRU6wO06ACW4pyR8J8A/hf_20261016_041815_60931237-0c8b-4b33-8b98-82f4926a8645.png"
+  }
+}

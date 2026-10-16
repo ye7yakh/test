@@ -11,7 +11,7 @@ import { addDays, availability, clock, createBooking, purgeProofs } from '../src
 import { nightBase } from '../src/colors.js';
 import { pool, query, tx } from '../src/db.js';
 import { renderPortrait } from '../src/media.js';
-import { fitStyles } from '../src/tryon.js';
+import { fitBeards, fitStyles, type Hair } from '../src/tryon.js';
 import type { Salon } from '../src/tenancy.js';
 
 const PORT = Number(process.env.TEST_PORT ?? 3457);
@@ -1065,38 +1065,48 @@ async function tryonTests(K: string, owner: Client, customer: () => Client, { cu
   const ids = (styles.json?.styles ?? []).map((x: any) => x.id);
   expect(styles.status === 200 && ids.length === 13 && !['bob', 'pixie', 'long_layers', 'waves'].some((x) => ids.includes(x)), "only men's cuts in the catalogue", ids);
   expect(styles.json?.shades?.map((x: any) => x.id).join() === 'black,brown,silver,platinum', "men's colours only", styles.json?.shades);
+  expect(styles.json?.beards?.map((x: any) => x.id).join() === 'clean,stubble,short_beard,boxed,goatee,moustache,full_beard', 'the beards in the catalogue', styles.json?.beards);
   expectStatus(await tryOn(guest, 'style=bob', selfie), 400, "a women's cut", 'invalid');
   expectStatus(await tryOn(guest, 'style=nope', selfie), 400, 'an unknown cut', 'invalid');
   expectStatus(await tryOn(guest, 'style=skin_fade&shade=honey', selfie), 400, 'a colour no longer offered', 'invalid');
   expectStatus(await tryOn(guest, 'style=skin_fade&shade=nope', selfie), 400, 'an unknown colour', 'invalid');
+  expectStatus(await tryOn(guest, 'style=keep&beard=nope', selfie), 400, 'an unknown beard', 'invalid');
+  expectStatus(await tryOn(guest, 'style=keep', selfie), 400, 'nothing to change', 'invalid');
 
   // Reading the hair: the cuts on offer are the ones it can give.
+  const hairOf = (h: Partial<Hair>): Hair => ({ length: 'short', texture: 'straight', density: 'normal', hairline: 'full', face: 'oval', beard: 'short', coverage: 'even', ...h });
   const read = (c: Client, body: Buffer, type = 'image/jpeg') => c.request(K, 'POST', '/api/public/tryon/read', { raw: body, type });
   const reader = customer();
   const hairRead = await read(reader, selfie);
   expect(hairRead.status === 200 && hairRead.json.hair.length === 'medium' && hairRead.json.hair.texture === 'wavy' && hairRead.headers['cache-control'] === 'no-store', 'the hair is read from the photo (the stand-in sees medium, wavy hair)', hairRead.json);
   expect(hairRead.json?.styles.includes('side_part') && hairRead.json.styles.includes('quiff') && !['pompadour', 'undercut', 'slick_back', 'flow', 'curls_fade'].some((x) => hairRead.json.styles.includes(x)) && hairRead.json.hidden === 5, 'medium (5-10 cm) wavy hair: no cuts that need long hair, no curls', hairRead.json?.styles);
+  expect(hairRead.json?.hair.beard === 'short' && hairRead.json.beards.join() !== '' && !hairRead.json.beards.includes('full_beard') && hairRead.json.beards_hidden === 1 && hairRead.json.beard_picks.length === 2, 'the beard is read too: a short beard can be trimmed to anything but a full beard', { beards: hairRead.json?.beards, hidden: hairRead.json?.beards_hidden });
   expect(hairRead.json?.picks.length === 3 && hairRead.json.picks.every((x: string) => hairRead.json.styles.includes(x)) && hairRead.json.picks.join() === hairRead.json.styles.slice(0, 3).join(), 'the three best suited come first');
   expectStatus(await read(reader, Buffer.from('hello'), 'text/plain'), 415, 'reading something that is not an image', 'unsupported_image');
   expectStatus(await read(reader, await portraitJpeg(120, 160)), 422, 'reading a photo too small', 'image_too_small');
-  const short = fitStyles({ length: 'short', texture: 'straight', density: 'normal', hairline: 'full', face: 'square' });
+  const short = fitStyles(hairOf({ length: 'short', texture: 'straight', density: 'normal', hairline: 'full', face: 'square' }));
   expect(short.styles.length === 6 && short.styles.every((x) => ['shaved', 'buzz', 'crew_cut', 'skin_fade', 'low_taper', 'crop'].includes(x)) && short.hidden === 7, 'short hair: only cuts from short hair (no side part, quiff or pompadour)', short);
   expect(short.styles[short.styles.length - 1] === 'shaved', 'a full shave is offered last to a full head of hair', short.styles);
-  const bald = fitStyles({ length: 'bald', texture: 'straight', density: 'thin', hairline: 'receding', face: 'oval' });
+  const bald = fitStyles(hairOf({ length: 'bald', texture: 'straight', density: 'thin', hairline: 'receding', face: 'oval' }));
   expect(bald.styles.join() === 'shaved', 'a bald head: a clean shave, nothing that needs hair', bald);
   const LEN = ['bald', 'buzz', 'short', 'medium', 'long', 'very_long'] as const;
   const TEX = ['straight', 'wavy', 'curly', 'coily'] as const;
   const every = (fn: (r: ReturnType<typeof fitStyles>, len: string, tex: string) => boolean) =>
-    LEN.every((len) => TEX.every((tex) => ['thick', 'thin'].every((density) => ['oval', 'round', 'long'].every((face) => fn(fitStyles({ length: len, texture: tex, density, hairline: 'full', face } as any), len, tex)))));
+    LEN.every((len) => TEX.every((tex) => ['thick', 'thin'].every((density) => ['oval', 'round', 'long'].every((face) => fn(fitStyles(hairOf({ length: len, texture: tex, density, hairline: 'full', face } as any)), len, tex)))));
   expect(every((r, len) => !['bald', 'buzz', 'short', 'medium'].includes(len) || !['pompadour', 'undercut', 'slick_back', 'flow'].some((x) => r.styles.includes(x))), 'up to 10 cm on top: never a pompadour, an undercut, a slick back or a flow');
   expect(every((r, len) => len === 'very_long' || !r.styles.includes('flow')), 'the long flow only for very long hair');
   expect(every((r, _len, tex) => tex !== 'coily' || !['crop', 'quiff', 'pompadour', 'undercut', 'slick_back', 'flow'].some((x) => r.styles.includes(x))), 'coily hair: no cuts that need straightening');
   expect(every((r, _len, tex) => (tex === 'curly' || tex === 'coily') === r.styles.includes('curls_fade') || ['bald', 'buzz'].includes(_len)), 'the curls cut only for curly or coily hair');
-  const longStraight = fitStyles({ length: 'long', texture: 'straight', density: 'thick', hairline: 'full', face: 'oval' });
+  const beardsOf = (beard: Hair['beard'], coverage: Hair['coverage'] = 'even') => fitBeards(hairOf({ beard, coverage })).beards;
+  expect(beardsOf('none').join() === 'clean', 'no beard: only clean-shaven, nothing that needs a beard', beardsOf('none'));
+  expect(beardsOf('stubble').sort().join() === 'clean,stubble', 'stubble: stubble or a clean shave', beardsOf('stubble'));
+  expect(!beardsOf('short', 'patchy').includes('boxed') && beardsOf('short', 'patchy').includes('goatee'), 'a patchy beard: no shapes that need an even one', beardsOf('short', 'patchy'));
+  expect(beardsOf('full').length === 7 && !beardsOf('full', 'patchy').includes('full_beard'), 'a full, even beard: every style; a full patchy one: no full beard', { even: beardsOf('full'), patchy: beardsOf('full', 'patchy') });
+  const longStraight = fitStyles(hairOf({ length: 'long', texture: 'straight', density: 'thick', hairline: 'full', face: 'oval' }));
   expect(longStraight.styles.includes('slick_back') && longStraight.styles.includes('pompadour') && !longStraight.styles.includes('flow') && !longStraight.styles.includes('curls_fade'), 'long straight hair: long cuts, no flow yet, no curls', longStraight.styles);
-  const curly = fitStyles({ length: 'medium', texture: 'coily', density: 'thick', hairline: 'full', face: 'round' });
+  const curly = fitStyles(hairOf({ length: 'medium', texture: 'coily', density: 'thick', hairline: 'full', face: 'round' }));
   expect(curly.picks[0] === 'curls_fade', 'curly hair: the curls cut first', curly.picks);
-  const thinning = fitStyles({ length: 'long', texture: 'wavy', density: 'thin', hairline: 'receding', face: 'oval' });
+  const thinning = fitStyles(hairOf({ length: 'long', texture: 'wavy', density: 'thin', hairline: 'receding', face: 'oval' }));
   expect(!thinning.picks.some((x) => ['pompadour', 'quiff', 'slick_back', 'undercut'].includes(x)), 'thin hair or a receding hairline: volume and slicked-back cuts are not the top picks', thinning.picks);
   expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('hello'), 'text/plain'), 415, 'not an image type', 'unsupported_image');
   expectStatus(await tryOn(guest, 'style=skin_fade', Buffer.from('definitely not a jpeg at all')), 415, 'bytes that are not a picture', 'unsupported_image');
@@ -1108,7 +1118,7 @@ async function tryonTests(K: string, owner: Client, customer: () => Client, { cu
   const big = await tryOn(guest, 'style=crop', await portraitJpeg(2400, 3200));
   const bigMeta = big.status === 200 ? await sharp(big.body).metadata() : null;
   expect(big.status === 200 && Math.max(bigMeta?.width ?? 0, bigMeta?.height ?? 0) <= 1024, 'a large photo comes back at most 1024 pixels', bigMeta && { w: bigMeta.width, h: bigMeta.height });
-  expectStatus(await tryOn(guest, 'style=buzz', selfie), 200, 'a third try');
+  expectStatus(await tryOn(guest, 'style=keep&beard=full_beard', selfie), 200, 'a third try: his own hair, a full beard');
   expectStatus(await tryOn(guest, 'style=buzz', selfie), 429, 'too many tries from one address', 'too_many_attempts');
   expectStatus(await tryOn(customer(), 'style=buzz', selfie, 'image/png'), 200, 'another customer can still try (a JPEG sent as PNG is read by its bytes)');
 
@@ -1118,6 +1128,12 @@ async function tryonTests(K: string, owner: Client, customer: () => Client, { cu
   expect(withLook.status === 201 && withLook.json.booking.look?.style === 'skin_fade' && withLook.json.booking.look.name_en === 'Skin fade' && withLook.json.booking.look.shade?.id === 'black', 'a booking keeps the cut and colour tried', withLook.json);
   const seen = (await owner.get(K, `/api/manage/bookings?date=${tomorrow}`)).json?.bookings.find((b: any) => b.id === withLook.json?.booking.id);
   expect(seen?.look?.id === 'skin_fade:black' && seen.look.shade?.hex, 'the owner sees the requested cut', seen?.look);
+  const bearded = await book(customer(), { time: 990, name: 'عمر', phone: '0795550004', look: 'keep::full_beard' });
+  expect(bearded.status === 201 && bearded.json.booking.look?.style === null && bearded.json.booking.look.beard?.id === 'full_beard' && bearded.json.booking.look.name_en === 'Full beard', 'a beard alone, his hair kept', bearded.json?.booking?.look);
+  const both = await book(customer(), { time: 1020, name: 'سامر', phone: '0795550005', look: 'quiff:brown:boxed' });
+  expect(both.status === 201 && both.json.booking.look?.name_en === 'Textured quiff · Boxed beard' && both.json.booking.look.shade?.id === 'brown', 'a cut, a colour and a beard together', both.json?.booking?.look);
+  expectStatus(await book(customer(), { time: 1050, name: 'هاني', phone: '0795550006', look: 'keep' }), 400, 'a look that changes nothing', 'invalid');
+  expectStatus(await book(customer(), { time: 1050, name: 'هاني', phone: '0795550006', look: 'keep::nope' }), 400, 'an unknown beard in a look', 'invalid');
   const plain = await book(customer(), { time: 930, name: 'باسل', phone: '0795550002' });
   expect(plain.status === 201 && plain.json.booking.look === null, 'a booking without one has none');
   expectStatus(await book(customer(), { time: 960, name: 'هاني', phone: '0795550003', look: 'bob:black' }), 400, "a women's cut", 'invalid');

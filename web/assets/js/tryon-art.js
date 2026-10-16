@@ -1,6 +1,9 @@
-// Little drawn heads for the AI mirror's menu of men's cuts: one shape per cut, the hair
-// in the colour being tried. Paths only (no images, no fonts), so they stay crisp at any
-// size and recolour instantly when the customer taps a shade.
+// The AI mirror's menu pictures: a photo of the same model for each cut and each beard
+// (scripts/tryon-photos.json, saved into web/assets/img/tryon/ by npm run tryon-photos),
+// and little drawn heads that stand in until a photo is there. The drawings are paths
+// only (no images, no fonts), so they stay crisp at any size.
+import { PHOTOS } from './tryon-photos.js';
+
 const NS = 'http://www.w3.org/2000/svg';
 
 const SKIN = '#e3b994';
@@ -98,4 +101,39 @@ export function styleArt(id, { hair = DEFAULT_HAIR, body = 'currentColor' } = {}
   });
   if (art.part) svg.append(el('path', { d: 'M26.6 11.8l-.8 9.4', stroke: '#ffffff', 'stroke-width': 0.9, 'stroke-linecap': 'round', opacity: 0.55 }));
   return svg;
+}
+
+// Beards over the drawn head (the face is centred at (32, 29.4), the chin at about y 43).
+const BEARD_ART = {
+  clean: [],
+  stubble: [['M21.6 30.6c.4 6.6 4.4 12 10.4 12.2 6-.2 10-5.6 10.4-12.2-1.4 2.6-3.4 4.2-5.6 4.6-1.4-1.2-3-1.8-4.8-1.8s-3.4.6-4.8 1.8c-2.2-.4-4.2-2-5.6-4.6z', 0.32]],
+  short_beard: [['M21.6 30.6c.4 6.6 4.4 12 10.4 12.2 6-.2 10-5.6 10.4-12.2-1.4 2.6-3.4 4.2-5.6 4.6-1.4-1.2-3-1.8-4.8-1.8s-3.4.6-4.8 1.8c-2.2-.4-4.2-2-5.6-4.6z', 0.9]],
+  boxed: [['M21.2 29.6c0 7.8 4.4 14.2 10.8 14.4 6.4-.2 10.8-6.6 10.8-14.4-1.4 3-3.6 4.8-6 5.2-1.4-1.2-3-1.8-4.8-1.8s-3.4.6-4.8 1.8c-2.4-.4-4.6-2.2-6-5.2z', 1]],
+  goatee: [['M27.2 35.4c1.4-1 3-1.4 4.8-1.4s3.4.4 4.8 1.4c.4 2.6-.2 5.6-1.8 7.2-1 .8-2 1.2-3 1.2s-2-.4-3-1.2c-1.6-1.6-2.2-4.6-1.8-7.2z', 0.95]],
+  moustache: [['M27 35.6c1.6-1.4 3.2-1.8 5-1.2 1.8-.6 3.4-.2 5 1.2-1.4.4-3.2.6-5 .2-1.8.4-3.6.2-5-.2z', 1]],
+  full_beard: [['M21 29.4c.2 9 4.4 16.4 11 16.4s10.8-7.4 11-16.4c-1.6 3.4-3.8 5.4-6.2 5.8-1.4-1.4-3-2-4.8-2s-3.4.6-4.8 2c-2.4-.4-4.6-2.4-6.2-5.8z', 1]],
+};
+
+/** The drawn head with a beard (and a neat crop): the stand-in for a beard's photo. */
+export function beardArt(id, { hair = DEFAULT_HAIR } = {}) {
+  const svg = styleArt('crop', { hair });
+  for (const [d, opacity] of BEARD_ART[id] ?? []) svg.append(el('path', { d, fill: hair, opacity }));
+  svg.append(el('path', { d: 'M29.6 37.8c1.6.5 3.2.5 4.8 0', stroke: '#a8714f', 'stroke-width': 1, 'stroke-linecap': 'round', fill: 'none' }));
+  return svg;
+}
+
+/**
+ * The menu picture for a cut ('hair') or a beard ('beard'): the model's photo, or the
+ * drawn head when the photo is not there (not downloaded yet, or offline).
+ */
+export function menuPhoto(kind, id, alt = '') {
+  if (!PHOTOS.has(`${kind}/${id}`)) return kind === 'beard' ? beardArt(id) : styleArt(id);
+  const img = document.createElement('img');
+  img.className = 'menu-photo';
+  img.alt = alt;
+  img.decoding = 'async';
+  img.loading = 'lazy';
+  img.addEventListener('error', () => img.replaceWith(kind === 'beard' ? beardArt(id) : styleArt(id)), { once: true });
+  img.src = `/assets/img/tryon/${kind}/${id}.webp`;
+  return img;
 }

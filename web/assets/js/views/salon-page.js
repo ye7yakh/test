@@ -11,7 +11,7 @@ import { homeScreen, phone } from '../preview.js';
 import { fmtDate } from '../slots.js';
 import { applyColors, reducedMotion } from '../theme.js';
 import { nowIn, openStatus, toMin } from '../time.js';
-import { styleArt } from '../tryon-art.js';
+import { menuPhoto } from '../tryon-art.js';
 
 export function salonPage(app, { book = false } = {}) {
   const el = h('div', { class: 'p-page' }, h('div', { class: 'boot' }, h('div', { class: 'spinner' })));
@@ -468,8 +468,9 @@ function render(app, data) {
       ))
     : null;
 
-  // ---- the AI mirror: three drawn heads in the cuts on offer, and the way in
-  const heads = salon.tryon ? [['skin_fade', '#2b1d16'], ['pompadour', '#3b2418'], ['curls_fade', '#15110f']] : null;
+  // ---- the AI mirror: the model in three looks, and the way in
+  // The model in three looks: two cuts and a beard, the middle one larger.
+  const heads = salon.tryon ? [['hair', 'skin_fade'], ['hair', 'quiff'], ['beard', 'full_beard']] : null;
   const mirrorSection = heads
     ? h(
         'section',
@@ -478,7 +479,7 @@ function render(app, data) {
           'div',
           { class: 'p-tryon reveal' },
           h('div', { class: 'p-tryon-glow', 'aria-hidden': 'true' }),
-          h('div', { class: 'p-tryon-heads', 'aria-hidden': 'true' }, heads.map(([id, hair], i) => h('span', { style: { '--i': String(i) } }, styleArt(id, { hair })))),
+          h('div', { class: 'p-tryon-heads', 'aria-hidden': 'true' }, heads.map(([kind, id], i) => h('span', { style: { '--i': String(i) } }, menuPhoto(kind, id)))),
           h(
             'div',
             { class: 'p-tryon-text' },

@@ -8,7 +8,7 @@ import { ApiError, api, prepareImage } from '../api.js';
 import { clear, h, icon, legalLink, sheet, sparkles, toast, toastError } from '../dom.js';
 import { errorText, pick, t } from '../i18n.js';
 import { reducedMotion } from '../theme.js';
-import { styleArt } from '../tryon-art.js';
+import { menuPhoto } from '../tryon-art.js';
 
 // Agreed once per visit; the looks tried stay until the page is closed.
 let consented = false;
@@ -48,7 +48,7 @@ function roving(buttons, isOn) {
 /** Opens the mirror. `onBook(look)` books the cut tried ({ id, name, url }), or a visit (null). */
 export function openTryon(app, data, { onBook } = {}) {
   const canBook = data.salon.booking_enabled && data.services.length > 0;
-  const state = { step: 'photo', photo: null, photoUrl: null, catalogue: null, read: null, style: null, shade: null, stream: null, request: null, shown: null };
+  const state = { step: 'photo', photo: null, photoUrl: null, catalogue: null, read: null, style: null, beard: null, shade: null, stream: null, request: null, shown: null };
   const body = h('div', { class: 'mirror' });
   const back = h('button', { class: 'btn btn-secondary', type: 'button' });
   const next = h('button', { class: 'btn btn-primary sheen', type: 'button' });
@@ -154,6 +154,7 @@ export function openTryon(app, data, { onBook } = {}) {
     // A new photo is read afresh: the cuts on offer depend on the hair in it.
     state.read = null;
     state.style = null;
+    state.beard = null;
     catalogue.then((c) => c && go('reading'));
   }
 
@@ -283,18 +284,19 @@ export function openTryon(app, data, { onBook } = {}) {
   function styleStep() {
     const c = state.catalogue;
     const read = state.read;
-    const byId = new Map(c.styles.map((x) => [x.id, x]));
-    const fits = read.styles.map((id) => byId.get(id)).filter(Boolean);
-    const picks = new Set(read.picks);
     showFoot(true);
     back.textContent = t('tryon.change_photo');
     back.onclick = () => go('photo');
     next.hidden = false;
     next.replaceChildren(icon('wand'), t('tryon.show'));
-    next.disabled = !state.style;
+    // Something has to change: a cut, a beard or a colour.
+    const ready = () => {
+      next.disabled = !(state.style || state.beard || state.shade);
+    };
+    ready();
     next.onclick = () => go('working');
 
-    // What the AI saw: his hair's length and texture, and his face shape.
+    // What the AI saw: his hair's length and texture, his beard and his face shape.
     const profile = h(
       'div',
       { class: 'mr-me' },
@@ -303,36 +305,43 @@ export function openTryon(app, data, { onBook } = {}) {
         'div',
         { class: 'grow' },
         h('b', { text: t('tryon.your_hair') }),
-        h('div', { class: 'mr-traits' }, [`len_${read.hair.length}`, `tex_${read.hair.texture}`, `face_${read.hair.face}`].map((k) => h('span', { text: t(`tryon.${k}`) }))),
+        h('div', { class: 'mr-traits' }, [`len_${read.hair.length}`, `tex_${read.hair.texture}`, `beard_${read.hair.beard}`, `face_${read.hair.face}`].map((k) => h('span', { text: t(`tryon.${k}`) }))),
       ),
     );
-    if (!fits.length) {
-      // Nothing to try on this hair: the visit itself is still a tap away.
-      next.hidden = !canBook;
-      next.replaceChildren(icon('calendar'), t('book.cta'));
-      next.onclick = () => {
-        panel.close();
-        onBook?.(null);
-      };
-      return h('div', { class: 'mr-step' }, profile, h('div', { class: 'mr-none' }, h('span', { class: 'ic' }, icon('scissors')), h('h3', { text: t('tryon.none_title') }), h('p', { class: 'muted', text: t('tryon.none_sub') })));
-    }
 
-    const hair = () => c.shades.find((x) => x.id === state.shade)?.hex;
-    // The cards are built once; choosing a cut or a colour updates them in place, so focus
-    // stays where it is and nothing replays.
-    const cards = fits.map((x, i) => h(
-      'button',
-      { class: 'mr-style', type: 'button', role: 'radio', 'data-id': x.id, style: { '--i': String(i) }, onclick: () => chooseStyle(x) },
-      picks.has(x.id) ? h('span', { class: 'mr-best' }, icon('sparkles'), t('tryon.best')) : null,
-      h('span', { class: 'art' }, styleArt(x.id, { hair: hair() })),
-      h('span', { class: 'n', text: pick(x, 'name') }),
-    ));
-    const syncStyles = roving(cards, (b) => b.dataset.id === state.style?.id);
-    const chooseStyle = (x) => {
-      state.style = x;
-      next.disabled = false;
-      syncStyles();
+    /**
+     * One choice (the cut, or the beard): "keep mine" first with his own photo, then the
+     * best suited (marked), then the others that fit. The cards are built once; a choice
+     * updates them in place, so focus stays where it is and nothing replays.
+     */
+    const menu = (kind, all, ids, picks, hidden, key) => {
+      const byId = new Map(all.map((x) => [x.id, x]));
+      const fits = ids.map((id) => byId.get(id)).filter(Boolean);
+      const picked = new Set(picks);
+      const card = (x, i) => h(
+        'button',
+        { class: `mr-style${x ? '' : ' keep'}`, type: 'button', role: 'radio', 'data-id': x?.id ?? '', style: { '--i': String(i) }, onclick: () => choose(x) },
+        x && picked.has(x.id) ? h('span', { class: 'mr-best' }, icon('sparkles'), t('tryon.best')) : null,
+        h('span', { class: 'art' }, x ? menuPhoto(kind, x.id) : h('img', { class: 'menu-photo', src: state.photoUrl, alt: '' })),
+        h('span', { class: 'n', text: x ? pick(x, 'name') : t(`tryon.keep_${kind}`) }),
+      );
+      const cards = [card(null, 0), ...fits.map((x, i) => card(x, i + 1))];
+      const sync = roving(cards, (b) => (b.dataset.id || null) === (state[key]?.id ?? null));
+      const choose = (x) => {
+        state[key] = x;
+        sync();
+        ready();
+      };
+      sync();
+      return h(
+        'section',
+        { class: 'mr-menu' },
+        h('h3', { class: 'mr-h' }, icon(kind === 'hair' ? 'scissors' : 'user'), t(`tryon.menu_${kind}`)),
+        h('div', { class: 'mr-styles', role: 'radiogroup', 'aria-label': t(`tryon.menu_${kind}`) }, cards),
+        hidden ? h('p', { class: 'mr-hidden' }, icon('clock'), h('span', { text: t(`tryon.hidden_${kind}`, { n: hidden }) })) : null,
+      );
     };
+
     const swatches = [[null, t('tryon.natural'), null], ...c.shades.map((x) => [x.id, pick(x, 'name'), x.hex])].map(([id, label, hex]) => h(
       'button',
       { class: `mr-shade ${id ? '' : 'natural'}`, type: 'button', role: 'radio', title: label, 'data-id': id ?? '', onclick: () => chooseShade(id) },
@@ -343,27 +352,16 @@ export function openTryon(app, data, { onBook } = {}) {
     const chooseShade = (id) => {
       state.shade = id;
       syncShades();
-      cards.forEach((card) => card.querySelector('.art').replaceChildren(styleArt(card.dataset.id, { hair: hair() })));
+      ready();
     };
-    syncStyles();
     syncShades();
 
-    const best = cards.filter((b) => picks.has(b.dataset.id));
-    const more = cards.filter((b) => !picks.has(b.dataset.id));
     return h(
       'div',
       { class: 'mr-step' },
       profile,
-      // One choice, so one radio group: the best suited first, then the others.
-      h(
-        'div',
-        { role: 'radiogroup', 'aria-label': t('tryon.pick_cut') },
-        h('h3', { class: 'mr-h' }, icon('sparkles'), t('tryon.for_you')),
-        h('div', { class: 'mr-styles' }, best),
-        more.length ? h('h3', { class: 'mr-h', text: t('tryon.also') }) : null,
-        more.length ? h('div', { class: 'mr-styles' }, more) : null,
-      ),
-      read.hidden ? h('p', { class: 'mr-hidden' }, icon('clock'), h('span', { text: t('tryon.hidden', { n: read.hidden }) })) : null,
+      menu('hair', c.styles, read.styles, read.picks, read.hidden, 'style'),
+      menu('beard', c.beards, read.beards, read.beard_picks, read.beards_hidden, 'beard'),
       h('h3', { class: 'mr-h', text: t('tryon.shade') }),
       h('div', { class: 'mr-shades', role: 'radiogroup', 'aria-label': t('tryon.shade') }, swatches),
     );
@@ -389,24 +387,29 @@ export function openTryon(app, data, { onBook } = {}) {
       frame,
       h('h3', { text: t('tryon.working') }),
       line,
-      h('div', { class: 'mr-chip' }, h('span', { class: 'art' }, styleArt(state.style.id, { hair: state.catalogue.shades.find((x) => x.id === state.shade)?.hex })), h('span', { text: lookName(state.style, shadeOf(state.shade)) })),
+      h('div', { class: 'mr-chip' }, h('span', { class: 'art' }, lookPhoto(state.style, state.beard)), h('span', { text: lookName(state.style, state.beard, shadeOf(state.shade)) })),
     );
   }
 
   const shadeOf = (id) => state.catalogue.shades.find((s) => s.id === id) ?? null;
-  const lookName = (style, shade) => (shade ? `${pick(style, 'name')} · ${pick(shade, 'name')}` : pick(style, 'name'));
+  /** "Quiff · Full beard · Dark brown": what changes, in the order the barber does it. */
+  const lookName = (style, beard, shade) => [style, beard, shade].filter(Boolean).map((x) => pick(x, 'name')).join(' · ');
+  /** The menu photo that shows a look best: the cut, or the beard when he keeps his hair. */
+  const lookPhoto = (style, beard) => (style ? menuPhoto('hair', style.id) : beard ? menuPhoto('beard', beard.id) : h('img', { class: 'menu-photo', src: state.photoUrl, alt: '' }));
 
   async function run() {
     const controller = new AbortController();
     state.request = controller;
-    const style = state.style;
+    const { style, beard } = state;
     const shade = shadeOf(state.shade);
-    const query = `style=${encodeURIComponent(style.id)}${shade ? `&shade=${encodeURIComponent(shade.id)}` : ''}`;
+    const query = new URLSearchParams({ style: style?.id ?? 'keep', ...(beard ? { beard: beard.id } : {}), ...(shade ? { shade: shade.id } : {}) });
     try {
       const res = await send(`/api/public/tryon?${query}`, controller);
       const blob = await res.blob();
       if (state.request !== controller) return;
-      const look = { id: shade ? `${style.id}:${shade.id}` : style.id, name: lookName(style, shade), style, shade, blob, url: URL.createObjectURL(blob) };
+      // Stored with the booking as "cut:colour:beard" ("keep" for his own hair).
+      const id = [style?.id ?? 'keep', shade?.id ?? '', beard?.id ?? ''].join(':').replace(/:+$/, '');
+      const look = { id, name: lookName(style, beard, shade), style, beard, shade, blob, url: URL.createObjectURL(blob) };
       tried.unshift(look);
       state.shown = look;
       go('result');
@@ -481,7 +484,7 @@ export function openTryon(app, data, { onBook } = {}) {
           if (err?.name === 'AbortError') return;
         }
       }
-      const a = h('a', { href: look.url, download: `${look.style.id}.jpg`, hidden: true });
+      const a = h('a', { href: look.url, download: `${look.id.replace(/:+/g, '-')}.jpg`, hidden: true });
       document.body.append(a);
       a.click();
       a.remove();
@@ -495,7 +498,7 @@ export function openTryon(app, data, { onBook } = {}) {
       h(
         'div',
         { class: 'mr-look' },
-        h('span', { class: 'art' }, styleArt(look.style.id, { hair: look.shade?.hex })),
+        h('span', { class: 'art' }, lookPhoto(look.style, look.beard)),
         h('div', { class: 'grow' }, h('b', { text: look.name }), h('span', { class: 'muted', text: t('tryon.from_mirror') })),
         h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('tryon.save'), title: t('tryon.save'), onclick: save }, icon('download')),
       ),

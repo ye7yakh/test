@@ -9,7 +9,7 @@ import { currencySymbol, errorText, fmtDuration, fmtHour, fmtPrice, fmtTime, get
 import { addDays, dateOf, dayLabel, dayStrip, fmtDate, periodIcon } from '../slots.js';
 import { reducedMotion } from '../theme.js';
 import { nowIn, toMin } from '../time.js';
-import { styleArt } from '../tryon-art.js';
+import { menuPhoto } from '../tryon-art.js';
 
 const HOLDING = new Set(['pending_payment', 'payment_sent', 'confirmed']);
 const COUNTED = new Set([...HOLDING, 'completed', 'no_show']);
@@ -518,7 +518,7 @@ function detailView(ctx, b, { done, onProofDecided }) {
       ? h(
           'div',
           { class: 'look-box' },
-          h('span', { class: 'art', 'aria-hidden': 'true' }, styleArt(b.look.style, { hair: b.look.shade?.hex })),
+          h('span', { class: 'art', 'aria-hidden': 'true' }, b.look.style ? menuPhoto('hair', b.look.style) : b.look.beard ? menuPhoto('beard', b.look.beard.id) : icon('wand')),
           h('div', { class: 'grow' }, h('div', { class: 'eyebrow' }, icon('wand'), t('sched.look')), h('b', { text: lookName(b.look) }), h('span', { class: 'small muted', text: t('sched.look_sub') })),
           b.look.shade ? h('i', { class: 'look-sw', title: pick(b.look.shade, 'name'), style: { '--sw': b.look.shade.hex } }) : null,
         )
