@@ -158,7 +158,8 @@ export function loginView(app) {
           h('p', { text: salon ? t('login.studio', { name: iso(name) }) : `${name} · ${t('login.platform')}` }),
         ),
         h('div', { class: 'rise', style: { '--i': '1' } }, form),
-        forgot ? h('div', { class: 'login-help rise', style: { '--i': '2' } }, forgot) : null,
+        // A barber's password comes from his salon's owner, not the platform.
+        salon ? h('div', { class: 'login-help rise', style: { '--i': '2' } }, forgot, h('p', { class: 'team-hint', text: t('login.team_hint') })) : null,
         h(
           'div',
           { class: 'login-foot rise', style: { '--i': '2' } },

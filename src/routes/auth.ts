@@ -30,7 +30,7 @@ function contextBody(ctx: Ctx) {
       contact_phone: tenant.contact_phone,
     },
     salon: ctx.host.salon ? salonSummary(ctx.host.salon) : null,
-    user: s ? { id: s.user.id, name: s.user.name, phone: s.user.phone, role: s.role, must_change_password: s.user.must_change_password } : null,
+    user: s ? { id: s.user.id, name: s.user.name, phone: s.user.phone, role: s.role, staff_id: s.staffId, must_change_password: s.user.must_change_password } : null,
   };
 }
 

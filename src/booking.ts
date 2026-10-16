@@ -50,14 +50,14 @@ export async function salonToday(db: Db, timezone: string): Promise<string> {
 
 /** Releases deposit holds whose time ran out. Returns the salons that changed. */
 export async function expireHolds(db: Db, salonId?: number): Promise<number[]> {
-  const rows = await query<{ salon_id: number; id: number }>(
+  const rows = await query<{ salon_id: number; id: number; staff_id: number }>(
     `update bookings set status = 'expired', updated_at = now()
       where status = 'pending_payment' and expires_at <= now() ${salonId ? 'and salon_id = $1' : ''}
-      returning salon_id, id`,
+      returning salon_id, id, staff_id`,
     salonId ? [salonId] : [],
     db,
   );
-  for (const r of rows) publish(r.salon_id, 'booking', { id: r.id, status: 'expired' });
+  for (const r of rows) publish(r.salon_id, 'booking', { id: r.id, status: 'expired' }, r.staff_id);
   return [...new Set(rows.map((r) => r.salon_id))];
 }
 
@@ -218,7 +218,7 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
   const token = crypto.randomBytes(18).toString('base64url');
   const needsDeposit = input.source === 'online' && salon.cliq_required;
   try {
-    const row = await one<{ id: number; status: string }>(
+    const row = await one<{ id: number; status: string; staff_id: number }>(
       // The deposit hold never outlives the appointment's start: nobody should be
       // paying for a visit that has begun (online slots start at least LEAD_MIN out).
       `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, deposit, expires_at, source, token_hash, customer_name, look)
@@ -229,17 +229,69 @@ export async function createBooking(db: Db, salon: Salon, input: CreateInput): P
               $13, $14, $16, $17
          from (select ($5::timestamp + make_interval(mins => $6)) at time zone $15 as start_at) t,
               (select case when $9 then (case when $10 = 'full' then $8::numeric else least($11::numeric, $8::numeric) end) else 0 end as deposit) d
-       returning id, status`,
+       returning id, status, staff_id`,
       [salon.id, customer!.id, staffId, service.id, input.date, input.min, service.duration_min, service.price,
         needsDeposit, salon.deposit_kind, salon.deposit_amount, salon.payment_window_min, input.source, hashToken(token), salon.timezone, input.name, input.look ?? null],
       db,
     );
-    publish(salon.id, 'booking', { id: row!.id, status: row!.status });
+    publish(salon.id, 'booking', { id: row!.id, status: row!.status }, row!.staff_id);
     return { id: row!.id, token };
   } catch (err) {
     if ((err as { code?: string }).code === '23P01') throw new HttpError(409, 'slot_taken', 'time');
     throw err;
   }
+}
+
+interface WalkInInput {
+  staffId: number;
+  serviceId: number;
+  /** What he pays, when it is not the menu price (a smaller job, a discount). */
+  price: string | null;
+  name: string | null;
+  phone: string | null;
+  note: string | null;
+}
+
+/**
+ * A customer who walked in without booking, recorded as he sits down: from now, for the
+ * service's length, with the barber who serves him and what he pays. He is already in
+ * the chair, so an overlap with a booking is not refused (the database leaves walk-ins
+ * out of its overlap rule); the time still counts as taken for anyone booking online,
+ * and the salon's lock keeps the two in turn.
+ */
+export async function createWalkIn(db: Db, salon: Salon, input: WalkInInput): Promise<{ id: number }> {
+  await query('select pg_advisory_xact_lock(727002, $1::int)', [salon.id], db);
+  const service = await one<{ id: number; duration_min: number; price: string }>(
+    'select id, duration_min, trim_scale(price)::text as price from services where salon_id = $1 and id = $2 and active',
+    [salon.id, input.serviceId],
+    db,
+  );
+  if (!service) throw new HttpError(400, 'invalid', 'service_id');
+  const staff = await one('select 1 from staff where salon_id = $1 and id = $2 and active', [salon.id, input.staffId], db);
+  if (!staff) throw new HttpError(400, 'invalid', 'staff_id');
+  // A number given is a customer the salon will know next time. The name stays on this
+  // visit: a customer the salon already knows keeps his (and a number typed here does not
+  // look up who it belongs to, see bookingSelect).
+  const customer = input.phone
+    ? await one<{ id: number }>(
+        `insert into customers (salon_id, phone, name) values ($1, $2, $3)
+         on conflict (salon_id, phone) do update set phone = excluded.phone
+         returning id`,
+        [salon.id, input.phone, input.name ?? input.phone],
+        db,
+      )
+    : null;
+  const row = await one<{ id: number }>(
+    `insert into bookings (salon_id, customer_id, staff_id, service_id, start_at, end_at, status, price, source, token_hash, customer_name, note)
+     select $1, $2, $3, $4, t.start_at, t.start_at + make_interval(mins => $5), 'confirmed', $6::numeric, 'walk_in', $7, $8, $9
+       from (select date_trunc('minute', now()) as start_at) t
+     returning id`,
+    [salon.id, customer?.id ?? null, input.staffId, service.id, service.duration_min, input.price ?? service.price,
+      hashToken(crypto.randomBytes(18).toString('base64url')), input.name, input.note],
+    db,
+  );
+  publish(salon.id, 'booking', { id: row!.id, status: 'confirmed' }, input.staffId);
+  return { id: row!.id };
 }
 
 export function hashToken(token: string): Buffer {
@@ -251,7 +303,7 @@ export function bookingSelect(where: string): string {
   return `
     select b.id,
            case when b.status = 'pending_payment' and b.expires_at <= now() then 'expired' else b.status end as status,
-           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note, b.payment_rejected, b.look,
+           b.source, trim_scale(b.price)::text as price, trim_scale(b.deposit)::text as deposit, b.payment_note, b.payment_rejected, b.look, b.note,
            -- Changes when the screenshot is replaced, so the image URL does too (no stale cache).
            floor(extract(epoch from p.created_at) * 1000)::bigint::text as proof_v,
            greatest(0, floor(extract(epoch from b.expires_at - now())))::int as expires_in_s,
@@ -265,12 +317,14 @@ export function bookingSelect(where: string): string {
            b.start_at > now() as upcoming,
            b.created_at,
            -- The name given for this booking; older rows fall back to the customer's.
-           c.id as customer_id, coalesce(b.customer_name, c.name) as customer_name, c.phone as customer_phone,
+           c.id as customer_id, c.phone as customer_phone,
+           -- A walk-in has the name given at the chair, or none (never a stored one looked up by number).
+           case when b.source = 'walk_in' then b.customer_name else coalesce(b.customer_name, nullif(c.name, c.phone)) end as customer_name,
            st.id as staff_id, st.name_ar as staff_name_ar, st.name_en as staff_name_en, st.photo_id as staff_photo_id,
            sv.id as service_id, sv.name_ar as service_name_ar, sv.name_en as service_name_en, sv.icon as service_icon
       from bookings b
       join salons s on s.id = b.salon_id
-      join customers c on c.id = b.customer_id
+      left join customers c on c.id = b.customer_id
       join staff st on st.id = b.staff_id
       join services sv on sv.id = b.service_id
       left join booking_proofs p on p.booking_id = b.id
@@ -286,6 +340,8 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     deposit: r.deposit,
     payment_note: r.payment_note,
     payment_rejected: r.payment_rejected,
+    // What a walk-in asked for, in the barber's words.
+    note: r.note,
     // The haircut tried on in the AI mirror before booking, in words.
     look: describeLook(r.look),
     // The owner's view of the screenshot; the customer's page swaps in its own link.
@@ -298,6 +354,7 @@ export function shapeBooking(r: Record<string, any>, mediaUrl: (id: string | nul
     duration_min: r.duration_min,
     upcoming: r.upcoming,
     created_at: r.created_at,
+    // A walk-in may leave no name or number: then both are null.
     customer: { id: r.customer_id, name: r.customer_name, phone: r.customer_phone },
     staff: { id: r.staff_id, name_ar: r.staff_name_ar, name_en: r.staff_name_en, photo_url: mediaUrl(r.staff_photo_id) },
     service: { id: r.service_id, name_ar: r.service_name_ar, name_en: r.service_name_en, icon: r.service_icon },

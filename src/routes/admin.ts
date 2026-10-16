@@ -1,7 +1,7 @@
 // Platform owner (super admin): create salons, hand them to their owners, and keep
 // an eye on them: who is set up, who is busy, who went quiet.
 import crypto from 'node:crypto';
-import { checkNewPassword, clearLoginFailures, hashPassword, normalizePhone, requireSuperAdmin } from '../auth.js';
+import { checkNewPassword, clearLoginFailures, hashPassword, normalizePhone, requireSuperAdmin, temporaryPassword } from '../auth.js';
 import { one, query, tx, type Db } from '../db.js';
 import { defaultWeek, saveSalonWeek } from '../hours.js';
 import { HttpError, ok, readJson, requestProto, type Ctx, type Router } from '../http.js';
@@ -27,8 +27,9 @@ async function assertSubdomainFree(db: Db, tenantId: number, sub: string, salonI
   if (taken) throw new HttpError(409, 'subdomain_taken', 'subdomain');
 }
 
-// A booking that was really made: everything but deposit holds that ran out.
-const MADE = `(b.status <> 'expired' and not (b.status = 'pending_payment' and b.expires_at <= now()))`;
+// A booking that was really made: everything but deposit holds that ran out (and walk-ins,
+// who came in without booking).
+const MADE = `(b.source <> 'walk_in' and b.status <> 'expired' and not (b.status = 'pending_payment' and b.expires_at <= now()))`;
 const UPCOMING = `(b.start_at > now() and (b.status in ('confirmed', 'payment_sent') or (b.status = 'pending_payment' and b.expires_at > now())))`;
 
 interface SalonRow {
@@ -154,17 +155,29 @@ async function createSalon(ctx: Ctx) {
   const result = await tx(async (db) => {
     await assertSubdomainFree(db, tenant.id, sub, null);
 
-    let owner = await one<{ id: number }>('select id from users where tenant_id = $1 and phone = $2', [tenant.id, ownerPhone], db);
-    const ownerCreated = !owner;
+    // An owner of another salon (or the admin) keeps the password they have. Any other
+    // account was made by a salon owner for a barber, and that owner may know (or reset)
+    // its password: it gets the one the admin sets instead, and is signed out everywhere.
+    let owner = await one<{ id: number; trusted: boolean }>(
+      `select id, is_super_admin or exists (select 1 from salon_members m where m.user_id = users.id and m.role = 'owner') as trusted
+         from users where tenant_id = $1 and phone = $2 for update`,
+      [tenant.id, ownerPhone],
+      db,
+    );
+    const ownerCreated = !owner?.trusted;
     if (!owner) {
       // New owners start with the password the admin sets, and are asked to pick their own.
       const password = checkNewPassword(b.req('owner_password', (v) => v));
-      owner = await one<{ id: number }>(
+      owner = await one<{ id: number; trusted: boolean }>(
         `insert into users (tenant_id, phone, name, password_hash, must_change_password)
-         values ($1, $2, $3, $4, true) returning id`,
+         values ($1, $2, $3, $4, true) returning id, false as trusted`,
         [tenant.id, ownerPhone, ownerName, await hashPassword(password)],
         db,
       );
+    } else if (!owner.trusted) {
+      const password = checkNewPassword(b.req('owner_password', (v) => v));
+      await query('update users set password_hash = $2, must_change_password = true where id = $1', [owner.id, await hashPassword(password)], db);
+      await query('delete from sessions where user_id = $1', [owner.id], db);
     }
     const salon = await one<{ id: number }>(
       `insert into salons (tenant_id, subdomain, name_ar, name_en, timezone, currency)
@@ -215,13 +228,6 @@ async function updateSalon(ctx: Ctx) {
     if (fields.active === false) await query('delete from sessions where salon_id = $1', [id], db);
   });
   ok(ctx, { salon: await salonDetail(ctx, id) });
-}
-
-// Easy to read out or type: no 0/o, 1/l/i. Three groups of four.
-const READABLE = 'abcdefghjkmnpqrstuvwxyz23456789';
-function temporaryPassword(): string {
-  const chars = Array.from({ length: 12 }, () => READABLE[crypto.randomInt(READABLE.length)]);
-  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8)].map((g) => g.join('')).join('-');
 }
 
 /** For an owner who forgot their password: a new temporary one, shown to the admin once. */

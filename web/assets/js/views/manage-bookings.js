@@ -10,6 +10,7 @@ import { addDays, dateOf, dayLabel, dayStrip, fmtDate, periodIcon } from '../slo
 import { reducedMotion } from '../theme.js';
 import { nowIn, toMin } from '../time.js';
 import { menuPhoto } from '../tryon-art.js';
+import { openSettings } from './manage-settings.js';
 
 const HOLDING = new Set(['pending_payment', 'payment_sent', 'confirmed']);
 const COUNTED = new Set([...HOLDING, 'completed', 'no_show']);
@@ -41,7 +42,17 @@ const mmss = (seconds) => {
   const s = Math.max(0, Math.round(seconds));
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 };
-const statusPill = (status) => h('span', { class: `pill status-${status}`, text: t(`status.${status}`) });
+/** The customer's name, or "walk-in" for one who gave none. */
+export const customerName = (b) => b.customer.name || t('sched.walk_in_guest');
+
+/** A status in words: a walk-in is in the chair or done; a barber waits on the owner for deposits. */
+const statusText = (b, ctx) => {
+  if (b.source === 'walk_in' && b.status === 'confirmed') return t('status.walk_in');
+  if (b.source === 'walk_in' && b.status === 'completed') return t('status.walk_in_done');
+  if (ctx?.isStaff && b.status === 'payment_sent') return t('status.payment_owner');
+  return t(`status.${b.status}`);
+};
+const statusPill = (b, ctx) => h('span', { class: `pill status-${b.status}`, text: statusText(b, ctx) });
 /**
  * Minutes from now until the visit starts, on the salon's clock (0 or less once it has).
  * The server's own `upcoming` wins when it says the visit has already started.
@@ -250,7 +261,7 @@ async function setStatus(b, status) {
 }
 
 function waLink(store, b) {
-  const text = t('sched.wa_text', { name: b.customer.name, salon: pick(store.salon, 'name'), day: fmtDate(b.date), time: fmtTime(b.start) });
+  const text = t('sched.wa_text', { name: customerName(b), salon: pick(store.salon, 'name'), day: fmtDate(b.date), time: fmtTime(b.start) });
   return `https://wa.me/${waNumber(b.customer.phone)}?text=${encodeURIComponent(text)}`;
 }
 
@@ -263,8 +274,11 @@ function actionsFor(b, ctx) {
   switch (b.status) {
     case 'pending_payment':
     case 'payment_sent':
-      return [['sched.reject', 'cancelled', 'btn-secondary', true], ['sched.received', 'confirmed', 'btn-primary']];
+      // Deposits are the owner's to check.
+      return ctx.isStaff ? [] : [['sched.reject', 'cancelled', 'btn-secondary', true], ['sched.received', 'confirmed', 'btn-primary']];
     case 'confirmed': {
+      // A walk-in is already in the chair: he can only be done.
+      if (b.source === 'walk_in') return [['sched.walk_in_done', 'completed', 'btn-primary']];
       const until = untilStart(ctx, b);
       return [
         until <= 0 ? ['sched.no_show', 'no_show', 'btn-secondary', true] : null,
@@ -287,7 +301,7 @@ async function runAction(ctx, button, b, [, status, , asks], onDone) {
     const ok = await confirmSheet(status === 'no_show'
       ? {
           title: t('sched.no_show'),
-          question: t('sched.no_show_q', { name: iso(b.customer.name), time: when }),
+          question: t('sched.no_show_q', { name: iso(customerName(b)), time: when }),
           message: t('sched.no_show_confirm'),
           yesText: t('sched.no_show'),
           noText: t('sched.back'),
@@ -295,14 +309,14 @@ async function runAction(ctx, button, b, [, status, , asks], onDone) {
       : b.status === 'payment_sent'
       ? {
           title: t('sched.reject_full'),
-          question: t('sched.reject_q', { name: iso(b.customer.name), amount: fmtPrice(b.deposit, ctx.cur()) }),
+          question: t('sched.reject_q', { name: iso(customerName(b)), amount: fmtPrice(b.deposit, ctx.cur()) }),
           message: t('sched.reject_confirm'),
           yesText: t('sched.reject_full'),
           noText: t('sched.keep'),
         }
       : {
           title: t('sched.cancel'),
-          question: t('sched.cancel_q', { name: iso(b.customer.name), time: when }),
+          question: t('sched.cancel_q', { name: iso(customerName(b)), time: when }),
           message: t('sched.cancel_confirm'),
           yesText: t('sched.cancel'),
           noText: t('sched.keep'),
@@ -351,17 +365,17 @@ function openProof(ctx, b, { onDecided, thumb, queue = [], returnFocus } = {}) {
   const alias = ctx.store.salon.cliq_alias;
   // The CliQ note is often just the sender's name, already in the title.
   const note = (b.payment_note ?? '').trim();
-  const noteShown = note && note !== b.customer.name.trim() ? note : '';
+  const noteShown = note && note !== (b.customer.name ?? '').trim() ? note : '';
   const viewer = h(
     'div',
-    { class: 'proof-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${t('sched.proof')} · ${b.customer.name}` },
+    { class: 'proof-viewer', role: 'dialog', 'aria-modal': 'true', 'aria-label': `${t('sched.proof')} · ${customerName(b)}` },
     h(
       'div',
       { class: 'pv-top' },
       h(
         'div',
         { class: 'grow' },
-        h('div', { class: 'name truncate', text: b.customer.name }),
+        h('div', { class: 'name truncate', text: customerName(b) }),
         h('div', { class: 'small muted truncate num', text: `${visitDay(b.date, ctx.today())} ${fmtTime(b.start)} · ${pick(b.service, 'name')}` }),
       ),
       queue.length > 1 && at >= 0 ? h('span', { class: 'pv-count num', text: t('sched.of', { i: at + 1, n: queue.length }) }) : null,
@@ -464,7 +478,8 @@ function proofButton(ctx, b, opts) {
 
 /** Booked → deposit sent → confirmed → arrived, as far as this booking has come. */
 function lifecycle(b) {
-  if (dropped(b)) return null;
+  // A walk-in was never booked: he sat down, and is done.
+  if (dropped(b) || b.source === 'walk_in') return null;
   const rank = { pending_payment: 1, payment_sent: 2, confirmed: 3, completed: 4, no_show: 4 }[b.status] ?? 0;
   const steps = [['sched.step_booked', 0]];
   if (Number(b.deposit) > 0) steps.push(['sched.step_sent', 2]);
@@ -505,9 +520,9 @@ function detailView(ctx, b, { done, onProofDecided }) {
         { class: 'grow' },
         h('div', { class: 'name', text: pick(b.service, 'name') }),
         h('div', { class: 'small muted num bk-when' }, h('span', { text: fmtRange(startOf(b), endOf(b)) }), ' · ', h('span', { text: fmtDuration(b.duration_min) })),
-        h('div', { class: 'bk-tags' }, h('span', { class: 'pill src' }, icon(b.source === 'owner' ? 'store' : 'globe'), t(b.source === 'owner' ? 'sched.source_owner' : 'sched.source_online'))),
+        h('div', { class: 'bk-tags' }, h('span', { class: `pill src ${b.source === 'walk_in' ? 'walk' : ''}` }, icon({ owner: 'store', walk_in: 'user' }[b.source] ?? 'globe'), t(`sched.source_${b.source}`))),
       ),
-      statusPill(b.status),
+      statusPill(b, ctx),
     ),
     lifecycle(b),
     kv('calendar', h('span', { text: `${dayLabel(b.date, today)} · ${fmtDate(b.date, { day: 'numeric', month: 'long' })}` })),
@@ -530,11 +545,12 @@ function detailView(ctx, b, { done, onProofDecided }) {
         'div',
         { class: 'grow' },
         h('div', { class: 'eyebrow', text: t('sched.customer') }),
-        h('div', { class: 'name truncate', text: b.customer.name }),
-        h('div', { class: 'cb-phone small muted' }, h('bdi', { class: 'num', dir: 'ltr', text: fmtPhone(b.customer.phone) })),
+        h('div', { class: 'name truncate', text: customerName(b) }),
+        // A walk-in may leave no number: then there is no one to call.
+        b.customer.phone ? h('div', { class: 'cb-phone small muted' }, h('bdi', { class: 'num', dir: 'ltr', text: fmtPhone(b.customer.phone) })) : null,
       ),
-      h('a', { class: 'icon-btn', href: `tel:${b.customer.phone}`, 'aria-label': t('sched.call'), title: t('sched.call') }, icon('phone')),
-      h('a', { class: 'icon-btn wa', href: waLink(ctx.store, b), target: '_blank', rel: 'noopener', 'aria-label': t('sched.whatsapp'), title: t('sched.whatsapp') }, icon('chat')),
+      b.customer.phone ? h('a', { class: 'icon-btn', href: `tel:${b.customer.phone}`, 'aria-label': t('sched.call'), title: t('sched.call') }, icon('phone')) : null,
+      b.customer.phone ? h('a', { class: 'icon-btn wa', href: waLink(ctx.store, b), target: '_blank', rel: 'noopener', 'aria-label': t('sched.whatsapp'), title: t('sched.whatsapp') }, icon('chat')) : null,
     ),
     h(
       'div',
@@ -543,8 +559,10 @@ function detailView(ctx, b, { done, onProofDecided }) {
       deposit > 0 ? cell(t('sched.deposit_paid'), fmtPrice(deposit, cur)) : null,
       deposit > 0 ? cell(t('sched.remaining'), fmtPrice(round3(Math.max(0, price - deposit)), cur), 'due') : null,
     ),
-    note && note !== b.customer.name.trim() ? kv('chat', h('span', null, h('span', { class: 'muted', text: `${t('sched.note')}: ` }), note)) : null,
-    b.proof_url ? proofButton(ctx, b, { onDecided: onProofDecided }) : null,
+    note && note !== (b.customer.name ?? '').trim() ? kv('chat', h('span', null, h('span', { class: 'muted', text: `${t('sched.note')}: ` }), note)) : null,
+    // What a walk-in asked for, as it was noted.
+    b.note ? kv('scissors', h('span', null, h('span', { class: 'muted', text: `${t('sched.walk_in_wants')}: ` }), b.note)) : null,
+    b.proof_url && !ctx.isStaff ? proofButton(ctx, b, { onDecided: onProofDecided }) : null,
     b.status === 'pending_payment' && b.expires_in_s
       ? kv('clock', h('span', { class: 'muted num' }, t('sched.not_sent', { time: '' }), h('span', { 'data-deadline': String(Date.now() + b.expires_in_s * 1000), text: mmss(b.expires_in_s) })))
       : null,
@@ -553,8 +571,9 @@ function detailView(ctx, b, { done, onProofDecided }) {
   const acts = actionsFor(b, ctx);
   const buttons = acts.map((a) => h('button', { class: `btn ${a[2]}`, type: 'button', text: t(a[0]) }));
   acts.forEach((a, i) => buttons[i].addEventListener('click', () => runAction(ctx, buttons[i], b, a, done)));
-  // Cancelling a confirmed visit is rarer, so it sits under the main actions.
-  if (b.status === 'confirmed') {
+  // Cancelling a confirmed visit is rarer, so it sits under the main actions. A barber
+  // can only take back a walk-in he recorded (a booking is the owner's to cancel).
+  if (b.status === 'confirmed' && (!ctx.isStaff || b.source === 'walk_in')) {
     const cancel = h('button', { class: 'link-btn danger-link', type: 'button' }, icon('x'), t('sched.cancel'));
     cancel.addEventListener('click', () => runAction(ctx, cancel, b, ['sched.cancel', 'cancelled', '', true], done));
     body.append(h('div', { class: 'bk-cancel' }, cancel));
@@ -598,18 +617,18 @@ function attentionRow(ctx, b, queue) {
   });
   const thumbImg = b.proof_url ? h('img', { src: b.proof_url, alt: '' }) : null;
   const thumb = thumbImg
-    ? h('button', { class: 'att-thumb', type: 'button', 'aria-label': `${t('sched.proof')} · ${b.customer.name}`, title: t('sched.review') }, thumbImg, h('span', { class: 'zoom', 'aria-hidden': 'true' }, icon('search')))
+    ? h('button', { class: 'att-thumb', type: 'button', 'aria-label': `${t('sched.proof')} · ${customerName(b)}`, title: t('sched.review') }, thumbImg, h('span', { class: 'zoom', 'aria-hidden': 'true' }, icon('search')))
     : null;
   thumb?.addEventListener('click', () => openProof(ctx, b, { thumb: thumbImg, queue }));
   const note = (b.payment_note ?? '').trim();
   const main = h(
     'div',
     { class: 'att-main' },
-    avatar(null, b.customer.name),
+    avatar(null, customerName(b)),
     h(
       'button',
       { class: 'att-open', type: 'button' },
-      h('span', { class: 'name truncate', text: b.customer.name }),
+      h('span', { class: 'name truncate', text: customerName(b) }),
       // The visit's time first: it is what matches a transfer, so the service takes the cut.
       h(
         'span',
@@ -619,7 +638,7 @@ function attentionRow(ctx, b, queue) {
         h('span', { class: 'truncate', text: pick(b.service, 'name') }),
       ),
     ),
-    h('div', { class: 'amt' }, h('b', { class: 'num', text: fmtPrice(b.deposit, ctx.cur()) }), sent ? null : statusPill(b.status)),
+    h('div', { class: 'amt' }, h('b', { class: 'num', text: fmtPrice(b.deposit, ctx.cur()) }), sent ? null : statusPill(b, ctx)),
     thumb,
   );
   main.addEventListener('click', (e) => {
@@ -629,7 +648,7 @@ function attentionRow(ctx, b, queue) {
     'div',
     { class: `att-row ${sent ? 'sent' : 'hold'}`, 'data-id': b.id },
     main,
-    note && !b.proof_url && note !== b.customer.name.trim() ? h('div', { class: 'att-note' }, icon('chat'), h('span', { text: note })) : null,
+    note && !b.proof_url && note !== (b.customer.name ?? '').trim() ? h('div', { class: 'att-note' }, icon('chat'), h('span', { text: note })) : null,
     b.status === 'pending_payment'
       ? h('div', { class: 'att-note faint num' }, icon('clock'), h('span', null, t('sched.not_sent', { time: '' }), h('span', { 'data-deadline': String(Date.now() + (b.expires_in_s ?? 0) * 1000), text: mmss(b.expires_in_s ?? 0) })))
       : null,
@@ -667,7 +686,7 @@ function attentionSection(ctx, list, { seen, expanded, onExpand }) {
           rows[1]?.querySelector('.att-open')?.focus({ preventScroll: true });
         },
       },
-      h('span', { class: 'avatar-stack', 'aria-hidden': 'true' }, rest.slice(0, 3).map((b) => avatar(null, b.customer.name))),
+      h('span', { class: 'avatar-stack', 'aria-hidden': 'true' }, rest.slice(0, 3).map((b) => avatar(null, customerName(b)))),
       h('span', { class: 'grow num', text: t('sched.more_waiting', { n: rest.length }) }),
       icon('down'),
     ) : null),
@@ -693,7 +712,7 @@ function apptRow(ctx, b, { now, isToday, isPast, fresh, i }) {
   });
   const status = [
     live ? h('span', { class: 'live-tag' }, h('i', { 'aria-hidden': 'true' }), t('sched.live')) : null,
-    b.status !== 'confirmed' ? h('span', { class: `st st-${b.status}` }, h('i', { 'aria-hidden': 'true' }), t(`status.${b.status}`)) : null,
+    b.status !== 'confirmed' ? h('span', { class: `st st-${b.status}` }, h('i', { 'aria-hidden': 'true' }), statusText(b, ctx)) : null,
     // The cut the customer tried on in the AI mirror before booking.
     b.look ? h('span', { class: 'st st-look' }, icon('wand'), h('span', { class: 'truncate', text: lookName(b.look) })) : null,
   ].filter(Boolean);
@@ -713,7 +732,7 @@ function apptRow(ctx, b, { now, isToday, isPast, fresh, i }) {
         'button',
         { class: 'appt-open', type: 'button' },
         h('span', { class: 'sr-only', text: `${fmtRange(s, e)} · ` }),
-        h('span', { class: 'nm truncate', text: b.customer.name }),
+        h('span', { class: 'nm truncate', text: customerName(b) }),
         h(
           'span',
           { class: 'meta' },
@@ -799,7 +818,7 @@ function emptyDay(ctx, { date, isPast, own }) {
       h('div', { class: 'tile' }, icon('clock')),
       h('h3', { text: t('sched.closed_day') }),
       h('p', { class: 'small muted', text: t('sched.closed_hint') }),
-      h('a', { class: 'btn btn-secondary btn-sm', href: '/admin/hours' }, icon('clock'), t('sched.edit_hours')),
+      ctx.isStaff ? null : h('a', { class: 'btn btn-secondary btn-sm', href: '/admin/hours' }, icon('clock'), t('sched.edit_hours')),
     );
   }
   const sep = getLang() === 'ar' ? '، ' : ', ';
@@ -884,7 +903,7 @@ function statsCard(ctx, { shown, members, isToday, isPast, now, windows, gaps })
       'button',
       { class: 'next-up', type: 'button', onclick: () => ctx.open(next) },
       h('span', { class: 'eyebrow', text: t(isToday ? 'sched.next' : 'sched.first') }),
-      h('span', { class: 'grow truncate' }, h('b', { text: next.customer.name }), ` · ${pick(next.service, 'name')}`),
+      h('span', { class: 'grow truncate' }, h('b', { text: customerName(next) }), ` · ${pick(next.service, 'name')}`),
       h('span', { class: 'num when', text: fmtTime(next.start) }),
     ) : null,
   );
@@ -997,10 +1016,13 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
   const today = ctx.today();
   if (!today) return;
   const { store, app } = ctx;
-  const services = store.services.filter((s) => s.active);
-  const staff = store.staff.filter((m) => m.active);
+  // A barber books for himself, from what he does.
+  const me = ctx.me;
+  if (me != null) staffId = me;
+  const services = store.services.filter((s) => s.active && (me == null || s.staff_ids.includes(me)));
+  const staff = store.staff.filter((m) => m.active && (me == null || m.id === me));
   if (!services.length) {
-    toast(t('sched.no_services'), 'error');
+    toast(t(ctx.isStaff ? 'sched.no_services_staff' : 'sched.no_services'), 'error');
     return;
   }
   const offeredBy = staffId ? services.find((s) => s.staff_ids.includes(staffId)) : null;
@@ -1055,7 +1077,7 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
       img === undefined ? icon('sparkles') : avatar(img, label),
       label,
     );
-    clear(staffRow, chip(null, t('book.anyone')), offering.map((m) => chip(m.id, pick(m, 'name'), m.photo_url)));
+    clear(staffRow, me != null ? [] : chip(null, t('book.anyone')), offering.map((m) => chip(m.id, pick(m, 'name'), m.photo_url)));
   }
 
   const choose = (s) => {
@@ -1095,7 +1117,7 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
     'form',
     { class: 'new-booking', novalidate: true, onsubmit: (e) => e.preventDefault() },
     h('span', { class: 'field-label', text: t('sched.pick_service') }), serviceRow,
-    h('span', { class: 'field-label', text: t('sched.pick_staff') }), staffRow,
+    me == null ? h('span', { class: 'field-label', text: t('sched.pick_staff') }) : null, me == null ? staffRow : null,
     h('span', { class: 'field-label', text: t('sched.pick_time') }), strip.el, slotsBox,
     h('span', { class: 'field-label', text: t('sched.customer') }),
     field(t('sched.customer_name'), name),
@@ -1131,6 +1153,113 @@ function openNewBooking(ctx, { date, time = null, staffId = null, onDone }) {
     // busy() re-enables the button; it stays off until a time is chosen again.
     save.disabled = !state.slot;
   });
+}
+
+// ---------------------------------------------------------------- a walk-in
+
+/**
+ * A customer who walked in without booking, recorded as he sits down: who serves him (a
+ * barber, himself), what he wants, what he pays (the menu price, changeable), and a
+ * name, number and note if he gives them. The chair is his from now for the service's
+ * length, so nobody books it online meanwhile.
+ */
+function openWalkIn(ctx, { onDone }) {
+  const { store, app } = ctx;
+  const me = ctx.me;
+  const staff = store.staff.filter((m) => m.active && (me == null || m.id === me));
+  const allServices = store.services.filter((s) => s.active);
+  if (!allServices.length) {
+    toast(t(ctx.isStaff ? 'sched.no_services_staff' : 'sched.no_services'), 'error');
+    return;
+  }
+  if (!staff.length) {
+    toast(t('sched.no_team'), 'error');
+    return;
+  }
+  const state = { staffId: me ?? (staff.length === 1 ? staff[0].id : null), serviceId: null, priceTouched: false };
+  // What the chosen barber does comes first; the rest after (he may do more than listed).
+  const services = () => {
+    const does = (s) => state.staffId != null && s.staff_ids.includes(state.staffId);
+    return [...allServices.filter(does), ...allServices.filter((s) => !does(s))];
+  };
+  const staffRow = h('div', { class: 'scroller', role: 'group', 'aria-label': t('sched.pick_staff') });
+  const serviceRow = h('div', { class: 'scroller wrap-chips', role: 'group', 'aria-label': t('sched.walk_in_what') });
+  const price = h('input', { name: 'price', inputmode: 'decimal', autocomplete: 'off', dir: 'ltr', placeholder: '0', class: 'num' });
+  const priceField = h('label', { class: 'price-field' }, price, h('span', { class: 'cur', text: currencySymbol(store.salon.currency) }));
+  const name = input({ name: 'name', maxlength: 60, autocomplete: 'off' });
+  const phone = input({ name: 'phone', type: 'tel', inputmode: 'tel', autocomplete: 'off' });
+  const note = input({ name: 'note', maxlength: 200, autocomplete: 'off' });
+  const save = h('button', { class: 'btn btn-primary', type: 'button', disabled: true });
+
+  const ready = () => {
+    const s = allServices.find((x) => x.id === state.serviceId);
+    save.disabled = !s || state.staffId == null || !price.value;
+    clear(save, icon('check'), t('sched.walk_in_save'), price.value ? h('span', { class: 'btn-sub num', text: fmtPrice(Number(price.value) || 0, store.salon.currency) }) : null);
+  };
+  price.addEventListener('input', () => {
+    price.value = westernDigits(price.value).replace(/[^\d.]/g, '');
+    state.priceTouched = true;
+    ready();
+  });
+  function renderStaff() {
+    clear(staffRow, staff.map((m) => h(
+      'button',
+      { class: `chip-btn ${state.staffId === m.id ? 'on' : ''}`, type: 'button', 'aria-pressed': String(state.staffId === m.id), onclick: () => { state.staffId = m.id; renderStaff(); renderServices(); ready(); } },
+      avatar(m.photo_url, pick(m, 'name')),
+      pick(m, 'name'),
+    )));
+  }
+  function renderServices() {
+    clear(serviceRow, services().map((s) => h(
+      'button',
+      {
+        class: `chip-btn ${s.id === state.serviceId ? 'on' : ''}`, type: 'button', 'aria-pressed': String(s.id === state.serviceId),
+        onclick: () => {
+          state.serviceId = s.id;
+          // The menu price, until the barber types what was agreed.
+          if (!state.priceTouched) price.value = String(Number(s.price));
+          renderServices();
+          ready();
+        },
+      },
+      h('span', { class: 'emoji', 'aria-hidden': 'true', text: s.icon || '✂️' }),
+      pick(s, 'name'),
+      h('span', { class: 'faint num', text: fmtPrice(s.price, store.salon.currency) }),
+    )));
+  }
+
+  const form = h(
+    'form',
+    { class: 'new-booking walk-in', novalidate: true, onsubmit: (e) => e.preventDefault() },
+    h('p', { class: 'walkin-now' }, h('span', { class: 'live-dot', 'aria-hidden': 'true' }), h('span', { text: t('sched.walk_in_now', { time: fmtTime(clockOf(nowIn(store.salon.timezone).minutes)) }) })),
+    me == null && staff.length > 1 ? h('span', { class: 'field-label', text: t('sched.walk_in_who') }) : null,
+    me == null && staff.length > 1 ? staffRow : null,
+    h('span', { class: 'field-label', text: t('sched.walk_in_what') }), serviceRow,
+    h('span', { class: 'field-label', text: t('sched.walk_in_price') }), priceField,
+    field(t('sched.walk_in_note_label'), note, { optional: true }),
+    h('span', { class: 'field-label', text: t('sched.walk_in_customer') }),
+    field(t('sched.customer_name'), name, { optional: true }),
+    h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${app.ctx.tenant.calling_code}` }), field(t('sched.customer_phone'), phone, { optional: true })),
+  );
+  renderStaff();
+  renderServices();
+  ready();
+
+  const panel = decorateSheet(sheet({ title: t('sched.walk_in'), body: form, actions: [save], tall: true }));
+  save.addEventListener('click', () => busy(save, async () => {
+    try {
+      quiet();
+      const res = await api('POST', '/api/manage/walk-ins', {
+        staff_id: state.staffId, service_id: state.serviceId, price: price.value, name: name.value, phone: phone.value, note: note.value,
+      });
+      panel.close();
+      toast(t('sched.walk_in_saved', { name: iso(pick(res.booking.staff, 'name')) }));
+      onDone(res.booking);
+    } catch (err) {
+      markInvalid(form, err);
+      throw err;
+    }
+  }));
 }
 
 // ---------------------------------------------------------------- how booking works
@@ -1252,9 +1381,13 @@ export function bookingsPage(store, app) {
   let lastFigures = { count: 0, revenue: 0 };
   let mounted = true;
 
+  // A barber signed in with his own login: his chair only.
+  const me = app.ctx.user?.role === 'staff' ? app.ctx.user.staff_id : null;
   const ctx = {
     store,
     app,
+    me,
+    isStaff: me != null,
     // False once the owner has left this screen: nothing more opens over the next one.
     alive: () => mounted,
     today: () => state.today,
@@ -1272,12 +1405,23 @@ export function bookingsPage(store, app) {
     },
     open: (b) => openBooking(b),
     newBooking: (opts = {}) => openNewBooking(ctx, { date: state.date, staffId: state.staffId, ...opts, onDone: onCreated }),
+    walkIn: () => openWalkIn(ctx, { onDone: onCreated }),
   };
 
   const settingsBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('sched.settings'), title: t('sched.settings'), onclick: () => openBookingSettings(store, render) }, icon('sliders'));
   // Live once the day has loaded: a new booking needs to know which day is today.
   const addBtn = h('button', { class: 'btn btn-primary btn-sm add-btn', type: 'button', disabled: true, title: t('sched.add'), onclick: () => state.today && ctx.newBooking() }, icon('plus'), h('span', { class: 'lbl', text: t('sched.add') }));
-  const head = h('div', { class: 's-head sched-head' }, h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t('sched.title') }), h('p', { class: 's-sub', text: t('sched.sub') })), settingsBtn, addBtn);
+  // Someone in the chair without a booking: recorded in two taps, from today's screen.
+  const walkInBtn = h('button', { class: 'btn btn-secondary btn-sm walkin-btn', type: 'button', disabled: true, title: t('sched.walk_in'), onclick: () => state.today && ctx.walkIn() }, icon('user'), h('span', { class: 'lbl', text: t('sched.walk_in') }));
+  const head = h(
+    'div',
+    { class: 's-head sched-head' },
+    h('div', { class: 'grow' }, h('h1', { class: 's-title', text: t(me != null ? 'sched.my_title' : 'sched.title') }), h('p', { class: 's-sub', text: t(me != null ? 'sched.my_sub' : 'sched.sub') })),
+    // How booking works (deposits, CliQ) is the owner's.
+    me == null ? settingsBtn : null,
+    walkInBtn,
+    addBtn,
+  );
 
   const skel = (height, extra = {}) => h('div', { class: 'skel', style: { height, borderRadius: '18px', ...extra } });
   const daySkeleton = () => [skel('22px', { width: '45%', marginTop: '20px', borderRadius: '8px' }), skel('72px', { marginTop: '16px' }), skel('72px', { marginTop: '10px' }), skel('72px', { marginTop: '10px' })];
@@ -1289,7 +1433,17 @@ export function bookingsPage(store, app) {
   const offBox = h('div');
   const main = h('div', { class: 'sched-main' }, stripBox, dayBox);
   const side = h('div', { class: 'sched-side' }, detailBox, statsBox);
-  const el = h('div', { class: 'sched' }, head, offBox, h('div', { class: 'sched-cols' }, main, side));
+  // A barber's first sign-in is with the password the owner handed him: he picks his own.
+  const tempPassword = me != null && app.ctx.user?.must_change_password
+    ? h(
+        'section',
+        { class: 'card temp-pw rise' },
+        h('div', { class: 'tile' }, icon('lock')),
+        h('div', { class: 'grow' }, h('div', { class: 'card-title', text: t('home.temp_pw') }), h('div', { class: 'card-sub', text: t('home.temp_pw_sub') })),
+        h('button', { class: 'btn btn-primary btn-sm', type: 'button', text: t('home.temp_pw_btn'), onclick: () => store.salon && openSettings(store, app, { focusPassword: true }) }),
+      )
+    : null;
+  const el = h('div', { class: 'sched' }, head, tempPassword, offBox, h('div', { class: 'sched-cols' }, main, side));
   // The deposits sit above the day on phones and in the column beside it on wide screens.
   // They move in the DOM (not with CSS order), so reading and Tab order follow the screen.
   const placeAttention = () => {
@@ -1370,6 +1524,7 @@ export function bookingsPage(store, app) {
       }
       state.loaded = true;
       addBtn.disabled = false;
+      walkInBtn.disabled = false;
       render(fresh);
     } catch (err) {
       if (state.loaded) return; // a background refresh: keep the screen as it is
@@ -1443,7 +1598,8 @@ export function bookingsPage(store, app) {
     const all = state.day;
     const staffOnDay = new Map();
     for (const b of all) staffOnDay.set(b.staff.id, b.staff);
-    const team = store.staff.filter((m) => m.active || staffOnDay.has(m.id));
+    // A barber's day is his own: no one else to filter by.
+    const team = store.staff.filter((m) => (me == null ? m.active || staffOnDay.has(m.id) : m.id === me));
     if (state.staffId && !team.some((m) => m.id === state.staffId)) state.staffId = null;
     const shown = all.filter((b) => !state.staffId || b.staff.id === state.staffId);
     const active = shown.filter((b) => !dropped(b));
@@ -1509,7 +1665,8 @@ export function bookingsPage(store, app) {
 
   function render(withDay = true) {
     if (!state.loaded) return;
-    clear(offBox, store.salon.booking_enabled ? null : h(
+    // Turning online booking back on is the owner's.
+    clear(offBox, store.salon.booking_enabled || ctx.isStaff ? null : h(
       'div',
       { class: 'notice off-note' },
       icon('eyeOff'),
@@ -1536,7 +1693,9 @@ export function bookingsPage(store, app) {
   // Live: a new booking or a deposit sent shows up without a refresh.
   let reloadTimer = null;
   store.onBooking((e) => {
-    if (Date.now() > quietUntil) {
+    // Deposits are the owner's to check: a barber is not told about them.
+    const deposit = !!e.proof || e.status === 'payment_sent';
+    if (Date.now() > quietUntil && !(deposit && ctx.isStaff)) {
       if (e.proof === 'replaced') toast(t('sched.proof_replaced'));
       else if (e.status === 'payment_sent') toast(t('sched.payment_arrived'));
       else if (e.id && !known.has(e.id) && HOLDING.has(e.status)) toast(t('sched.new_plain'));

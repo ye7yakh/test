@@ -1,5 +1,5 @@
 // Salon owner: the service menu (name, duration, price) and who performs each service.
-import { requireOwner } from '../auth.js';
+import { requireMember, requireOwner } from '../auth.js';
 import { one, pool, query, tx, type Db } from '../db.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
 import { bool, CURRENCIES, idList, Input, int, oneOf, parseId, price, text, type Parser } from '../validate.js';
@@ -170,7 +170,8 @@ async function reorderServices(ctx: Ctx) {
 }
 
 export function serviceRoutes(r: Router) {
-  r.get('/api/manage/services', async (ctx) => ok(ctx, { services: await listServices(pool, requireOwner(ctx)) }));
+  // Barbers read the menu for a walk-in or a booking taken by phone.
+  r.get('/api/manage/services', async (ctx) => ok(ctx, { services: await listServices(pool, requireMember(ctx).salonId) }));
   r.post('/api/manage/services', createService);
   r.post('/api/manage/services/bulk', createServices);
   r.put('/api/manage/services/order', reorderServices);

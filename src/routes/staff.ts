@@ -1,5 +1,6 @@
-// Salon owner: the team (barbers / stylists), their photos, services and hours.
-import { requireOwner } from '../auth.js';
+// Salon owner: the team (barbers / stylists), their photos, services and hours, and
+// each barber's own sign-in to see his schedule.
+import { clearLoginFailures, hashPassword, normalizePhone, requireMember, requireOwner, temporaryPassword } from '../auth.js';
 import { one, pool, query, tx, type Db } from '../db.js';
 import { formatWeek, parseWeek, saveStaffWeek, type HoursRow } from '../hours.js';
 import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
@@ -13,7 +14,11 @@ async function listStaff(db: Db, salonId: number) {
     query(
       `select st.id, st.name_ar, st.name_en, st.title_ar, st.title_en, st.photo_id, st.photo_original_id,
               st.custom_hours, st.active, st.sort_order,
-              coalesce(array_agg(ss.service_id order by ss.service_id) filter (where ss.service_id is not null), '{}') as service_ids
+              coalesce(array_agg(ss.service_id order by ss.service_id) filter (where ss.service_id is not null), '{}') as service_ids,
+              -- His own sign-in, if the owner gave him one.
+              (select json_build_object('phone', u.phone, 'last_seen_at', m.last_seen_at, 'must_change_password', u.must_change_password)
+                 from salon_members m join users u on u.id = m.user_id
+                where m.salon_id = st.salon_id and m.staff_id = st.id) as login
          from staff st
          left join staff_services ss on ss.staff_id = st.id
         where st.salon_id = $1
@@ -96,12 +101,17 @@ async function deleteStaff(ctx: Ctx) {
   const salonId = requireOwner(ctx);
   const id = parseId(ctx.params.id);
   await tx(async (db) => {
+    // His sign-in goes with him: his sessions here, the membership (it cascades), and
+    // the account made for it.
+    const login = await one<{ user_id: number }>('select user_id from salon_members where salon_id = $1 and staff_id = $2', [salonId, id], db);
+    if (login) await query('delete from sessions where salon_id = $1 and user_id = $2', [salonId, login.user_id], db);
     const row = await one<{ photo_id: string | null; photo_original_id: string | null }>(
       'delete from staff where salon_id = $1 and id = $2 returning photo_id, photo_original_id',
       [salonId, id],
       db,
     );
     if (!row) throw new HttpError(404, 'not_found');
+    if (login) await dropOrphanAccount(db, login.user_id);
     await deleteMedia(db, salonId, [row.photo_id, row.photo_original_id]);
   });
   ok(ctx, { staff: await listStaff(pool, salonId) });
@@ -174,8 +184,107 @@ async function removePhoto(ctx: Ctx) {
   ok(ctx, { staff: await listStaff(pool, salonId) });
 }
 
+// ---------------------------------------------------------------- a barber's own sign-in
+
+/**
+ * A barber's account exists for his sign-in here, so it goes when that does: unless the
+ * platform admin has since made him a salon owner too.
+ */
+async function dropOrphanAccount(db: Db, userId: number) {
+  await query(
+    `delete from users where id = $1 and not is_super_admin and not exists (select 1 from salon_members where user_id = $1)`,
+    [userId],
+    db,
+  );
+}
+
+/**
+ * Gives a barber his own sign-in: his phone number, and a temporary password the owner
+ * hands him (he sets his own at first sign-in). The account is always a new one made
+ * here: a number that already has an account on the platform (an owner, a barber at
+ * another salon, the admin) is refused, so no owner ever holds or sets the password of
+ * an account someone else uses.
+ */
+async function giveLogin(ctx: Ctx) {
+  const salonId = requireOwner(ctx);
+  const tenant = ctx.host.tenant;
+  const id = parseId(ctx.params.id);
+  const phone = normalizePhone(new Input(await readJson(ctx)).req('phone', text(30, 1)), tenant.default_calling_code);
+  if (!phone) throw new HttpError(400, 'invalid', 'phone');
+  const password = temporaryPassword();
+  const hash = await hashPassword(password);
+  await tx(async (db) => {
+    // "for update": two taps at once give one sign-in, not a database error.
+    const member = await one<{ name_ar: string }>('select name_ar from staff where salon_id = $1 and id = $2 for update', [salonId, id], db);
+    if (!member) throw new HttpError(404, 'not_found');
+    // One sign-in per barber: the owner removes the old one first.
+    if (await one('select 1 from salon_members where salon_id = $1 and staff_id = $2', [salonId, id], db)) throw new HttpError(409, 'phone_in_use', 'phone');
+    const user = await one<{ id: number }>(
+      `insert into users (tenant_id, phone, name, password_hash, must_change_password) values ($1, $2, $3, $4, true)
+       on conflict (tenant_id, phone) do nothing returning id`,
+      [tenant.id, phone, member.name_ar, hash],
+      db,
+    );
+    if (!user) throw new HttpError(409, 'phone_in_use', 'phone');
+    await query(`insert into salon_members (salon_id, user_id, role, staff_id) values ($1, $2, 'staff', $3)`, [salonId, user.id, id], db);
+  });
+  ok(ctx, { staff: await listStaff(pool, salonId), password }, 201);
+}
+
+/**
+ * A new temporary password for a barber who forgot his. Only for an account that is
+ * his alone here: one the platform admin has since made a salon owner is not this
+ * owner's to reset.
+ */
+async function resetLogin(ctx: Ctx) {
+  const salonId = requireOwner(ctx);
+  const tenant = ctx.host.tenant;
+  const id = parseId(ctx.params.id);
+  const password = temporaryPassword();
+  const hash = await hashPassword(password);
+  const phone = await tx(async (db) => {
+    const user = await one<{ id: number; phone: string; elsewhere: boolean }>(
+      `select u.id, u.phone, u.is_super_admin or exists (select 1 from salon_members o where o.user_id = u.id and o.salon_id <> $1) as elsewhere
+         from salon_members m join users u on u.id = m.user_id
+        where m.salon_id = $1 and m.staff_id = $2
+        for update of u`,
+      [salonId, id],
+      db,
+    );
+    if (!user) throw new HttpError(404, 'not_found');
+    if (user.elsewhere) throw new HttpError(409, 'password_elsewhere');
+    await query('update users set password_hash = $2, must_change_password = true where id = $1', [user.id, hash], db);
+    // Whoever was signed in with the old password is out.
+    await query('delete from sessions where user_id = $1', [user.id], db);
+    return user.phone;
+  });
+  clearLoginFailures(`${tenant.id}:${phone}`);
+  ok(ctx, { staff: await listStaff(pool, salonId), password });
+}
+
+/** Takes a barber's sign-in away (he left, or the number was wrong); he is signed out here. */
+async function removeLogin(ctx: Ctx) {
+  const salonId = requireOwner(ctx);
+  const id = parseId(ctx.params.id);
+  await tx(async (db) => {
+    const row = await one<{ user_id: number }>('delete from salon_members where salon_id = $1 and staff_id = $2 returning user_id', [salonId, id], db);
+    if (!row) throw new HttpError(404, 'not_found');
+    await query('delete from sessions where user_id = $1 and salon_id = $2', [row.user_id, salonId], db);
+    await dropOrphanAccount(db, row.user_id);
+  });
+  ok(ctx, { staff: await listStaff(pool, salonId) });
+}
+
 export function staffRoutes(r: Router) {
-  r.get('/api/manage/staff', async (ctx) => ok(ctx, { staff: await listStaff(pool, requireOwner(ctx)) }));
+  r.get('/api/manage/staff', async (ctx) => {
+    const { salonId, staffId } = requireMember(ctx);
+    const staff = await listStaff(pool, salonId);
+    // A barber sees his colleagues, not their sign-ins.
+    ok(ctx, { staff: staffId == null ? staff : staff.map(({ login: _login, ...s }) => s) });
+  });
+  r.put('/api/manage/staff/:id/login', giveLogin);
+  r.post('/api/manage/staff/:id/login/reset', resetLogin);
+  r.delete('/api/manage/staff/:id/login', removeLogin);
   r.post('/api/manage/staff', createStaff);
   r.put('/api/manage/staff/order', reorderStaff);
   r.patch('/api/manage/staff/:id', updateStaff);

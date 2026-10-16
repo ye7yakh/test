@@ -1,6 +1,7 @@
 // The owner's studio: header, navigation (floating tab bar on phones, sidebar on
 // desktop), the current page, and a live preview of the salon's app. All pages share
-// one store, so the setup progress, badges and preview follow every save.
+// one store, so the setup progress, badges and preview follow every save. A barber
+// signed in with his own login gets the same studio with his schedule only.
 import { api } from '../api.js';
 import { appIcon, appReady, clear, h, icon, sheet } from '../dom.js';
 import { errorText, pick, t } from '../i18n.js';
@@ -22,6 +23,9 @@ export const PAGES = [
   { id: 'hours', icon: 'clock', render: hoursPage },
   { id: 'brand', icon: 'palette', render: brandPage },
 ];
+
+/** The pages someone may open: all of them for the owner, his schedule for a barber. */
+export const pagesFor = (role) => (role === 'staff' ? PAGES.filter((p) => p.id === 'bookings') : PAGES);
 
 let cache = null;
 
@@ -79,7 +83,11 @@ export const clearManageCache = () => {
 
 /** How many deposits wait for the owner, for the Bookings badge. */
 let attention = 0;
-async function loadAttention() {
+async function loadAttention(staffMode = false) {
+  if (staffMode) {
+    attention = 0; // deposits are the owner's (and the owner may have used this tab before)
+    return;
+  }
   try {
     attention = (await api('GET', '/api/manage/bookings/overview?days=1')).attention.filter((b) => b.status === 'payment_sent').length;
   } catch {
@@ -160,7 +168,9 @@ function skeleton() {
 }
 
 export function manageView(app, pageId) {
-  const page = PAGES.find((p) => p.id === pageId) ?? PAGES[0];
+  const staffMode = app.ctx.user?.role === 'staff';
+  const pages = pagesFor(app.ctx.user?.role);
+  const page = pages.find((p) => p.id === pageId) ?? pages[0];
   bindHeaderScroll();
 
   const store = {
@@ -185,7 +195,7 @@ export function manageView(app, pageId) {
       listeners.add(fn);
       app.onUnmount(() => listeners.delete(fn));
     },
-    refreshBadges: () => loadAttention().then(refresh),
+    refreshBadges: () => loadAttention(staffMode).then(refresh),
   };
   connectEvents();
   store.onBooking(() => store.refreshBadges());
@@ -203,7 +213,7 @@ export function manageView(app, pageId) {
       { class: `${cls} ${p.id === page.id ? 'active' : ''}`, href: p.id === 'home' ? '/admin' : `/admin/${p.id}`, 'aria-current': p.id === page.id ? 'page' : null, 'data-page': p.id },
       p.id === page.id ? h('span', { class: 'nav-pill', 'aria-hidden': 'true' }) : null,
       icon(p.icon),
-      h('span', { text: t(`nav.${p.id}`) }),
+      h('span', { text: t(staffMode && p.id === 'bookings' ? 'nav.my_schedule' : `nav.${p.id}`) }),
     );
     navLinks.push(a);
     return a;
@@ -214,16 +224,16 @@ export function manageView(app, pageId) {
   let preview = null;
 
   const settingsBtn = h('button', { class: 'icon-btn', type: 'button', 'aria-label': t('nav.settings'), title: t('nav.settings'), onclick: () => store.salon && openSettings(store, app) }, icon('gear'));
-  const previewBtn = h('button', { class: 'icon-btn only-mobile', type: 'button', 'aria-label': t('nav.preview'), title: t('nav.preview'), onclick: () => store.salon && openPreview(store) }, icon('eye'));
+  const previewBtn = staffMode ? null : h('button', { class: 'icon-btn only-mobile', type: 'button', 'aria-label': t('nav.preview'), title: t('nav.preview'), onclick: () => store.salon && openPreview(store) }, icon('eye'));
 
   const view = h(
     'div',
-    { class: 'studio', 'data-page': page.id },
+    { class: `studio${staffMode ? ' staff-mode' : ''}`, 'data-page': page.id },
     h(
       'aside',
       { class: 's-side' },
       identity(),
-      PAGES.map((p) => navLink(p, 'nav')),
+      pages.map((p) => navLink(p, 'nav')),
       h('div', { class: 'spacer' }),
       h('a', { class: 'nav', href: '#', onclick: (e) => { e.preventDefault(); if (store.salon) openSettings(store, app); } }, icon('gear'), h('span', { text: t('nav.settings') })),
       h('a', { class: 'nav', href: '/', target: '_blank', rel: 'noopener' }, icon('external'), h('span', { text: t('preview.open') })),
@@ -234,21 +244,24 @@ export function manageView(app, pageId) {
       h('header', { class: 's-header' }, identity(), previewBtn, settingsBtn),
       h('main', { class: 's-page' }, content),
     ),
-    h('aside', { class: 's-preview', 'aria-label': t('preview.live') }, h('div', { class: 'eyebrow', text: t('preview.live') }), previewHolder),
-    h('nav', { class: 's-tabbar', 'aria-label': t('nav.sections') }, PAGES.map((p) => navLink(p, 's-tab'))),
+    // A barber has one page and no salon to set up: no preview, no tab bar.
+    staffMode ? null : h('aside', { class: 's-preview', 'aria-label': t('preview.live') }, h('div', { class: 'eyebrow', text: t('preview.live') }), previewHolder),
+    staffMode ? null : h('nav', { class: 's-tabbar', 'aria-label': t('nav.sections') }, pages.map((p) => navLink(p, 's-tab'))),
   );
 
   function refreshIdentity() {
     const salon = { ...store.salon, ...(store.draftSalon ?? {}) };
     for (const el of identities) {
-      clear(el, appIcon(salon.logo_url), h('div', { class: 'grow' }, h('div', { class: 'name truncate', text: pick(salon, 'name') }), h('div', { class: 'sub ltr truncate', text: location.host })));
+      // A barber sees whose studio it is: his name under the salon's.
+      const me = staffMode ? store.staff?.find((m) => m.id === app.ctx.user.staff_id) : null;
+      clear(el, appIcon(salon.logo_url), h('div', { class: 'grow' }, h('div', { class: 'name truncate', text: pick(salon, 'name') }), me ? h('div', { class: 'sub truncate', text: pick(me, 'name') }) : h('div', { class: 'sub ltr truncate', text: location.host })));
     }
   }
 
   function refreshPreview() {
     if (!store.salon) return;
     refreshIdentity();
-    if (!matchMedia('(min-width: 1080px)').matches) return;
+    if (staffMode || !matchMedia('(min-width: 1080px)').matches) return;
     if (!preview) {
       preview = previewPanel(store, () => Math.min(1, (innerHeight - 150) / 630));
       clear(previewHolder, preview.el);
@@ -257,7 +270,8 @@ export function manageView(app, pageId) {
 
   function refresh() {
     app.ctx.salon = { ...app.ctx.salon, ...store.salon };
-    const steps = setupSteps(store);
+    // Setting the salon up is the owner's: a barber sees no reminders.
+    const steps = staffMode ? [] : setupSteps(store);
     const needs = new Set(steps.filter((s) => !s.done).map((s) => s.page));
     for (const link of navLinks) {
       link.querySelector('.badge-dot, .badge-count')?.remove();
@@ -293,7 +307,7 @@ export function manageView(app, pageId) {
   // app has no reload button). Later refreshes keep the screen and only toast.
   function start() {
     clear(content, skeleton());
-    Promise.all([load(), loadAttention()])
+    Promise.all([load(), loadAttention(staffMode)])
       .then(([data]) => {
         cache = data;
         Object.assign(store, data);

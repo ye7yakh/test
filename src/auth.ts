@@ -17,6 +17,14 @@ const scrypt = promisify(crypto.scrypt) as (
 
 const SCRYPT = { N: 16384, r: 8, p: 1, keylen: 64 };
 
+// Easy to read out or type: no 0/o, 1/l/i. Three groups of four.
+const READABLE = 'abcdefghjkmnpqrstuvwxyz23456789';
+/** A password handed to someone (a new owner, a barber), to be changed at first sign-in. */
+export function temporaryPassword(): string {
+  const chars = Array.from({ length: 12 }, () => READABLE[crypto.randomInt(READABLE.length)]);
+  return [chars.slice(0, 4), chars.slice(4, 8), chars.slice(8)].map((g) => g.join('')).join('-');
+}
+
 export async function hashPassword(password: string): Promise<string> {
   const salt = crypto.randomBytes(16);
   const key = await scrypt(password, salt, SCRYPT.keylen, { N: SCRYPT.N, r: SCRYPT.r, p: SCRYPT.p });
@@ -69,6 +77,8 @@ export interface Session {
   tokenHash: Buffer;
   user: { id: number; name: string; phone: string; is_super_admin: boolean; must_change_password: boolean };
   role: Role;
+  /** For a barber signed in to his salon: his place on the team. */
+  staffId: number | null;
 }
 
 const COOKIE = 'sid';
@@ -125,23 +135,27 @@ export async function loadSession(cookieHeader: string | undefined, host: HostCo
   const token = readCookie(cookieHeader);
   if (!token || token.length > 100) return null;
   const tokenHash = hashToken(token);
-  const row = await one<{ id: number; name: string; phone: string; is_super_admin: boolean; must_change_password: boolean; role: string | null }>(
-    `select u.id, u.name, u.phone, u.is_super_admin, u.must_change_password, m.role
+  const row = await one<{ id: number; name: string; phone: string; is_super_admin: boolean; must_change_password: boolean; role: string | null; staff_id: number | null; staff_active: boolean | null }>(
+    `select u.id, u.name, u.phone, u.is_super_admin, u.must_change_password, m.role, m.staff_id, st.active as staff_active
        from sessions s
        join users u on u.id = s.user_id
        left join salon_members m on m.user_id = u.id and m.salon_id = s.salon_id
+       left join staff st on st.id = m.staff_id
       where s.token_hash = $1 and s.expires_at > now()
         and s.tenant_id = $2 and s.salon_id is not distinct from $3`,
     [tokenHash, host.tenant.id, host.salon?.id ?? null],
   );
   if (!row) return null;
-  const role: Role = row.is_super_admin ? 'admin' : row.role === 'owner' ? 'owner' : row.role === 'staff' ? 'staff' : 'customer';
+  // A barber the owner has hidden from the team (he left, say) has no studio either.
+  const staff = row.role === 'staff' && row.staff_id != null && row.staff_active === true;
+  const role: Role = row.is_super_admin ? 'admin' : row.role === 'owner' ? 'owner' : staff ? 'staff' : 'customer';
   if (!host.salon && role !== 'admin') return null;
   if (host.salon && (role === 'owner' || role === 'staff')) touchLastSeen(host.salon.id, row.id);
   return {
     tokenHash,
     user: { id: row.id, name: row.name, phone: row.phone, is_super_admin: row.is_super_admin, must_change_password: row.must_change_password },
     role,
+    staffId: role === 'staff' ? row.staff_id : null,
   };
 }
 
@@ -166,6 +180,21 @@ export function requireOwner(ctx: Ctx): number {
   if (!ctx.session) throw new HttpError(401, 'login_required');
   if (ctx.session.role !== 'owner' && ctx.session.role !== 'admin') throw new HttpError(403, 'forbidden');
   return salon.id;
+}
+
+/**
+ * Anyone who works at the salon. The owner (and the super admin) see and do everything,
+ * `staffId` null; a barber signed in with his own login gets his place on the team, and
+ * each route keeps him to his own schedule.
+ */
+export function requireMember(ctx: Ctx): { salonId: number; staffId: number | null } {
+  const salon = ctx.host.salon;
+  if (!salon) throw new HttpError(404, 'not_found');
+  if (!ctx.session) throw new HttpError(401, 'login_required');
+  const { role, staffId } = ctx.session;
+  if (role === 'owner' || role === 'admin') return { salonId: salon.id, staffId: null };
+  if (role === 'staff' && staffId != null) return { salonId: salon.id, staffId };
+  throw new HttpError(403, 'forbidden');
 }
 
 // ---------------------------------------------------------------- login rate limit

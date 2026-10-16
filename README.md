@@ -48,7 +48,7 @@ colours appear in its app (the previews and the icon).
 - **Team**: magazine-style portrait cards that tilt towards the mouse on
   desktop. Adding a photo plays the "studio touch" (a scanning animation while
   the server renders), then the finished portrait arrives with a halo and a
-  burst of little stars.
+  burst of little stars. Each barber can have his own sign-in (see below).
 - **Hours**: each day is a 24-hour track with glowing open ranges, including
   ranges past midnight carried into the next morning, and a "now" marker on
   today. There are quick presets (all day, split shift, late nights, Friday after
@@ -66,6 +66,13 @@ colours appear in its app (the previews and the icon).
   cannot be undone. New bookings and sent deposits arrive live; the live line
   reconnects by itself and catches up on what it missed, and keyboard focus stays
   where it was when the day redraws.
+- **Walk-ins**: "customer in now" on the bookings page records someone who came
+  without booking as he sits down: who serves him, what he wants (the service, and a
+  note like "number 2 on the sides"), what he pays (the menu price, changeable) and,
+  if he likes, his name and number. He is in the chair from now for the service's
+  length, so nobody books that time online; he is never refused for overlapping a
+  booking (he's already sitting down). Walk-ins show on the day, in the summary and
+  in the day's takings, and are marked done or taken back if recorded by mistake.
 - **Settings** (sheet): contact details, password,
   language, sign out. Owners still on a temporary password the admin set see a
   reminder on Home until they choose their own.
@@ -73,6 +80,28 @@ colours appear in its app (the previews and the icon).
   behind login, and each salon's real app icon in the admin dashboard. On desktop the
   login sits beside a showcase (on a salon's link, its own app); "forgot your
   password?" opens a WhatsApp message to the platform.
+
+### Barbers' own sign-ins
+
+The owner gives a barber a sign-in from his card on the Team page: his mobile number
+and a temporary password, shown once with a copy button and a WhatsApp message that
+carries the link, the number and the password. At first sign-in he is asked to choose
+his own. He then sees **his own schedule only** (his bookings, day counts and free
+times), takes bookings by phone for himself, records his walk-ins and marks his
+visits done or missed. Deposits, payment screenshots, cancelling a booking, the menu,
+the team, hours and the salon's settings stay with the owner (the server refuses them,
+it doesn't just hide them). His settings sheet has his password, language and sign
+out.
+
+The owner sees when he last signed in, can give him a new temporary password (which
+signs him out everywhere) or take the sign-in away. A barber paused on the team loses
+his studio at once; removing his sign-in, or deleting him from the team, deletes the
+account made for it. A sign-in is always a new account made for this salon: a number
+that already has one on the platform (another salon's owner or barber, the admin) is
+refused, so no owner ever holds or sets the password of an account someone else uses.
+If the admin later opens a salon for that barber, the account gets the password the
+admin sets (the one his old owner knew stops working), and that owner can no longer
+reset it. A barber's live updates carry only his own chair.
 
 Arabic first and fully mirrored in English. The typeface is Readex Pro
 (self-hosted, OFL). Motion respects `prefers-reduced-motion`. Sheets take focus and
@@ -328,6 +357,8 @@ salon's barber, or a photo from another salon.
   strangers, not for the owner on their own phone. Each attempt counts before the
   password check, so parallel guesses are limited too.
   Changing the password checks the current one under the same limits.
+- Roles: the platform admin, a salon's owner, and its barbers. Every studio route says
+  which it allows; a barber's queries are limited to his own chair on the server.
 - Writes need JSON (or a raw image body) and a same-host `Origin`, which blocks CSRF.
 - Uploads are judged by their bytes (JPEG/PNG/WebP magic numbers and a real decode),
   never by the declared type. They are auto-rotated, stripped of metadata and re-encoded
@@ -379,7 +410,7 @@ Chrome and Firefox resolve `*.localhost` to your machine, so subdomains work wit
 
 ```sh
 npm run typecheck
-npm run test:api       # starts its own api on :3457 against local Postgres; 419 checks
+npm run test:api       # starts its own api on :3457 against local Postgres; 506 checks
 npm run screenshots    # needs `npm run dev`; a new salon's whole journey at 400px and 1440px
 ```
 
@@ -388,14 +419,19 @@ changes and payments nobody decided), the admin tools, the addresses (landing,
 dashboard, `www.`, the owners' door at `/admin`, `/book`, trailing slashes, redirects,
 404s, unknown and suspended salons), seeding a brand, link previews, the privacy
 policy and terms, the AI mirror (owner switch, catalogue, picture, limits and the
-look on a booking), and the security edges: tenant isolation, CSRF, upload validation,
+look on a booking), barbers' own sign-ins (his schedule only, what stays the owner's,
+new passwords, numbers that already have an account, a barber made an owner, taking a
+sign-in away), walk-ins (in
+the chair from now, never refused, blocking online booking, Undo that would double-book),
+and the security edges: tenant isolation, CSRF, upload validation,
 private payment screenshots, rate limits and session revocation. `screenshots` drives Chrome through the landing page and a
 brand-new salon's whole journey: the admin creating and handing it over and resetting the owner's password, the
 owner's first visit, ready menu, photos, brand, hours and bookings, a customer booking with
 a CliQ deposit and screenshot, the owner approving one payment and rejecting another,
-English and desktop, the owner turning on the AI mirror and a customer trying a cut on a
+English and desktop, the owner giving a barber his sign-in and the barber recording a
+walk-in, the owner turning on the AI mirror and a customer trying a cut on a
 selfie and booking it, then a cover photo, the page by day and the dashboard in the salon's
-colours, and the launch splash. It writes 87 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
+colours, and the launch splash. It writes 91 PNGs to `screenshots/` (23 of them the landing page: two still full pages and its scroll beats on desktop and phone) and fails on any page error,
 console error, CSP violation or unexpected failed request. It finds Chrome at `CHROME_PATH`
 or in the usual places.
 
@@ -461,5 +497,5 @@ scripts/               build-web.mjs, test-api.ts, screenshots.ts
    barber on the same studio backdrop in the salon's colours. It slots in as one more step
    before `renderPortrait` in `src/media.ts`. The studio-touch animation already frames
    it, and the original is kept as it is today.
-4. Later: SMS or WhatsApp checks on customers' numbers, reminders, rescheduling, logins
-   for barbers.
+4. Later: SMS or WhatsApp checks on customers' numbers, reminders, rescheduling, and
+   a takings report per barber (walk-ins included).

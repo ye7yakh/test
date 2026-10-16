@@ -1,5 +1,5 @@
 // Salon owner: profile, look and feel, logo and opening hours.
-import { requireOwner } from '../auth.js';
+import { requireMember, requireOwner } from '../auth.js';
 import { one, pool, query, tx } from '../db.js';
 import { loadSalonWeek, parseWeek, saveSalonWeek } from '../hours.js';
 import { ok, readJson, type Ctx, type Router } from '../http.js';
@@ -166,7 +166,8 @@ async function updateHours(ctx: Ctx) {
 }
 
 export function salonRoutes(r: Router) {
-  r.get('/api/manage/salon', async (ctx) => ok(ctx, await salonBody(requireOwner(ctx))));
+  // Barbers read it too: their studio wears the salon's name, colours and hours.
+  r.get('/api/manage/salon', async (ctx) => ok(ctx, await salonBody(requireMember(ctx).salonId)));
   r.patch('/api/manage/salon', updateSalon);
   for (const kind of Object.keys(BRAND_IMAGES) as BrandImage[]) {
     r.put(`/api/manage/salon/${kind}`, uploadBrandImage(kind));

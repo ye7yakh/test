@@ -60,9 +60,14 @@ const PRIVACY: Record<Lang, Doc> = {
             'تفاصيل الحجز: الخدمة والموظف والموعد والسعر والعربون وحالة الحجز.',
             'صورة تحويل كليك إذا طلب الصالون عربونًا، والملاحظة التي تكتبها مع التحويل إن وجدت. ترفعها أو تستبدلها قبل أن يبدأ موعدك فقط، وإلى أن يبتّ الصالون فيها. قد تظهر في الصورة بيانات من تطبيق بنكك، مثل اسمك ومرجع التحويل، لذلك نحفظها بشكل خاص.',
           ],
-          '**عندما تدير صالونًا:**',
+          '**عندما تدخل الصالون بدون حجز:**',
+          [
+            'قد يسجّل الصالون زيارتك: الخدمة والحلاق والوقت والسعر، وملاحظة عمّا طلبته. واسمك ورقمك فقط إذا أعطيتهما له.',
+          ],
+          '**عندما تدير صالونًا أو تعمل فيه:**',
           [
             'اسمك ورقم هاتفك وكلمة مرورك. نحفظ كلمة المرور مشفّرة بطريقة لا يمكن استرجاعها، فلا يراها أحد، ولا حتى نحن.',
+            'إذا أعطاك صاحب الصالون دخولًا خاصًا كحلاق: رقم هاتفك وكلمة مرورك (محفوظة بالطريقة نفسها)، وآخر وقت دخلت فيه، ويراه صاحب الصالون.',
             'معلومات الصالون التي تضيفها: الاسم والوصف والعنوان والهاتف والشعار والصور وأسماء الفريق وصورهم والخدمات والأسعار وأوقات الدوام وبيانات كليك لاستلام العربون.',
             'آخر وقت استخدمت فيه لوحة الإدارة.',
           ],
@@ -76,7 +81,7 @@ const PRIVACY: Record<Lang, Doc> = {
             'لإنشاء حجزك، وإظهاره للصالون، وعرض تفاصيله وحالته على صفحة حجزك.',
             'ليتحقق الصالون من وصول العربون.',
             'ليتواصل معك الصالون بشأن موعدك عند الحاجة.',
-            'لتشغيل حسابات أصحاب الصالونات وحمايتها.',
+            'لتشغيل حسابات أصحاب الصالونات وحلاقيهم وحمايتها.',
             'لمنع إساءة الاستخدام، مثل الحجوزات الوهمية ومحاولات الدخول المتكررة.',
           ],
           'لا نبيع بياناتك، ولا نستخدمها للإعلانات، ولا نرسل لك رسائل تسويقية.',
@@ -87,6 +92,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           [
             '**الصالون الذي حجزت فيه:** يرى اسمك ورقمك وحجوزاتك لديه وصورة التحويل. كل صالون يرى عملاءه فقط، ولا يرى حجوزاتك في الصالونات الأخرى.',
+            '**الحلاق الذي يخدمك،** إذا كان له دخول خاص: يرى مواعيده هو فقط، باسمك ورقمك وما طلبته، ولا يرى صور التحويل.',
             '**صورة التحويل** لا تُنشر أبدًا: يراها صاحب الصالون، وأنت من خلال رابط حجزك.',
             '**فريق {brand}،** عند الحاجة فقط، لدعم صالون أو حل مشكلة تقنية.',
             '**مزوّد الاستضافة السحابية** Amazon Web Services، الذي تعمل عليه خوادمنا وقاعدة بياناتنا، وقد تكون خارج الأردن.',
@@ -127,7 +133,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           'لا نستخدم ملفات تعريف الارتباط (الكوكيز) للإعلانات أو التتبع، ولا أدوات تحليلات من جهات أخرى.',
           [
-            'ملف تعريف ارتباط يُبقي أصحاب الصالونات مسجّلين في لوحة الإدارة، وآخر يتذكّر الجهاز الذي سجّلوا الدخول منه، حتى لا تمنعهم من الدخول محاولاتُ غيرهم تخمينَ كلمة المرور.',
+            'ملف تعريف ارتباط يُبقي أصحاب الصالونات وحلاقيهم مسجّلين في لوحة الإدارة، وآخر يتذكّر الجهاز الذي سجّلوا الدخول منه، حتى لا تمنعهم من الدخول محاولاتُ غيرهم تخمينَ كلمة المرور.',
             'يحفظ متصفحك على جهازك لغة التطبيق، واسمك ورقمك لتسريع حجزك القادم، وروابط حجوزاتك. تبقى هذه البيانات على جهازك، ويمكنك حذفها بمسح بيانات الموقع من إعدادات المتصفح.',
           ],
         ],
@@ -192,9 +198,14 @@ const PRIVACY: Record<Lang, Doc> = {
             'The booking: service, staff member, time, price, deposit and status.',
             'Your CliQ transfer screenshot if the salon asks for a deposit, and any note you add with it. You can upload or replace it only before your appointment starts, and until the salon decides on it. The screenshot can show details from your banking app, such as your name and the transfer reference, so we keep it private.',
           ],
-          '**When you run a salon:**',
+          '**When you walk in without booking:**',
+          [
+            'The salon may record your visit: the service, the barber, the time and the price, and a note on what you asked for. Your name and number only if you give them.',
+          ],
+          '**When you run or work at a salon:**',
           [
             'Your name, phone number and password. We store the password with one-way encryption that cannot be reversed, so nobody can read it, not even us.',
+            'If the salon\'s owner gives you your own sign-in as a barber: your phone number and password (stored the same way), and when you last signed in, which the owner sees.',
             'The salon information you add: name, description, address, phone, logo, photos, team names and photos, services, prices, opening hours, and the CliQ details for receiving deposits.',
             'When you last used the dashboard.',
           ],
@@ -208,7 +219,7 @@ const PRIVACY: Record<Lang, Doc> = {
             'To create your booking, show it to the salon, and show its details and status on your booking page.',
             'So the salon can check that your deposit arrived.',
             'So the salon can contact you about your appointment when needed.',
-            'To run and protect salon owners\' accounts.',
+            'To run and protect the accounts of salon owners and their barbers.',
             'To prevent abuse, such as fake bookings and repeated sign-in attempts.',
           ],
           'We do not sell your data, use it for advertising, or send you marketing messages.',
@@ -219,6 +230,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           [
             '**The salon you booked with** sees your name, number, your bookings with it, and the transfer screenshot. Each salon sees only its own customers, never your bookings at other salons.',
+            '**The barber who serves you,** if he has his own sign-in: he sees only his own appointments, with your name, number and what you asked for, never transfer screenshots.',
             '**The transfer screenshot** is never published: the salon\'s owner sees it, and you do through your booking link.',
             '**The {brand} team,** only when needed to support a salon or fix a technical problem.',
             '**Our cloud hosting provider,** Amazon Web Services, which runs our servers and database, possibly outside Jordan.',
@@ -259,7 +271,7 @@ const PRIVACY: Record<Lang, Doc> = {
         body: [
           'We use no cookies for advertising or tracking, and no third-party analytics.',
           [
-            'One cookie keeps salon owners signed in to their dashboard, and another remembers a device they have signed in from, so that someone else guessing at their password cannot lock them out.',
+            'One cookie keeps salon owners and their barbers signed in to their dashboard, and another remembers a device they have signed in from, so that someone else guessing at their password cannot lock them out.',
             'Your browser keeps, on your device only, the app\'s language, your name and number to make your next booking quicker, and links to your bookings. You can remove them by clearing this site\'s data in your browser settings.',
           ],
         ],

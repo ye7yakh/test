@@ -670,6 +670,41 @@ async function main() {
     await desk.waitForSelector('.appt');
     await snap(desk, 'desktop-bookings', { wait: 1200 });
 
+    // ---- a barber's own sign-in: the owner gives it, he sees his schedule and records a walk-in
+    await page.bringToFront();
+    await go(page, `${STUDIO}/team`, '.member');
+    await page.click('.member');
+    await page.waitForSelector('.sheet .login-entry');
+    await settle(page, 400);
+    await page.click('.sheet .login-entry');
+    await page.waitForSelector('.sheet .login-box input[name=phone]');
+    await settle(page, 400);
+    const barberPhone = `079${String(Date.now() + 5).slice(-7)}`;
+    await page.type('.sheet .login-box input[name=phone]', barberPhone);
+    await clickText(page, '.sheet .login-box button', 'أعطِه دخولًا');
+    await page.waitForSelector('.sheet .secret b');
+    await snap(page, 'team-login-given');
+    const barberPassword = await page.$eval('.sheet .secret b', (el) => el.textContent!.trim());
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    await page.keyboard.press('Escape');
+    await settle(page, 400);
+    const barber = await newPage(await browser.createBrowserContext());
+    await login(barber, SALON, barberPhone, barberPassword, '/admin/login');
+    await barber.waitForSelector('.sched-head .walkin-btn:not([disabled])');
+    if (new URL(barber.url()).pathname !== '/admin/bookings') problems.push(`a barber signed in at ${barber.url()}, not his schedule`);
+    await snap(barber, 'barber-schedule', { wait: 1200 });
+    await barber.click('.sched-head .walkin-btn');
+    await barber.waitForSelector('.sheet .walk-in .chip-btn');
+    await settle(barber, 400);
+    await barber.click('.sheet .walk-in .wrap-chips .chip-btn');
+    await barber.type('.sheet input[name=note]', 'درجة 2 على الجوانب');
+    await snap(barber, 'walk-in');
+    await clickText(barber, '.sheet-foot button', 'سجّل الزبون');
+    await find(barber, '.toast', 'سُجّل الزبون');
+    await find(barber, '.appt', 'زبون بدون حجز');
+    await snap(barber, 'barber-after-walk-in', { wait: 1200 });
+
     // ---- the AI mirror: the owner turns it on, a customer tries a cut on a selfie and books it
     await page.bringToFront();
     await go(page, STUDIO, '.hero-card');

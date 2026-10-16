@@ -1030,6 +1030,7 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
 
   await lateNightTests(admin, customer);
   await clockChangeTests(admin);
+  await teamLoginTests(admin, customer);
 
   await tryonTests(K, owner, customer, { cut, tomorrow });
 
@@ -1044,6 +1045,212 @@ async function bookingTests(admin: Client, other: { B: string; ownerB: Client })
   await owner.patch(K, '/api/manage/salon', { booking_enabled: false });
   expectStatus(await guest.get(K, `/api/public/availability?service_id=${cut}&date=${tomorrow}`), 403, 'online booking switched off', 'booking_closed');
   expect(createdK.status === 201, 'booking salon was created');
+}
+
+/** A barber's own sign-in (his schedule, nothing else) and customers recorded as they walk in. */
+async function teamLoginTests(admin: Client, customer: () => Client) {
+  section('Barber sign-ins');
+  const w = await smallSalon(admin, 'w', WEEK('00:00', '00:00'), 30);
+  // Midday where the salon is, so a walk-in from now never runs past midnight.
+  const ZONES = ['Pacific/Pago_Pago', 'Pacific/Honolulu', 'Pacific/Gambier', 'Pacific/Pitcairn', 'America/Phoenix', 'America/Regina', 'America/Bogota', 'America/Manaus',
+    'America/Sao_Paulo', 'America/Noronha', 'Atlantic/Cape_Verde', 'Africa/Abidjan', 'Africa/Lagos', 'Africa/Johannesburg', 'Asia/Riyadh', 'Asia/Dubai', 'Asia/Tashkent',
+    'Asia/Dhaka', 'Asia/Bangkok', 'Asia/Shanghai', 'Asia/Tokyo', 'Australia/Brisbane', 'Pacific/Noumea', 'Pacific/Tarawa', 'Pacific/Tongatapu', 'Pacific/Kiritimati'];
+  const hourIn = (timeZone: string) => Number(new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const zone = ZONES.find((z) => hourIn(z) >= 10 && hourIn(z) <= 13)!;
+  await w.owner.patch(w.host, '/api/manage/salon', { timezone: zone });
+  const nader = (await w.owner.post(w.host, '/api/manage/staff', { name_ar: 'نادر' })).json?.id as number;
+  const beard = (await w.owner.post(w.host, '/api/manage/services', { name_ar: 'لحية', duration_min: 15, price: '2' })).json?.id as number;
+  const basil = w.staffId;
+  const phone = `07${String(Date.now() + 31).slice(-8)}`;
+
+  const given = await w.owner.put(w.host, `/api/manage/staff/${basil}/login`, { phone });
+  const temp = given.json?.password as string;
+  const basilRow = given.json?.staff?.find((m: any) => m.id === basil);
+  expect(given.status === 201 && /^[a-z2-9]{4}-[a-z2-9]{4}-[a-z2-9]{4}$/.test(temp ?? '') && basilRow?.login?.must_change_password === true && basilRow.login.phone.endsWith(phone.slice(1)),
+    'the owner gives a barber his own sign-in: a temporary password, shown once', given.json);
+  expect(given.json?.staff?.find((m: any) => m.id === nader)?.login === null, 'a barber without one has none');
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${basil}/login`, { phone: `07${String(Date.now() + 32).slice(-8)}` }), 409, 'one sign-in per barber', 'phone_in_use');
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone }), 409, "another barber's number is not taken over", 'phone_in_use');
+  const ownerPhone = (await w.owner.get(w.host, '/api/context')).json?.user?.phone;
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone: ownerPhone }), 409, "nor the owner's", 'phone_in_use');
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone: '+962791111111' }), 409, "nor the platform admin's", 'phone_in_use');
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone: 'abc' }), 400, 'a number that is not one', 'invalid');
+  expectStatus(await w.owner.put(w.host, '/api/manage/staff/999999/login', { phone: '0790000555' }), 404, 'a barber of no salon', 'not_found');
+
+  const barber = new Client();
+  expectStatus(await barber.login(w.host, phone, temp), 200, 'he signs in with it');
+  const me = (await barber.get(w.host, '/api/context')).json?.user;
+  expect(me?.role === 'staff' && me.staff_id === basil && me.must_change_password === true, 'as a barber, asked to choose his own password', me);
+  const team = await barber.get(w.host, '/api/manage/staff');
+  expect(team.status === 200 && team.json.staff.length === 2 && team.json.staff.every((m: any) => !('login' in m)), "he sees his colleagues, not their sign-ins", team.json);
+  expectStatus(await barber.get(w.host, '/api/manage/salon'), 200, 'and the salon');
+  expectStatus(await barber.patch(w.host, '/api/manage/salon', { address: 'x' }), 403, "but the salon's settings are the owner's", 'forbidden');
+  expectStatus(await barber.post(w.host, '/api/manage/services', { name_ar: 'خدمة', duration_min: 30, price: '1' }), 403, 'and so is the menu', 'forbidden');
+  expectStatus(await barber.patch(w.host, `/api/manage/staff/${basil}`, { name_ar: 'غيري' }), 403, 'and the team', 'forbidden');
+  expectStatus(await barber.put(w.host, `/api/manage/staff/${nader}/login`, { phone: '0790000556' }), 403, 'and giving sign-ins', 'forbidden');
+  expectStatus(await barber.put(w.host, '/api/manage/hours', { hours: WEEK('09:00', '17:00') }), 403, 'and the hours', 'forbidden');
+
+  section('His own schedule');
+  const tomorrow = addDays((await customer().get(w.host, `/api/public/days?service_id=${w.serviceId}`)).json?.today, 1);
+  const ownerBook = (staffId: number, time: number, name: string) =>
+    w.owner.post(w.host, '/api/manage/bookings', { service_id: w.serviceId, staff_id: staffId, date: tomorrow, time, name, phone: `07900${String(time).padStart(5, '0')}` });
+  const forBasil = (await ownerBook(basil, 600, 'زبون باسل')).json?.booking;
+  const forNader = (await ownerBook(nader, 660, 'زبون نادر')).json?.booking;
+  const online = await customer().post(w.host, '/api/public/bookings', { service_id: w.serviceId, staff_id: basil, date: tomorrow, time: 720, name: 'إلكتروني', phone: '0790000720' });
+  const hisDay = await barber.get(w.host, `/api/manage/bookings?date=${tomorrow}`);
+  expect(hisDay.status === 200 && hisDay.json.bookings.length === 2 && hisDay.json.bookings.every((b: any) => b.staff.id === basil),
+    "he sees only his own bookings", hisDay.json?.bookings?.map((b: any) => b.staff.id));
+  const ownerDay = await w.owner.get(w.host, `/api/manage/bookings?date=${tomorrow}`);
+  expect(ownerDay.json?.bookings.length === 3, 'the owner sees everyone', ownerDay.json?.bookings?.length);
+  const hisOverview = await barber.get(w.host, '/api/manage/bookings/overview?days=10');
+  expect(hisOverview.status === 200 && hisOverview.json.counts[tomorrow] === 2 && hisOverview.json.attention.length === 0, 'his day counts are his; deposits are the owner\'s', hisOverview.json);
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${forNader?.id}`, { status: 'cancelled' }), 404, "a colleague's booking is out of his reach", 'not_found');
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${forBasil?.id}`, { status: 'cancelled' }), 403, 'cancelling a booking is the owner\'s', 'forbidden');
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${online.json?.booking?.id}`, { status: 'cancelled' }), 403, 'an online one too', 'forbidden');
+  const his = await barber.post(w.host, '/api/manage/bookings', { service_id: w.serviceId, staff_id: nader, date: tomorrow, time: 900, name: 'زبون هاتفي', phone: '0790000900' });
+  expect(his.status === 201 && his.json.booking.staff.id === basil, 'a booking he takes by phone is in his own chair', his.json);
+  const avail = await barber.get(w.host, `/api/manage/availability?service_id=${w.serviceId}&staff_id=${nader}&date=${tomorrow}`);
+  expect(avail.status === 200 && !avail.json.slots.some((s: any) => s.min === 600) && avail.json.slots.some((s: any) => s.min === 660), 'and his free times are his own', avail.json?.slots?.slice(0, 3));
+  expectStatus(await barber.get(w.host, `/api/manage/bookings/${forBasil?.id}/proof`), 403, 'payment screenshots are the owner\'s', 'forbidden');
+  const live = openEvents(w.host, barber.cookies.get(w.host)!);
+  const colleague = await ownerBook(nader, 960, 'زبون آخر');
+  expect(colleague.status === 201 && !(await live.waitFor(`"id":${colleague.json?.booking?.id}`, 800)), "a colleague's new booking is not on his live line");
+
+  section('Walk-ins');
+  const firstFree = async (c: Client, staffId: number) => {
+    const today = (await customer().get(w.host, `/api/public/days?service_id=${w.serviceId}`)).json?.today as string;
+    return (await c.get(w.host, `/api/manage/availability?service_id=${w.serviceId}&staff_id=${staffId}&date=${today}`)).json?.slots?.[0];
+  };
+  const freeBefore = await firstFree(w.owner, basil);
+  const walk = await barber.post(w.host, '/api/manage/walk-ins', { service_id: w.serviceId, staff_id: nader });
+  const wb = walk.json?.booking;
+  expect(walk.status === 201 && wb.source === 'walk_in' && wb.status === 'confirmed' && wb.staff.id === basil && wb.price === '5' && wb.customer.name === null && wb.customer.phone === null,
+    'a barber records a walk-in in his own chair: menu price, no name or number needed', walk.json);
+  expect(await live.waitFor('event: booking'), 'he sees it live, like the owner');
+  live.close();
+  const walkMin = (await query<{ min: number }>(
+    `select (extract(hour from b.start_at at time zone s.timezone) * 60 + extract(minute from b.start_at at time zone s.timezone))::int as min
+       from bookings b join salons s on s.id = b.salon_id where b.id = $1`,
+    [wb?.id ?? 0],
+  ))[0]?.min ?? -1;
+  const [hh, mm] = new Intl.DateTimeFormat('en-GB', { timeZone: zone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date()).split(':').map(Number);
+  expect(Math.abs(hh! * 60 + mm! - walkMin) <= 1 && wb.duration_min === 30, "from now, for the service's length", { walkMin, now: [hh, mm], d: wb?.duration_min });
+  const overlaps = (sl: { min: number }) => sl.min < walkMin + 30 && sl.min + 30 > walkMin;
+  const freeAfter = await firstFree(w.owner, basil);
+  expect(freeBefore && overlaps(freeBefore) && freeAfter && !overlaps(freeAfter), 'the chair is taken while he sits in it', { walkMin, freeBefore, freeAfter });
+  const wToday = (await customer().get(w.host, `/api/public/days?service_id=${w.serviceId}`)).json?.today as string;
+  expectStatus(await w.owner.post(w.host, '/api/manage/bookings', { service_id: w.serviceId, staff_id: basil, date: wToday, time: Math.ceil(walkMin / 15) * 15, name: 'متأخر', phone: '0790000802' }),
+    409, 'nobody can be booked into it', 'slot_taken');
+  const second = await barber.post(w.host, '/api/manage/walk-ins', { service_id: beard, price: '3.5', name: ' أبو علي ', phone: '0790000777', note: 'خط اللحية فقط' });
+  const sb = second.json?.booking;
+  expect(second.status === 201 && sb.price === '3.5' && sb.customer.name === 'أبو علي' && sb.customer.phone === '+962790000777' && sb.note === 'خط اللحية فقط',
+    'another right after, overlapping (he is already in the chair): his price, name, number and what he wants', second.json);
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: w.serviceId }), 400, 'the owner says which barber', 'required');
+  const ownerWalk = await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, price: '' });
+  expect(ownerWalk.status === 201 && ownerWalk.json.booking.staff.id === nader && ownerWalk.json.booking.price === '2', 'and records one for any barber', ownerWalk.json);
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: 999999, staff_id: nader }), 400, 'a service of no salon', 'invalid');
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, price: '-1' }), 400, 'a price below zero', 'invalid');
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, phone: 'x' }), 400, 'a number that is not one', 'invalid');
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, note: 'x'.repeat(201) }), 400, 'a note too long', 'invalid');
+  expectStatus(await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, price: '1.2345' }), 400, "more decimals than the salon's currency has", 'invalid');
+  const spaces = await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, price: ' ', name: '  ', phone: ' ', note: ' ' });
+  expect(spaces.status === 201 && spaces.json.booking.customer.name === null && spaces.json.booking.price === '2', 'optional fields left as spaces are simply not given', spaces.json);
+  // A number typed at the chair does not look up who it belongs to, or rename him.
+  const known = await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, phone: '0790000600' });
+  expect(known.status === 201 && known.json.booking.customer.name === null && known.json.booking.customer.phone === '+962790000600',
+    "a walk-in with the number of a customer the salon knows shows no one's name", known.json?.booking?.customer);
+  await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, phone: '0790000600', name: 'غيره' });
+  const stillHis = (await w.owner.get(w.host, `/api/manage/bookings?date=${tomorrow}`)).json?.bookings?.find((b: any) => b.id === forBasil?.id);
+  expect(stillHis?.customer.name === 'زبون باسل', "and the customer's name stays his", stillHis?.customer);
+  const numberOnly = await w.owner.post(w.host, '/api/manage/walk-ins', { service_id: beard, staff_id: nader, phone: '0790000611' });
+  const later = await customer().post(w.host, '/api/public/bookings', { service_id: w.serviceId, date: tomorrow, time: 1200, name: 'سامي', phone: '0790000611' });
+  expect(numberOnly.json?.booking?.customer.name === null && later.status === 201, 'a walk-in who gave only his number has no name, not his number as one', numberOnly.json?.booking?.customer);
+  const today = (await barber.get(w.host, '/api/manage/bookings')).json?.bookings ?? [];
+  expect(today.length === 2 && today.every((b: any) => b.source === 'walk_in' && b.staff.id === basil), "his walk-ins are on today's list, the owner's for Nader are not", today.map((b: any) => [b.source, b.staff.id]));
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${wb?.id}`, { status: 'no_show' }), 409, 'a walk-in in the chair is never a no-show', 'bad_transition');
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${wb?.id}`, { status: 'completed' }), 200, 'he marks his walk-in done');
+  expectStatus(await barber.patch(w.host, `/api/manage/bookings/${wb?.id}`, { status: 'confirmed' }), 200, 'and can undo it, though another walk-in overlaps');
+  const cancelled = await barber.patch(w.host, `/api/manage/bookings/${sb?.id}`, { status: 'cancelled' });
+  expect(cancelled.status === 200 && cancelled.json.booking.status === 'cancelled', 'a walk-in recorded by mistake, he takes back', cancelled.json);
+  // An online booking whose customer is a no-show, whose chair a walk-in then takes: Undo
+  // on the no-show would put two people in it.
+  const m = await smallSalon(admin, 'v', WEEK('00:00', '00:00'), 60);
+  await m.owner.patch(m.host, '/api/manage/salon', { timezone: zone });
+  const mToday = (await customer().get(m.host, `/api/public/days?service_id=${m.serviceId}`)).json?.today as string;
+  const slot = (await m.owner.get(m.host, `/api/manage/availability?service_id=${m.serviceId}&date=${mToday}`)).json?.slots?.[0];
+  const missed = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, date: mToday, time: slot?.min, name: 'غائب', phone: '0790000801' });
+  await query(`update bookings set start_at = now() - interval '5 minutes', end_at = now() + interval '55 minutes' where id = $1`, [missed.json?.booking?.id]);
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${missed.json?.booking?.id}`, { status: 'no_show' }), 200, 'a customer who did not come');
+  expectStatus(await m.owner.post(m.host, '/api/manage/walk-ins', { service_id: m.serviceId, staff_id: m.staffId }), 201, 'a walk-in takes his chair');
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${missed.json?.booking?.id}`, { status: 'confirmed' }), 409, 'Undo on the no-show would double-book it', 'slot_taken');
+  // A booked customer running late, with a walk-in already seated beside him: marking
+  // him (by mistake) done or missed can always be undone.
+  const lateSlot = (await m.owner.get(m.host, `/api/manage/availability?service_id=${m.serviceId}&date=${mToday}`)).json?.slots?.[0];
+  const lateDay = lateSlot ? mToday : addDays(mToday, 1);
+  const late = await m.owner.post(m.host, '/api/manage/bookings', { service_id: m.serviceId, date: lateDay, time: lateSlot?.min ?? 0, name: 'متأخر', phone: '0790000803' });
+  await query(`update bookings set start_at = now() - interval '10 minutes', end_at = now() + interval '50 minutes' where id = $1`, [late.json?.booking?.id]);
+  const lateId = late.json?.booking?.id;
+  expect(late.status === 201, 'a booking whose customer is late, beside the walk-in', late.json);
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${lateId}`, { status: 'completed' }), 200, 'marked done by mistake');
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${lateId}`, { status: 'confirmed' }), 200, 'and undone, the walk-in beside him notwithstanding');
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${lateId}`, { status: 'no_show' }), 200, 'marked a no-show by mistake');
+  expectStatus(await m.owner.patch(m.host, `/api/manage/bookings/${lateId}`, { status: 'confirmed' }), 200, 'and undone too: the walk-in was seated before');
+
+  section('His password');
+  expectStatus(await barber.post(w.host, '/api/auth/password', { current: temp, next: 'basil-own-pass' }), 200, 'he chooses his own');
+  expect((await barber.get(w.host, '/api/context')).json?.user?.must_change_password === false, 'and is no longer asked to');
+  const row = (await w.owner.get(w.host, '/api/manage/staff')).json?.staff?.find((x: any) => x.id === basil);
+  expect(row?.login?.must_change_password === false && row.login.last_seen_at, 'the owner sees he has signed in', row?.login);
+  const reset = await w.owner.post(w.host, `/api/manage/staff/${basil}/login/reset`);
+  expect(reset.status === 200 && typeof reset.json.password === 'string' && reset.json.password !== temp, 'he forgot it: the owner gives a new temporary one', reset.json);
+  expectStatus(await barber.get(w.host, '/api/manage/bookings'), 401, 'which signs him out', 'login_required');
+  expectStatus(await barber.login(w.host, phone, 'basil-own-pass'), 401, 'the old password no longer works', 'bad_credentials');
+  expectStatus(await barber.login(w.host, phone, reset.json?.password), 200, 'the new one does');
+  // A number that already has an account is never linked: its password is not this
+  // owner's to know or set.
+  const x = await smallSalon(admin, 'x', WEEK('09:00', '17:00'));
+  const xPhone = (await x.owner.get(x.host, '/api/context')).json?.user?.phone as string;
+  expectStatus(await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone: xPhone }), 409, "another salon's owner is not made a barber here", 'phone_in_use');
+  const naderPhone = `07${String(Date.now() + 34).slice(-8)}`;
+  const naderTemp = (await w.owner.put(w.host, `/api/manage/staff/${nader}/login`, { phone: naderPhone })).json?.password as string;
+  const elsewhere = new Client();
+  expectStatus(await elsewhere.login(w.host, naderPhone, naderTemp), 200, 'a second barber signs in');
+  expectStatus(await x.owner.put(x.host, `/api/manage/staff/${x.staffId}/login`, { phone: naderPhone }), 409, 'another salon cannot take over his account', 'phone_in_use');
+  // The admin opens a salon for him: the password this owner gave him (and could reset)
+  // is replaced by the admin's, and he is signed out.
+  const own = await admin.post(PLATFORM, '/api/admin/salons', { subdomain: `y${run}`, name_ar: 'صالون نادر', owner_phone: naderPhone, owner_password: 'nader-owner-pass' });
+  expect(own.status === 201 && own.json.owner_created === true, "a barber's account made an owner gets the admin's password", own.json);
+  expectStatus(await elsewhere.get(w.host, '/api/manage/bookings'), 401, 'and is signed out', 'login_required');
+  expectStatus(await elsewhere.login(hostOf(`y${run}`), naderPhone, naderTemp), 401, "the owner's temporary password does not open his salon", 'bad_credentials');
+  expectStatus(await elsewhere.login(hostOf(`y${run}`), naderPhone, 'nader-owner-pass'), 200, "the admin's does");
+  expect((await elsewhere.get(hostOf(`y${run}`), '/api/context')).json?.user?.role === 'owner', 'as the owner');
+  expectStatus(await w.owner.post(w.host, `/api/manage/staff/${nader}/login/reset`), 409, "and this owner can no longer reset it", 'password_elsewhere');
+  const naderRow = (await w.owner.del(w.host, `/api/manage/staff/${nader}/login`)).json?.staff?.find((m: any) => m.id === nader);
+  expect(naderRow?.login === null, 'his sign-in here can still be taken away');
+  expectStatus(await elsewhere.login(hostOf(`y${run}`), naderPhone, 'nader-owner-pass'), 200, 'his own salon keeps his account');
+
+  section('Taking a sign-in away');
+  await w.owner.patch(w.host, `/api/manage/staff/${basil}`, { active: false });
+  expectStatus(await barber.get(w.host, '/api/manage/bookings'), 403, 'a barber taken off the team has no studio', 'forbidden');
+  await w.owner.patch(w.host, `/api/manage/staff/${basil}`, { active: true });
+  expectStatus(await barber.get(w.host, '/api/manage/bookings'), 200, 'back on the team, he has it again');
+  const removed = await w.owner.del(w.host, `/api/manage/staff/${basil}/login`);
+  expect(removed.status === 200 && removed.json.staff.find((m: any) => m.id === basil)?.login === null, 'the owner removes his sign-in', removed.json);
+  expectStatus(await barber.get(w.host, '/api/manage/bookings'), 401, 'which signs him out', 'login_required');
+  expectStatus(await w.owner.del(w.host, `/api/manage/staff/${basil}/login`), 404, 'there is none left to remove', 'not_found');
+  expectStatus(await w.owner.post(w.host, `/api/manage/staff/${basil}/login/reset`), 404, 'or to reset', 'not_found');
+  expectStatus(await barber.login(w.host, phone, reset.json?.password), 401, 'the account made for it is gone', 'bad_credentials');
+  const again = await w.owner.put(w.host, `/api/manage/staff/${basil}/login`, { phone });
+  expect(again.status === 201 && typeof again.json.password === 'string', 'given again, he gets a new temporary password', again.json);
+  const deleted = await w.owner.post(w.host, '/api/manage/staff', { name_ar: 'مؤقت' });
+  const tempPhone = `07${String(Date.now() + 33).slice(-8)}`;
+  const tempGiven = await w.owner.put(w.host, `/api/manage/staff/${deleted.json?.id}/login`, { phone: tempPhone });
+  const leaver = new Client();
+  await leaver.login(w.host, tempPhone, tempGiven.json?.password);
+  expectStatus(await leaver.get(w.host, '/api/manage/bookings'), 200, 'a barber with no bookings yet signs in');
+  expectStatus(await w.owner.del(w.host, `/api/manage/staff/${deleted.json?.id}`), 200, 'and is deleted from the team');
+  expectStatus(await leaver.get(w.host, '/api/manage/bookings'), 401, 'his sign-in goes with him', 'login_required');
+  expectStatus(await leaver.login(w.host, tempPhone, tempGiven.json?.password), 401, 'and so does his account', 'bad_credentials');
 }
 
 /** The AI mirror: the owner's switch, the catalogue, the picture, its limits, and the look booked. */

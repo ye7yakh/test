@@ -1,9 +1,9 @@
 // Booking endpoints. Customers (public, on the salon's host) see free slots, book,
 // and follow their booking through a private link. Owners see the day, confirm
 // CliQ deposits, mark visits and add bookings themselves.
-import { normalizePhone, requireOwner } from '../auth.js';
+import { normalizePhone, requireMember, requireOwner } from '../auth.js';
 import {
-  addDays, availability, bookingSelect, clock, createBooking, DAYS_AHEAD, expireHolds, hashToken, LEAD_MIN, parseDate,
+  addDays, availability, bookingSelect, clock, createBooking, createWalkIn, DAYS_AHEAD, expireHolds, hashToken, LEAD_MIN, parseDate,
   salonToday, shapeBooking, type BookingStatus,
 } from '../booking.js';
 import { one, pool, query, tx } from '../db.js';
@@ -12,7 +12,7 @@ import { HttpError, ok, readJson, type Ctx, type Router } from '../http.js';
 import { intakeProof, mediaUrl, readImageUpload } from '../media.js';
 import { parseLook } from '../tryon.js';
 import type { Salon } from '../tenancy.js';
-import { Input, int, oneOf, text } from '../validate.js';
+import { CURRENCIES, Input, int, oneOf, price, text } from '../validate.js';
 
 // ---------------------------------------------------------------- shared
 
@@ -193,8 +193,8 @@ async function publicProofUpload(ctx: Ctx) {
   // Validate and re-encode before touching the booking: this is the slow part.
   const img = await intakeProof(await readImageUpload(ctx));
   const changed = await tx(async (db) => {
-    const b = await one<{ id: number; status: BookingStatus }>(
-      `select id, status from bookings
+    const b = await one<{ id: number; status: BookingStatus; staff_id: number }>(
+      `select id, status, staff_id from bookings
         where salon_id = $1 and token_hash = $2
           and start_at > now() and (status = 'payment_sent' or (status = 'pending_payment' and expires_at > now()))
         for update`,
@@ -217,7 +217,7 @@ async function publicProofUpload(ctx: Ctx) {
   // The owner's screen refreshes: a payment to check, or a replaced picture on one under review.
   publish(salon.id, 'booking', changed.status === 'payment_sent'
     ? { id: changed.id, status: 'payment_sent', proof: 'replaced' }
-    : { id: changed.id, status: 'payment_sent' });
+    : { id: changed.id, status: 'payment_sent' }, changed.staff_id);
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
 
@@ -232,8 +232,8 @@ async function publicSent(ctx: Ctx) {
   const token = tokenParam(ctx);
   const note = new Input(await readJson(ctx)).opt('note', text(120)) ?? '';
   const row = await tx(async (db) => {
-    const b = await one<{ id: number; status: BookingStatus }>(
-      `select b.id, b.status from bookings b
+    const b = await one<{ id: number; status: BookingStatus; staff_id: number }>(
+      `select b.id, b.status, b.staff_id from bookings b
         where b.salon_id = $1 and b.token_hash = $2
           and (b.status = 'payment_sent' or (b.status = 'pending_payment' and b.expires_at > now()))
           and exists (select 1 from booking_proofs p where p.booking_id = b.id)
@@ -254,43 +254,50 @@ async function publicSent(ctx: Ctx) {
   }
   // Only a booking that changed status announces a payment; a note on one already
   // announced (by its upload) just refreshes the owner's screen, without a second toast.
-  publish(salon.id, 'booking', row.status === 'pending_payment' ? { id: row.id, status: 'payment_sent' } : { id: row.id, note: 'updated' });
+  publish(salon.id, 'booking', row.status === 'pending_payment' ? { id: row.id, status: 'payment_sent' } : { id: row.id, note: 'updated' }, row.staff_id);
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
 
 async function publicCancel(ctx: Ctx) {
   const salon = requireBookableSalon(ctx);
   const token = tokenParam(ctx);
-  const row = await one<{ id: number }>(
+  const row = await one<{ id: number; staff_id: number }>(
     `update bookings set status = 'cancelled', updated_at = now()
       where salon_id = $1 and token_hash = $2 and start_at > now()
         and status in ('pending_payment', 'payment_sent', 'confirmed')
-      returning id`,
+      returning id, staff_id`,
     [salon.id, hashToken(token)],
   );
   if (!row) throw new HttpError(409, 'cannot_cancel');
-  publish(salon.id, 'booking', { id: row.id, status: 'cancelled' });
+  publish(salon.id, 'booking', { id: row.id, status: 'cancelled' }, row.staff_id);
   ok(ctx, { booking: await publicBooking(salon, token) });
 }
 
-// ---------------------------------------------------------------- owner
+// ---------------------------------------------------------------- owner (and barbers)
+
+// The owner sees the whole salon; a barber signed in with his own login sees his own
+// chair: every query below adds "and b.staff_id = <his>" for him ($n is its position).
+/** Payment screenshots are the owner's to check: a barber is not sent the link. */
+const forMember = <T extends { proof_url: string | null }>(b: T, staffId: number | null): T => (staffId == null ? b : { ...b, proof_url: null });
+const mine = (staffId: number | null, n: number) => (staffId == null ? '' : ` and b.staff_id = $${n}`);
+const withMine = (params: unknown[], staffId: number | null) => (staffId == null ? params : [...params, staffId]);
 
 async function ownerDay(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
+  const { salonId, staffId } = requireMember(ctx);
   const salon = ctx.host.salon!;
   const date = ctx.url.searchParams.get('date') ? parseDate(ctx.url.searchParams.get('date')) : await salonToday(pool, salon.timezone);
   const rows = await query(
     `${bookingSelect(`b.salon_id = $1 and b.status <> 'expired'
-       and b.start_at >= ($2::timestamp at time zone s.timezone) and b.start_at < (($2::date + 1)::timestamp at time zone s.timezone)`)}
+       and b.start_at >= ($2::timestamp at time zone s.timezone) and b.start_at < (($2::date + 1)::timestamp at time zone s.timezone)${mine(staffId, 3)}`)}
      order by b.start_at, b.id`,
-    [salonId, date],
+    withMine([salonId, date], staffId),
   );
-  ok(ctx, { date, bookings: rows.map((r) => shapeBooking(r, mediaUrl)).filter((b) => b.status !== 'expired') });
+  ok(ctx, { date, bookings: rows.map((r) => forMember(shapeBooking(r, mediaUrl), staffId)).filter((b) => b.status !== 'expired') });
 }
 
 /** Counts per day around a date (for the day strip) and the deposits waiting on the owner. */
 async function ownerOverview(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
+  const { salonId, staffId } = requireMember(ctx);
   const salon = ctx.host.salon!;
   const today = await salonToday(pool, salon.timezone);
   const from = ctx.url.searchParams.get('from') ? parseDate(ctx.url.searchParams.get('from'), 'from') : addDays(today, -7);
@@ -301,39 +308,43 @@ async function ownerOverview(ctx: Ctx) {
          from bookings b join salons s on s.id = b.salon_id
         where b.salon_id = $1 and b.status in ('pending_payment', 'payment_sent', 'confirmed', 'completed', 'no_show')
           and (b.status <> 'pending_payment' or b.expires_at > now())
-          and b.start_at >= ($2::timestamp at time zone s.timezone) and b.start_at < (($2::date + $3::int)::timestamp at time zone s.timezone)
+          and b.start_at >= ($2::timestamp at time zone s.timezone) and b.start_at < (($2::date + $3::int)::timestamp at time zone s.timezone)${mine(staffId, 4)}
         group by 1`,
-      [salonId, from, days],
+      withMine([salonId, from, days], staffId),
     ),
     // A payment waiting for the owner's check stays here (and in the badge) until it is
     // decided, however long ago the visit was; those come first, soonest visit on top,
-    // then the holds still waiting for the customer's transfer.
-    query(
-      `${bookingSelect(`b.salon_id = $1
-         and (b.status = 'payment_sent' or (b.status = 'pending_payment' and b.expires_at > now()))`)}
-       order by (b.status = 'payment_sent') desc, b.start_at, b.id`,
-      [salonId],
-    ),
+    // then the holds still waiting for the customer's transfer. Deposits are the owner's
+    // to check: a barber has none here.
+    staffId != null
+      ? Promise.resolve([])
+      : query(
+          `${bookingSelect(`b.salon_id = $1
+             and (b.status = 'payment_sent' or (b.status = 'pending_payment' and b.expires_at > now()))`)}
+           order by (b.status = 'payment_sent') desc, b.start_at, b.id`,
+          [salonId],
+        ),
   ]);
   ok(ctx, { today, from, counts: Object.fromEntries(counts.map((c) => [c.date, c.n])), attention: attention.map((r) => shapeBooking(r, mediaUrl)) });
 }
 
 async function ownerAvailability(ctx: Ctx) {
-  requireOwner(ctx);
+  const { staffId: own } = requireMember(ctx);
   const salon = ctx.host.salon!;
   const date = parseDate(ctx.url.searchParams.get('date'));
   await checkDateWindow(salon, date, 90);
-  const { slots } = await availability(pool, salon, { serviceId: idParam(ctx, 'service_id')!, staffId: idParam(ctx, 'staff_id', false), date, lead: 0 });
+  const { slots } = await availability(pool, salon, { serviceId: idParam(ctx, 'service_id')!, staffId: own ?? idParam(ctx, 'staff_id', false), date, lead: 0 });
   ok(ctx, { date, slots: slots.map(slotView) });
 }
 
-/** A booking the owner takes by phone, WhatsApp or at the door. No deposit. */
+/** A booking the owner (or a barber, for himself) takes by phone or WhatsApp. No deposit. */
 async function ownerCreate(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
+  const { salonId, staffId: own } = requireMember(ctx);
   const salon = ctx.host.salon!;
   const b = new Input(await readJson(ctx));
   const serviceId = b.req('service_id', int(1, Number.MAX_SAFE_INTEGER));
-  const staffId = b.opt('staff_id', (v) => (v === null ? null : int(1, Number.MAX_SAFE_INTEGER)(v))) ?? null;
+  const asked = b.opt('staff_id', (v) => (v === null ? null : int(1, Number.MAX_SAFE_INTEGER)(v))) ?? null;
+  const staffId = own ?? asked;
   const date = b.req('date', (v) => parseDate(v));
   const min = b.req('time', int(0, 2879));
   const name = b.req('name', text(60, 2));
@@ -342,6 +353,29 @@ async function ownerCreate(ctx: Ctx) {
   await checkDateWindow(salon, date, 90);
   const booking = await tx((db) => createBooking(db, salon, { serviceId, staffId, date, min, name, phone, source: 'owner', lead: 0 }));
   const row = await one(bookingSelect('b.salon_id = $1 and b.id = $2'), [salonId, booking.id]);
+  ok(ctx, { booking: shapeBooking(row!, mediaUrl) }, 201);
+}
+
+/**
+ * A customer who walked in: who serves him (a barber records his own), what he wants
+ * and what he pays; a name, number and note if he gives them.
+ */
+async function walkIn(ctx: Ctx) {
+  const { salonId, staffId: own } = requireMember(ctx);
+  const salon = ctx.host.salon!;
+  const b = new Input(await readJson(ctx));
+  const serviceId = b.req('service_id', int(1, Number.MAX_SAFE_INTEGER));
+  const staffId = own ?? b.req('staff_id', int(1, Number.MAX_SAFE_INTEGER));
+  // Optional fields left empty (or only spaces) are not given.
+  const blank = (v: unknown) => v == null || (typeof v === 'string' && !v.trim());
+  const amount = b.opt('price', (v) => (blank(v) ? null : price(CURRENCIES[salon.currency] ?? 2)(v))) ?? null;
+  const name = b.opt('name', (v) => (blank(v) ? null : text(60, 1)(v))) ?? null;
+  const rawPhone = b.opt('phone', (v) => (blank(v) ? null : text(30, 1)(v))) ?? null;
+  const phone = rawPhone ? normalizePhone(rawPhone, ctx.host.tenant.default_calling_code) : null;
+  if (rawPhone && !phone) throw new HttpError(400, 'invalid', 'phone');
+  const note = b.opt('note', (v) => (blank(v) ? null : text(200, 1)(v))) ?? null;
+  const { id } = await tx((db) => createWalkIn(db, salon, { staffId, serviceId, price: amount, name: name?.trim() || null, phone, note: note?.trim() || null }));
+  const row = await one(bookingSelect('b.salon_id = $1 and b.id = $2'), [salonId, id]);
   ok(ctx, { booking: shapeBooking(row!, mediaUrl) }, 201);
 }
 
@@ -370,23 +404,29 @@ async function ownerProof(ctx: Ctx) {
 }
 
 async function ownerUpdate(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
+  const { salonId, staffId: own } = requireMember(ctx);
   const id = Number(ctx.params.id);
   if (!Number.isSafeInteger(id) || id <= 0) throw new HttpError(404, 'not_found');
   const status = new Input(await readJson(ctx)).req('status', oneOf(['confirmed', 'completed', 'no_show', 'cancelled'] as const));
-  await tx(async (db) => {
+  const staffOf = await tx(async (db) => {
     // In turn with new bookings (createBooking takes the same lock, then expires
     // holds) and with other taps, so the check below sees what they wrote.
     await query('select pg_advisory_xact_lock(727002, $1::int)', [salonId], db);
     await expireHolds(db, salonId);
-    const current = await one<{ status: BookingStatus; started: boolean; near: boolean }>(
-      `select status, start_at <= now() as started, start_at <= now() + interval '1 hour' as near
-         from bookings where salon_id = $1 and id = $2 for update`,
-      [salonId, id],
+    const current = await one<{ status: BookingStatus; started: boolean; near: boolean; source: string; staff_id: number }>(
+      `select status, start_at <= now() as started, start_at <= now() + interval '1 hour' as near, source, staff_id
+         from bookings where salon_id = $1 and id = $2${own == null ? '' : ' and staff_id = $3'} for update`,
+      own == null ? [salonId, id] : [salonId, id, own],
       db,
     );
     if (!current) throw new HttpError(404, 'not_found');
     if (!NEXT[current.status].includes(status)) throw new HttpError(409, 'bad_transition');
+    // A barber marks his own visits done or missed (and undoes that). Confirming or
+    // turning down a deposit is the owner's, and so is cancelling a booking; he can
+    // only take back a walk-in he recorded by mistake.
+    if (own != null && (current.status === 'pending_payment' || current.status === 'payment_sent' || (status === 'cancelled' && current.source !== 'walk_in'))) {
+      throw new HttpError(403, 'forbidden');
+    }
     // A visit is closed only once it is due: "no-show" after it starts, "done" from an
     // hour before (an early arrival). A no-show frees the chair, so on a future booking
     // a stray tap would let someone else take the time, and Undo could not bring it
@@ -395,17 +435,27 @@ async function ownerUpdate(ctx: Ctx) {
     if ((status === 'no_show' && !current.started) || (status === 'completed' && !current.near)) {
       throw new HttpError(409, 'bad_transition');
     }
+    // A walk-in is in the chair: he is done or taken back, never a no-show (that would
+    // free a chair he sits in, and nothing would refuse bringing him back over a booking).
+    if (status === 'no_show' && current.source === 'walk_in') throw new HttpError(409, 'bad_transition');
     // Undo puts the visit back in the chair. The database refuses an overlap with a
     // waiting or confirmed booking (below), but not with a visit already marked done,
     // which still holds the chair (see availability()): a walk-in seated in the time a
     // no-show freed, say. That one is checked here.
     if (status === 'confirmed' && (current.status === 'no_show' || current.status === 'completed')) {
+      // Walk-ins are left out of the database's rule too. One counts only when he was
+      // seated in the time this no-show freed; one already in the chair beside the
+      // booking (a late customer) was allowed to overlap, and still is. A visit marked
+      // done held its chair all along, so undoing that frees nothing for a walk-in.
+      // A walk-in himself may overlap: he is already sitting down.
       const clash = await one(
         `select 1 from bookings o join bookings b on b.id = $2 and b.salon_id = $1
-          where o.salon_id = $1 and o.staff_id = b.staff_id and o.id <> b.id and o.status = 'completed'
+          where o.salon_id = $1 and o.staff_id = b.staff_id and o.id <> b.id and b.source <> 'walk_in'
+            and ((o.source <> 'walk_in' and o.status = 'completed')
+              or (o.source = 'walk_in' and o.status in ('confirmed', 'completed') and $3 and o.created_at >= b.updated_at))
             and tstzrange(o.start_at, o.end_at) && tstzrange(b.start_at, b.end_at)
           limit 1`,
-        [salonId, id],
+        [salonId, id, current.status === 'no_show'],
         db,
       );
       if (clash) throw new HttpError(409, 'slot_taken');
@@ -423,15 +473,18 @@ async function ownerUpdate(ctx: Ctx) {
       if ((err as { code?: string }).code === '23P01') throw new HttpError(409, 'slot_taken');
       throw err;
     }
+    return current.staff_id;
   });
-  publish(salonId, 'booking', { id, status });
+  publish(salonId, 'booking', { id, status }, staffOf);
   const row = await one(bookingSelect('b.salon_id = $1 and b.id = $2'), [salonId, id]);
-  ok(ctx, { booking: shapeBooking(row!, mediaUrl) });
+  ok(ctx, { booking: forMember(shapeBooking(row!, mediaUrl), own) });
 }
 
 /** Live updates for the studio: a line per change, and a ping to keep proxies open. */
 function ownerEvents(ctx: Ctx) {
-  const salonId = requireOwner(ctx);
+  // A change carries only the booking's id and status; each studio reloads what it may see.
+  // A barber hears only about his own chair.
+  const { salonId, staffId } = requireMember(ctx);
   ctx.res.writeHead(200, {
     'Content-Type': 'text/event-stream; charset=utf-8',
     'Cache-Control': 'no-store',
@@ -439,7 +492,7 @@ function ownerEvents(ctx: Ctx) {
     'X-Accel-Buffering': 'no',
   });
   ctx.res.write('retry: 5000\n\n');
-  const off = subscribe(salonId, ctx.res);
+  const off = subscribe(salonId, ctx.res, staffId);
   const ping = setInterval(() => ctx.res.write(': ping\n\n'), 25_000);
   ctx.req.on('close', () => {
     clearInterval(ping);
@@ -461,6 +514,7 @@ export function bookingRoutes(r: Router) {
   r.get('/api/manage/bookings/overview', ownerOverview);
   r.get('/api/manage/availability', ownerAvailability);
   r.post('/api/manage/bookings', ownerCreate);
+  r.post('/api/manage/walk-ins', walkIn);
   r.patch('/api/manage/bookings/:id', ownerUpdate);
   r.get('/api/manage/bookings/:id/proof', ownerProof);
   r.get('/api/manage/events', ownerEvents);

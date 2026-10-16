@@ -41,6 +41,8 @@ function iconField(name, label, control, opts) {
 
 export function openSettings(store, app, { focusPassword = false } = {}) {
   const s = store.salon;
+  // A barber with his own sign-in changes only his own things: password, language.
+  const staffMode = app.ctx.user?.role === 'staff';
   const cc = app.ctx.tenant?.calling_code ?? '962';
   const f = {
     phone: input({ name: 'phone', type: 'tel', inputmode: 'tel', autocomplete: 'tel-national', value: toLocal(s.phone, cc), maxlength: 24 }),
@@ -102,7 +104,7 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
 
   // ---- the AI mirror: customers try men's cuts on their own photo before booking
   // (offered only when the platform has an AI image model)
-  const mirror = store.options?.tryon_available ? switchRow(t('settings.tryon_on'), t('settings.tryon_sub'), s.tryon === 'on') : null;
+  const mirror = store.options?.tryon_available && !staffMode ? switchRow(t('settings.tryon_on'), t('settings.tryon_sub'), s.tryon === 'on') : null;
   mirror?.input.addEventListener('change', async () => {
     const on = mirror.input.checked;
     try {
@@ -120,13 +122,15 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
   const form = h(
     'form',
     { novalidate: true, class: 'settings-form', style: { marginTop: '-20px' } },
-    group_(
-      t('settings.contact'),
-      h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${cc}` }), field(t('settings.phone'), f.phone, { optional: true })),
-      iconField('pin', t('settings.address'), f.address, { optional: true }),
-      iconField('store', t('settings.about'), f.about_ar, { optional: true }),
-      iconField('globe', t('settings.about_en'), f.about_en, { optional: true }),
-    ),
+    staffMode
+      ? null
+      : group_(
+          t('settings.contact'),
+          h('div', { class: 'phone-input' }, h('div', { class: 'cc', text: `+${cc}` }), field(t('settings.phone'), f.phone, { optional: true })),
+          iconField('pin', t('settings.address'), f.address, { optional: true }),
+          iconField('store', t('settings.about'), f.about_ar, { optional: true }),
+          iconField('globe', t('settings.about_en'), f.about_en, { optional: true }),
+        ),
     group_(
       t('settings.account'),
       h('div', { class: 'row account-row' }, h('div', { class: 'tile' }, icon('user')), h('div', { class: 'grow' }, h('div', { class: 'small muted', text: t('settings.signed_in') }), h('div', { class: 'ltr phone-line', text: app.ctx.user?.phone ?? '' }))),
@@ -166,15 +170,15 @@ export function openSettings(store, app, { focusPassword = false } = {}) {
     for (const [k, el] of Object.entries(f)) initial[k] = el.value;
   }
 
-  const save = h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
-  const panel = sheet({ title: t('settings.title'), body: form, actions: [save], tall: true });
+  const save = staffMode ? null : h('button', { class: 'btn btn-primary', type: 'button', text: t('save') });
+  const panel = sheet({ title: t('settings.title'), body: form, actions: staffMode ? [] : [save], tall: true });
   if (focusPassword) {
     requestAnimationFrame(() => {
       current.scrollIntoView({ block: 'center' });
       current.focus({ preventScroll: true });
     });
   }
-  save.addEventListener('click', () => busy(save, async () => {
+  save?.addEventListener('click', () => busy(save, async () => {
     try {
       await saveContact();
       panel.close();
